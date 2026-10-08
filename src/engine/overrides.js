@@ -13,21 +13,23 @@
  * یک لحظهٔ خاص. کی‌فریم یعنی ساختن یک افترافکتس کوچک؛ فعلاً لازم نیست.
  */
 
-const KEY = 'lyricstudio.overrides.v1';
-
+/**
+ * نگه‌داری عمداً «بدون محل ذخیره» است.
+ *
+ * نسخهٔ اول همه را در یک کلید localStorage می‌ریخت و این یک باگ جدی
+ * بود: شناسهٔ کلمه‌ها (مثل l3w2) فقط شمارهٔ خط و کلمه است، پس بین
+ * آهنگ‌های مختلف تکرار می‌شود. جابه‌جا کردن یک کلمه در یک پروژه،
+ * کلمهٔ بی‌ربطی را در پروژهٔ دیگر تکان می‌داد.
+ *
+ * حالا هر پروژه نقشهٔ خودش را دارد و ذخیره از بیرون تزریق می‌شود.
+ */
 export class Overrides {
-  constructor(data = {}) { this.map = data; }
+  constructor(data = {}, onSave = null) { this.map = data || {}; this.onSave = onSave; }
 
-  static load() {
-    try {
-      const raw = localStorage.getItem(KEY);
-      return new Overrides(raw ? JSON.parse(raw) : {});
-    } catch { return new Overrides(); }
-  }
+  /** جایگزینی کامل نقشه — هنگام باز کردن پروژه */
+  setMap(m, onSave = this.onSave) { this.map = m || {}; this.onSave = onSave; }
 
-  save() {
-    try { localStorage.setItem(KEY, JSON.stringify(this.map)); } catch { /* سهمیه پر */ }
-  }
+  save() { this.onSave?.(this.map); }
 
   get(id) { return this.map[id]; }
   get count() { return Object.keys(this.map).length; }

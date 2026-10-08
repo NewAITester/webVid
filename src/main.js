@@ -39,15 +39,44 @@ const app = {
   pane: 'home',
 };
 
-const OV = Overrides.load();
+/* ── حالت هر پروژه ───────────────────────────────────────────
+   ظاهر و جابه‌جایی کلمات متعلق به پروژه‌اند، نه به برنامه. قبلاً
+   هر دو در یک کلید سراسری ذخیره می‌شدند و به پروژهٔ بعدی نشت
+   می‌کردند. */
+const DEFAULT_LOOK = () => ({
+  grain: 0.024, bloom: 0.55, chroma: 1.0, furniture: true, accents: {},
+});
+let look = DEFAULT_LOOK();
+
+const OV = new Overrides({});
 R.overrides = OV;
 
-const LOOK_KEY = 'lyricstudio.look.v1';
-const look = Object.assign(
-  { grain: 0.024, bloom: 0.55, chroma: 1.0, furniture: true, accents: {} },
-  JSON.parse(localStorage.getItem(LOOK_KEY) || '{}')
-);
-const saveLook = () => localStorage.setItem(LOOK_KEY, JSON.stringify(look));
+/** حالت پروژهٔ نمونه جدا ذخیره می‌شود تا تغییراتتان بماند ولی سرایت نکند */
+const DEMO_KEY = 'lyricstudio.demo.state.v2';
+
+function readState(p) {
+  if (!p || p.id === '__demo') {
+    try { return JSON.parse(localStorage.getItem(DEMO_KEY) || '{}'); } catch { return {}; }
+  }
+  return { look: p.look, overrides: p.overrides, sections: p.sections };
+}
+
+let saveTimer = 0;
+function saveState() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    const payload = { look, overrides: OV.map, sections: R.sections };
+    if (app.projectId === '__demo') {
+      try { localStorage.setItem(DEMO_KEY, JSON.stringify(payload)); } catch {}
+      return;
+    }
+    const p = await Library.get(app.projectId);
+    if (!p) return;
+    Object.assign(p, payload);
+    await Library.put(p);
+  }, 250);
+}
+const saveLook = saveState;
 
 function applyLook() {
   R.grain = look.grain;
@@ -188,7 +217,11 @@ function markActive() {
 }
 
 /* ── ویرایش بخش‌ها ───────────────────────────────────────── */
-const STYLES = ['intro', 'cold', 'inst_a', 'verse', 'pre', 'chorus', 'inst_b', 'inst_c', 'mirror', 'end'];
+const STYLES = [
+  'intro', 'cold', 'verse', 'pre', 'chorus', 'mirror', 'end',
+  'type', 'karaoke', 'wave', 'punch', 'split', 'stack',
+  'inst_a', 'inst_b', 'inst_c',
+];
 
 function sections() { return R.sections || (R.sections = SECT.map(s => s.slice())); }
 
@@ -205,7 +238,7 @@ function buildSecList() {
       if (st === sec[2]) o.selected = true;
       sel.append(o);
     }
-    sel.onchange = () => { sec[2] = sel.value; buildStrip(); draw(); };
+    sel.onchange = () => { sec[2] = sel.value; saveState(); buildStrip(); draw(); };
     const a = document.createElement('input');
     a.type = 'number'; a.step = '0.1'; a.value = sec[0].toFixed(1);
     const b = document.createElement('input');
@@ -214,7 +247,7 @@ function buildSecList() {
       sec[0] = Math.max(0, parseFloat(a.value) || 0);
       sec[1] = Math.max(sec[0] + 0.5, parseFloat(b.value) || 0);
       sections().sort((x, y) => x[0] - y[0]);
-      buildSecList(); buildStrip(); draw();
+      saveState(); buildSecList(); buildStrip(); draw();
     };
     a.onchange = commit; b.onchange = commit;
     const jump = document.createElement('button');
@@ -222,7 +255,7 @@ function buildSecList() {
     jump.onclick = () => seek(sec[0] + 0.3);
     const del = document.createElement('button');
     del.className = 'px'; del.textContent = '×';
-    del.onclick = () => { sections().splice(i, 1); buildSecList(); buildStrip(); draw(); };
+    del.onclick = () => { sections().splice(i, 1); saveState(); buildSecList(); buildStrip(); draw(); };
     row.append(jump, sel, a, b, del);
     host.append(row);
   });
@@ -231,11 +264,11 @@ $('#secAdd').onclick = () => {
   const t0 = +app.t.toFixed(1);
   sections().push([t0, Math.min(app.duration, t0 + 10), 'verse', C.CRIMSON]);
   sections().sort((x, y) => x[0] - y[0]);
-  buildSecList(); buildStrip(); draw();
+  saveState(); buildSecList(); buildStrip(); draw();
 };
 $('#secAuto').onclick = () => {
   R.sections = autoSections(app.song.lines, app.duration);
-  applyLook(); buildSecList(); buildStrip(); draw();
+  applyLook(); saveState(); buildSecList(); buildStrip(); draw();
 };
 
 /* ── ظاهر ────────────────────────────────────────────────── */
@@ -269,7 +302,7 @@ $('#lkAccentAll').onclick = () => {
   applyLook(); saveLook(); draw(); buildStrip();
 };
 $('#lkReset').onclick = () => {
-  Object.assign(look, { grain: 0.024, bloom: 0.55, chroma: 1.0, furniture: true, accents: {} });
+  look = DEFAULT_LOOK();
   R.sections = null; sections();
   applyLook(); saveLook(); syncLook(); buildSecList(); buildStrip(); draw();
 };
@@ -411,6 +444,15 @@ async function openProject(id) {
       app.song = null; app.duration = 0; app.audioUrl = null; R.sections = null;
     }
   }
+  // حالت این پروژه را بار کن — پروژهٔ تازه کاملاً دست‌نخورده است
+  {
+    const rec = app.projectId === '__demo' ? { id: '__demo' } : await Library.get(app.projectId);
+    const st = readState(rec);
+    look = Object.assign(DEFAULT_LOOK(), st.look || {});
+    OV.setMap(JSON.parse(JSON.stringify(st.overrides || {})), saveState);
+    if (st.sections?.length) R.sections = st.sections.map(x => x.slice());
+  }
+  R.selected = null; lastPicked = null;
   R.setSong(app.song);
   applyLook();
   app.audio = app.audioUrl ? new Audio(app.audioUrl) : null;
@@ -463,6 +505,7 @@ $('#nwGo').onclick = async () => {
     tg: ($('#nwTg').value || '').trim(),
     aspect: newAspect,
     audio: null, lrc: '', analysis: null, duration: 0, sections: null,
+    look: DEFAULT_LOOK(), overrides: {},
     createdAt: Date.now(),
   };
   await Library.put(proj);

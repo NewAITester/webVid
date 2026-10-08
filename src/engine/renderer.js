@@ -4,6 +4,7 @@ import { rect } from './draw.js';
 import { particles, furniture, bgText, beatGrid } from './field.js';
 import { drawLyrics } from './lyricbody.js';
 import { STYLE_FN, sMirror } from './styles.js';
+import { TEXT_FX } from './textfx.js';
 import { applyOverrides, hitWord } from './overrides.js';
 import { place, modeFor } from './layout.js';
 
@@ -105,6 +106,11 @@ export class Renderer {
       }
       if (this.showFurniture) furniture(ctx, song, t, acc, invert);
       drawLyrics(ctx, song, t, style, acc, invert, this.overrides);
+    } else if (TEXT_FX[style]) {
+      // سبک‌های متنی تازه: پس‌زمینهٔ ساده‌تر، بدون متن لغزان
+      beatGrid(ctx, song, t, kick, 10);
+      if (this.showFurniture) furniture(ctx, song, t, acc, false);
+      TEXT_FX[style](ctx, song, t, acc, kick, this.overrides);
     } else {
       beatGrid(ctx, song, t, kick, 8);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
@@ -290,6 +296,12 @@ export class Renderer {
       const cur = song.activeLine(t);
       if (cur < 0) return [];
       out.push(...applyOverrides(place(ctx, song.lines[cur], 'giant'), this.overrides));
+    } else if (TEXT_FX[style]) {
+      const cur = song.activeLine(t);
+      if (cur < 0) return [];
+      const line = song.lines[cur];
+      const mode = style === 'punch' ? 'chorus' : 'pre';
+      out.push(...applyOverrides(place(ctx, line, modeFor(line, mode)), this.overrides));
     }
     return out;
   }
