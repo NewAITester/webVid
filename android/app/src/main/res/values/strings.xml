@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">لیریک استودیو</string>
+    <string name="title_activity_main">لیریک استودیو</string>
+    <string name="package_name">com.zurvanecho.lyricstudio</string>
+    <string name="custom_url_scheme">com.zurvanecho.lyricstudio</string>
+</resources>

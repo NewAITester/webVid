@@ -3,3 +3,14 @@ dist/
 tests/*.png
 .DS_Store
 *.log
+
+# اندروید: پروژه کامیت می‌شود، خروجی بیلد نه
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/capacitor-cordova-android-plugins/build/
+.gradle/

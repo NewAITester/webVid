@@ -1,0 +1,103 @@
+name: ساخت APK اندروید
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'ساخت ریلیز با APK'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: جاوا ۱۷
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: کش Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: نصب وابستگی‌ها
+        run: npm ci
+
+      - name: تست موتور
+        run: node tests/engine.test.mjs
+
+      - name: بیلد وب
+        run: npm run build
+
+      - name: همگام‌سازی با پروژهٔ اندروید
+        run: npx cap sync android
+
+      - name: بررسی اینکه دارایی‌ها واقعاً داخل اپ هستند
+        run: |
+          echo "### دارایی‌های بسته‌بندی‌شده" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          find android/app/src/main/assets/public -type f | sort >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          test -f android/app/src/main/assets/public/data/Neghab.mp3
+          test -f android/app/src/main/assets/public/fonts/IRANSansX-Black.ttf
+          test -f android/app/src/main/assets/public/data/lyrics.lrc
+
+      - name: ساخت APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: نام‌گذاری و گزارش
+        id: apk
+        run: |
+          SRC=android/app/build/outputs/apk/debug/app-debug.apk
+          OUT=lyricstudio-${{ github.run_number }}.apk
+          cp "$SRC" "$OUT"
+          SIZE=$(du -h "$OUT" | cut -f1)
+          echo "path=$OUT" >> $GITHUB_OUTPUT
+          echo "size=$SIZE" >> $GITHUB_OUTPUT
+          echo "### APK ساخته شد" >> $GITHUB_STEP_SUMMARY
+          echo "فایل: \`$OUT\` — حجم: **$SIZE**" >> $GITHUB_STEP_SUMMARY
+
+      - name: آپلود APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyricstudio-apk
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 30
+
+      - name: انتشار در ریلیز
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: لیریک استودیو — بیلد ${{ github.run_number }}
+          body: |
+            نسخهٔ آزمایشی اپ اندروید.
+
+            - حجم: ${{ steps.apk.outputs.size }}
+            - کاملاً آفلاین (آهنگ، فونت‌ها و شعر داخل اپ)
+            - امضای debug — هنگام نصب باید «نصب از منابع ناشناس» را اجازه بدهید
+          files: ${{ steps.apk.outputs.path }}
