@@ -43,7 +43,34 @@
     <div class="brand">لیریک<span>استودیو</span></div>
     <div class="spacer"></div>
     <div id="fps" class="pill">—</div>
+    <button id="exportBtn" class="btn sm">خروجی</button>
   </header>
+
+  <div id="exPanel" class="panel hidden">
+    <div class="prow">
+      <label>از</label><input id="exFrom" type="number" value="0" min="0" step="1">
+      <label>تا</label><input id="exTo" type="number" value="10" min="1" step="1">
+      <span class="dim">ثانیه</span>
+      <div class="spacer"></div>
+      <button class="btn sm ghost" data-range="0,10">۱۰ ثانیه</button>
+      <button class="btn sm ghost" data-range="66,78">کرس</button>
+      <button class="btn sm ghost" data-range="0,228.6">کل آهنگ</button>
+    </div>
+    <div class="prow">
+      <label>کیفیت</label>
+      <select id="exQ">
+        <option value="6000000">سبک — ۶ مگابیت</option>
+        <option value="12000000" selected>خوب — ۱۲ مگابیت</option>
+        <option value="24000000">بالا — ۲۴ مگابیت</option>
+      </select>
+      <label><input id="exGrain" type="checkbox" checked> دانهٔ فیلم</label>
+      <div class="spacer"></div>
+      <button id="exGo" class="btn primary sm">شروع</button>
+      <button id="exCancel" class="btn sm hidden">لغو</button>
+    </div>
+    <div id="exBar" class="bar2 hidden"><i></i></div>
+    <div id="exMsg" class="msg"></div>
+  </div>
 
   <main class="stagewrap">
     <canvas id="stage"></canvas>

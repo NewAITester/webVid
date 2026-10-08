@@ -103,24 +103,98 @@ export function textMono(ctx, s, x, y, size, color, a = 1, tracking = 4, align =
 /**
  * متن تورفته (outline)
  *
- * در پایتون با erode کردن ماسک ساخته می‌شد. در canvas مستقیماً
- * strokeText داریم که همان نتیجه را می‌دهد و خیلی سریع‌تر است.
+ * روش غلطی که اول رفتم: strokeText.
+ * آن هر حرف را جداگانه دور می‌گیرد، پس در محل چسبیدن دو حرف فارسی
+ * لبهٔ داخلی هرکدام دیده می‌شود و یک خط عمودی زشت می‌افتد وسط کلمه.
+ *
+ * روش درست (همان کاری که پایتون می‌کرد): کل کلمه را به‌صورت یک ماسک
+ * واحد پر می‌کنیم، یک نسخهٔ فرسوده‌شده (eroded) از آن می‌سازیم، و
+ * فرسوده را از اصل کم می‌کنیم. چون کلمه یک شکل یکپارچه است، اتصال‌ها
+ * اصلاً مرزی ندارند.
+ *
+ * فرسایش در canvas: اشتراک چند کپیِ جابه‌جاشده روی دایره‌ای به شعاع w،
+ * با حالت ترکیب destination-in.
+ *
+ * نتیجه کش می‌شود، چون عنوان‌ها در طول کلیپ ثابت‌اند و این کار گران است.
  */
+const _outlineCache = new Map();
+const ERODE_DIRS = 16;
+
+function buildOutline(s, size, family, w, color) {
+  const key = `${s}|${size.toFixed(1)}|${family}|${w}|${color}`;
+  const hit = _outlineCache.get(key);
+  if (hit) return hit;
+
+  const probe = document.createElement('canvas').getContext('2d');
+  probe.font = font(size, family);
+  const m = probe.measureText(s);
+  const asc = Number.isFinite(m.actualBoundingBoxAscent) ? m.actualBoundingBoxAscent : size * 0.8;
+  const dsc = Number.isFinite(m.actualBoundingBoxDescent) ? m.actualBoundingBoxDescent : size * 0.3;
+  const pad = Math.ceil(w * 2 + 6);
+  const cw = Math.ceil(m.width + pad * 2);
+  const ch = Math.ceil(asc + dsc + pad * 2);
+  if (cw < 2 || ch < 2 || cw > 8000 || ch > 4000) return null;
+
+  const mk = (fn) => {
+    const c = document.createElement('canvas');
+    c.width = cw; c.height = ch;
+    fn(c.getContext('2d'));
+    return c;
+  };
+
+  // ۱) ماسک پر — کل کلمه، یکپارچه
+  const drawText = (g) => {
+    g.direction = 'rtl';
+    g.textAlign = 'center';
+    g.textBaseline = 'alphabetic';
+    g.font = font(size, family);
+    g.fillStyle = '#fff';
+    g.fillText(s, cw / 2, ch / 2 + (asc - dsc) / 2);
+  };
+  const mask = mk(drawText);
+
+  // ۲) نسخهٔ فرسوده: اشتراک کپی‌های جابه‌جاشده
+  const eroded = mk(g => { g.drawImage(mask, 0, 0); });
+  const eg = eroded.getContext('2d');
+  eg.globalCompositeOperation = 'destination-in';
+  for (let i = 0; i < ERODE_DIRS; i++) {
+    const a = (i / ERODE_DIRS) * Math.PI * 2;
+    eg.drawImage(mask, Math.cos(a) * w, Math.sin(a) * w);
+  }
+  eg.globalCompositeOperation = 'source-over';
+
+  // ۳) اصل منهای فرسوده = پوستهٔ توخالی
+  const shell = mk(g => { g.drawImage(mask, 0, 0); });
+  const sg = shell.getContext('2d');
+  sg.globalCompositeOperation = 'destination-out';
+  sg.drawImage(eroded, 0, 0);
+  // ۴) رنگ‌آمیزی
+  sg.globalCompositeOperation = 'source-in';
+  sg.fillStyle = color;
+  sg.fillRect(0, 0, cw, ch);
+  sg.globalCompositeOperation = 'source-over';
+
+  const out = { canvas: shell, cw, ch };
+  _outlineCache.set(key, out);
+  if (_outlineCache.size > 40) {
+    const k0 = _outlineCache.keys().next().value;
+    _outlineCache.delete(k0);
+  }
+  return out;
+}
+
 export function outlineTextFa(ctx, s, x, y, size, color, a = 1,
                               family = FONTS.black, w = 3) {
   if (a <= 0.004 || !s) return;
+  const o = buildOutline(s, size, family, w, color);
+  if (!o) return;
   ctx.save();
-  ctx.direction = 'rtl';
-  ctx.textAlign = 'center';
-  ctx.font = font(size, family);
-  ctx.lineWidth = w;
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = rgba(color, a);
-  const off = inkOffset(ctx, s, size, family);
-  if (off === null) { ctx.textBaseline = 'middle'; ctx.strokeText(s, x, y); }
-  else { ctx.textBaseline = 'alphabetic'; ctx.strokeText(s, x, y + off); }
+  ctx.globalAlpha = a;
+  ctx.drawImage(o.canvas, x - o.cw / 2, y - o.ch / 2);
   ctx.restore();
 }
+
+export function clearOutlineCache() { _outlineCache.clear(); }
 
 /**
  * کشیدن یک کلمهٔ شعر — ترجمهٔ وفادار word_draw

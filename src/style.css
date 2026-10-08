@@ -66,3 +66,25 @@ body{
   .transport{gap:8px;padding:8px 10px}
   .time{min-width:66px;font-size:12px}
 }
+
+/* ── پنل خروجی ─────────────────────────────────────────── */
+.btn.sm{padding:5px 11px;font-size:13px;border-radius:8px}
+.btn.ghost{background:transparent;color:var(--dim)}
+.btn.ghost:hover{color:var(--ink);background:#171A22}
+.hidden{display:none !important}
+.panel{background:#0E1016;border-bottom:1px solid var(--line);
+  padding:10px 16px;display:flex;flex-direction:column;gap:9px;flex:0 0 auto}
+.prow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.prow label{font-size:12px;color:var(--dim)}
+.prow input[type=number]{width:72px;background:#07080B;color:var(--ink);
+  border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:13px;
+  font-family:inherit;direction:ltr;text-align:center}
+.prow select{background:#07080B;color:var(--ink);border:1px solid var(--line);
+  border-radius:7px;padding:5px 8px;font-size:12px;font-family:inherit}
+.prow input[type=checkbox]{accent-color:var(--red);margin-inline-end:4px}
+.bar2{height:6px;background:#1A1E27;border-radius:99px;overflow:hidden}
+.bar2 i{display:block;height:100%;width:0;background:var(--red);
+  border-radius:99px;transition:width .2s}
+.msg{font-size:12px;color:var(--dim);min-height:16px}
+.msg.err{color:#FF6B6B}
+.msg.ok{color:#5FD38D}
