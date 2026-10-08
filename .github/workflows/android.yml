@@ -69,7 +69,9 @@ jobs:
 
       - name: ساخت APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: نام‌گذاری و گزارش
         id: apk
