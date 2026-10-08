@@ -88,3 +88,4 @@ body{
 .msg{font-size:12px;color:var(--dim);min-height:16px}
 .msg.err{color:#FF6B6B}
 .msg.ok{color:#5FD38D}
+.msg.warn{color:#E8B339}

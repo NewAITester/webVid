@@ -6,6 +6,7 @@ import { loadFonts, faTime } from './engine/text.js';
 import { Song, SECT, SECTION_NAMES, DUR } from './engine/song.js';
 import { DESIGN_W, DESIGN_H } from './engine/core.js';
 import { exportVideo, canExport } from './engine/export.js';
+import { saveFile, shareFile, prettyPath } from './engine/save.js';
 
 const $ = s => document.querySelector(s);
 const BASE = import.meta.env.BASE_URL;
@@ -185,10 +186,30 @@ $('#exportBtn').onclick = async () => {
   }
 };
 
+/** برآورد حجم فایل قبل از شروع — تا غافلگیر نشوید */
+function updateEstimate() {
+  const from = Math.max(0, parseFloat($('#exFrom').value) || 0);
+  const to = Math.min(DUR, parseFloat($('#exTo').value) || 0);
+  const br = parseInt($('#exQ').value, 10);
+  const secs = Math.max(0, to - from);
+  const mb = (secs * (br + 224000) / 8 / 1048576);
+  const el = $('#exEst');
+  if (!el) return;
+  if (secs <= 0) { el.textContent = ''; return; }
+  el.textContent = `حدود ${mb.toFixed(0)} مگابایت · ${secs.toFixed(0)} ثانیه ویدیو`;
+  // کل فایل در حافظه ساخته می‌شود، پس بالای ~۴۰۰ مگابایت روی گوشی خطرناک است
+  el.className = mb > 400 ? 'msg err' : mb > 180 ? 'msg warn' : 'msg';
+  if (mb > 400) el.textContent += ' — روی گوشی ممکن است حافظه کم بیاورد، تکه‌تکه بگیرید';
+}
+['#exFrom', '#exTo', '#exQ'].forEach(id => {
+  const e = $(id); if (e) { e.oninput = updateEstimate; e.onchange = updateEstimate; }
+});
+
 document.querySelectorAll('[data-range]').forEach(b => {
   b.onclick = () => {
     const [a, z] = b.dataset.range.split(',').map(Number);
     $('#exFrom').value = a; $('#exTo').value = z;
+    updateEstimate();
   };
 });
 
@@ -200,9 +221,10 @@ $('#exGo').onclick = async () => {
   if (to <= from) { setMsg('بازهٔ زمانی نامعتبر است', 'err'); return; }
 
   pause();
+  $('#exShare')?.classList.add('hidden');
   exAbort = new AbortController();
-  $('#exGo').classList.add('hidden');
-  $('#exCancel').classList.remove('hidden');
+  $('#exGo')?.classList.add('hidden');
+  $('#exCancel')?.classList.remove('hidden');
   exBar.classList.remove('hidden');
   const fill = exBar.querySelector('i');
 
@@ -224,19 +246,25 @@ $('#exGo').onclick = async () => {
     });
 
     const mb = (blob.size / 1048576).toFixed(1);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `neghab_${from.toFixed(0)}-${to.toFixed(0)}.mp4`;
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-    setMsg(`آماده شد — ${mb} مگابایت. دانلود شروع شد.`, 'ok');
+    const name = `neghab_${from.toFixed(0)}-${to.toFixed(0)}.mp4`;
+    setMsg(`در حال ذخیره… (${mb} مگابایت)`);
+    const res = await saveFile(blob, name, p => {
+      fill.style.width = (p * 100).toFixed(0) + '%';
+    });
+
+    if (res.where === 'native') {
+      setMsg(`ذخیره شد در ${prettyPath(res.path)} — ${mb} مگابایت`, 'ok');
+      const sh = $('#exShare');
+      if (sh) { sh.classList.remove('hidden'); sh.onclick = () => shareFile(res.path); }
+    } else {
+      setMsg(`آماده شد — ${mb} مگابایت. در پوشهٔ Downloads ذخیره شد.`, 'ok');
+    }
   } catch (e) {
     console.error(e);
     setMsg('خطا: ' + e.message, 'err');
   } finally {
-    $('#exGo').classList.remove('hidden');
-    $('#exCancel').classList.add('hidden');
+    $('#exGo')?.classList.remove('hidden');
+    $('#exCancel')?.classList.add('hidden');
     exAbort = null;
   }
 };
