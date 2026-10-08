@@ -75,13 +75,22 @@
   <!-- ─── پنل‌ها ───────────────────────────────────────────── -->
   <div class="panes" id="panes">
 
-    <!-- خانه -->
+    <!-- خانه: فقط فهرست پروژه‌ها -->
     <section class="pane" data-pane="home">
-      <div class="phead">پروژه‌ها</div>
+      <div class="phead">پروژه‌های من<div class="spacer"></div>
+        <span class="pill" id="projCount"></span></div>
       <div id="projList" class="cards"></div>
+      <button id="newProj" class="btn primary wide">+ پروژهٔ جدید</button>
+    </section>
 
-      <div class="phead">پروژهٔ تازه</div>
+    <!-- پروژه: افزودن آهنگ و تنظیمات -->
+    <section class="pane" data-pane="project">
+      <div class="phead" id="projHead">پروژه</div>
       <div class="form">
+        <div id="needAudio" class="empty hidden">
+          <div class="bigicon">♪</div>
+          <div>برای شروع، فایل صوتی را اضافه کنید</div>
+        </div>
         <div class="frow">
           <label>فایل صوتی</label>
           <input id="inAudio" type="file" accept="audio/*">
@@ -90,20 +99,16 @@
           <label>شعر <span class="dim">(lrc یا txt)</span></label>
           <input id="inLrc" type="file" accept=".lrc,.txt,text/plain">
         </div>
-        <div class="frow">
-          <label>عنوان</label><input id="inTitle" type="text" class="txt" placeholder="نام آهنگ">
-        </div>
-        <div class="frow">
-          <label>هنرمند</label><input id="inArtist" type="text" class="txt" placeholder="نام شما">
-        </div>
-        <div class="frow">
-          <label>تلگرام</label><input id="inTg" type="text" class="txt ltr" placeholder="Telegram: @channel">
-        </div>
-        <button id="songGo" class="btn primary wide">ساخت پروژه</button>
         <div id="songBar" class="bar2 hidden"><i></i></div>
         <div id="songMsg" class="msg"></div>
-        <p class="note">اگر شعر تایم‌بندی نداشته باشد، خودکار روی طول آهنگ پخش می‌شود.
-           بخش‌ها هم از روی شکاف‌های بی‌کلام ساخته می‌شوند.</p>
+
+        <div class="sep"></div>
+        <div class="frow"><label>عنوان</label><input id="pjTitle" type="text" class="txt"></div>
+        <div class="frow"><label>هنرمند</label><input id="pjArtist" type="text" class="txt"></div>
+        <div class="frow"><label>تلگرام</label><input id="pjTg" type="text" class="txt ltr"></div>
+        <div class="frow"><label>نسبت تصویر</label><select id="pjAspect"></select></div>
+        <button id="pjSave" class="btn wide">ذخیرهٔ تنظیمات</button>
+        <div id="pjMsg" class="msg"></div>
       </div>
     </section>
 
@@ -218,9 +223,29 @@
 
   </div>
 
+  <!-- ─── شیت ساخت پروژه ───────────────────────────────────── -->
+  <div id="sheet" class="sheet hidden">
+    <div class="sheetbox">
+      <div class="phead">پروژهٔ جدید<div class="spacer"></div>
+        <button id="sheetX" class="px">×</button></div>
+      <div class="form">
+        <div class="frow"><label>نام پروژه</label>
+          <input id="nwName" type="text" class="txt" placeholder="مثلاً: نقاب"></div>
+        <div class="frow"><label>هنرمند</label>
+          <input id="nwArtist" type="text" class="txt" placeholder="نام شما"></div>
+        <div class="frow"><label>تلگرام</label>
+          <input id="nwTg" type="text" class="txt ltr" placeholder="Telegram: @channel"></div>
+        <div class="phead" style="margin-top:6px">نسبت تصویر</div>
+        <div id="nwAspect" class="aspects"></div>
+        <button id="nwGo" class="btn primary wide">بساز و باز کن</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ─── ناوبری پایین ─────────────────────────────────────── -->
   <nav class="nav" id="nav">
     <button data-go="home"     class="on"><i>⌂</i><b>خانه</b></button>
+    <button data-go="project"><i>♪</i><b>پروژه</b></button>
     <button data-go="sections"><i>▦</i><b>بخش‌ها</b></button>
     <button data-go="words"><i>✥</i><b>کلمات</b></button>
     <button data-go="look"><i>◐</i><b>ظاهر</b></button>

@@ -1,4 +1,4 @@
-import { W, H } from './song.js';
+import { W, H, S, SF, onStageSize } from './song.js';
 import { font, FONTS } from './text.js';
 
 /**
@@ -40,7 +40,10 @@ export function fitFa(ctx, s, targetW, family = FONTS.black, probe = 200) {
  * فاصلهٔ بین کلمات = ۳۰٪ اندازهٔ فونت (دقیقاً مثل پایتون).
  */
 export function rowLayout(ctx, words, maxw, cap, key = ['', 1.0]) {
-  const ck = `${words.join('\u0000')}|${maxw}|${cap}|${key[0]}|${key[1]}`;
+  // عرض مجاز با عرض قاب مقیاس می‌خورد (وگرنه متن بیرون می‌زند) ولی
+  // سقف اندازهٔ قلم با ضلع کوچک‌تر، تا در قاب عمودی ریز نشود.
+  maxw *= S(); cap *= SF();
+  const ck = `${words.join('\u0000')}|${maxw.toFixed(1)}|${cap.toFixed(1)}|${key[0]}|${key[1]}`;
   const hit = _rowCache.get(ck);
   if (hit) return hit;
 
@@ -132,3 +135,6 @@ export function place(ctx, line, mode) {
 }
 
 export function clearLayoutCache() { _rowCache.clear(); _placeCache.clear(); }
+
+// تغییر ابعاد قاب یعنی همهٔ چیدمان‌های کش‌شده بی‌اعتبارند
+onStageSize(() => clearLayoutCache());

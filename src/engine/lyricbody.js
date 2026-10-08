@@ -1,4 +1,4 @@
-import { W, H, C, outQuint } from './song.js';
+import { W, H, C, outQuint, S } from './song.js';
 import { clamp, rgba } from './core.js';
 import { place, modeFor, fitFa } from './layout.js';
 import { wordDraw, textFa } from './draw.js';
@@ -24,7 +24,7 @@ function shatter(ctx, song, line, mode, t, tSh, acc) {
   const items = place(ctx, line, mode);
   for (let wi = 0; wi < items.length; wi++) {
     const it = items[wi];
-    let pts = textPoints(it.word, it.size, FONTS.black, 7);
+    let pts = textPoints(it.word, it.size, FONTS.black, Math.max(3, Math.round(7 * S())));
     if (!pts.length) continue;
     if (pts.length > 620) {
       const stp = Math.max(1, Math.floor(pts.length / 620));
@@ -32,7 +32,7 @@ function shatter(ctx, song, line, mode, t, tSh, acc) {
     }
     const a = Math.pow(clamp(1 - dt / 0.85), 1.1);
     if (a <= 0.02) continue;
-    const s = 4.4 * (1 - 0.35 * dt);
+    const s = 4.4 * S() * (1 - 0.35 * dt);
     ctx.fillStyle = rgba(it.key ? acc : C.BONE, a);
 
     for (let i = 0; i < pts.length; i++) {
@@ -73,7 +73,7 @@ export function drawLyrics(ctx, song, t, style, acc, invert = false, ov = null) 
     // در کرس، کلمهٔ کلیدی به‌صورت یک شبح غول‌پیکر پشت متن می‌آید
     if (style === 'chorus' && li === cur) {
       const kwItem = items.find(i => i.key) || items[0];
-      const gs = fitFa(ctx, kwItem.word, 1650);
+      const gs = fitFa(ctx, kwItem.word, 1650 * S());
       textFa(ctx, kwItem.word, W / 2, H * 0.28, gs,
              invert ? C.BG : C.BONE, 0.075 * a);
     }
@@ -86,7 +86,7 @@ export function drawLyrics(ctx, song, t, style, acc, invert = false, ov = null) 
       // تکان افقی کوتاه در لحظهٔ خوانده شدن
       let dx = 0;
       if (sung && t - it.t < 0.05) {
-        dx = (1 - (t - it.t) / 0.05) * 26 * (Math.floor(it.t * 100) % 2 ? 1 : -1);
+        dx = (1 - (t - it.t) / 0.05) * 26 * S() * (Math.floor(it.t * 100) % 2 ? 1 : -1);
       }
       wordDraw(ctx, it.word, it.cx + dx, it.cy, it.size, sung, heat, pop, a,
                it.key && sung, acc, invert);

@@ -1,4 +1,4 @@
-import { W, H, C, SECT } from './song.js';
+import { W, H, C, SECT, S } from './song.js';
 import { clamp, rgba, hash2 } from './core.js';
 import { rect } from './draw.js';
 import { particles, furniture, bgText, beatGrid } from './field.js';
@@ -79,7 +79,7 @@ export class Renderer {
     /* ۱) زمینه */
     rect(ctx, 0, 0, W, H, invert ? C.BONE : C.BG, 1);
     if (!invert) {
-      const g = ctx.createRadialGradient(W / 2, H / 2, 60, W / 2, H / 2, 1250);
+      const g = ctx.createRadialGradient(W / 2, H / 2, 60 * S(), W / 2, H / 2, Math.hypot(W, H) * 0.567);
       g.addColorStop(0, rgba(acc, 0.05 + 0.20 * kick));
       g.addColorStop(1, rgba(acc, 0));
       ctx.fillStyle = g;
@@ -87,8 +87,8 @@ export class Renderer {
     }
 
     /* ۲) دوربین */
-    const sx = Math.sin(t * 127) * 10 * kick;
-    const sy = Math.cos(t * 97) * 7 * kick;
+    const sx = Math.sin(t * 127) * 10 * S() * kick;
+    const sy = Math.cos(t * 97) * 7 * S() * kick;
     const z = 1.0 + 0.016 * kick;
     ctx.save();
     ctx.translate(W / 2 + sx, H / 2 + sy);
@@ -302,8 +302,8 @@ export class Renderer {
     ctx.save();
     ctx.setLineDash([7, 6]);
     for (const it of this.wordsAt(t)) {
-      const hw = (it.w || it.size) / 2 + 10;
-      const hh = it.size * 0.62 + 8;
+      const hw = (it.w || it.size) / 2 + 10 * S();
+      const hh = it.size * 0.62 + 8 * S();
       const on = this.selected === it.id;
       ctx.strokeStyle = on ? '#E4142A'
         : it.moved ? 'rgba(228,20,42,0.55)' : 'rgba(154,160,172,0.45)';

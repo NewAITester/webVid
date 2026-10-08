@@ -1,4 +1,4 @@
-import { W, H, C, SONG, NAME_FA, TG } from './song.js';
+import { W, H, C, SONG, NAME_FA, TG, S, onStageSize } from './song.js';
 import { rgba, clamp, hash2 } from './core.js';
 import { line, textFa, textMono } from './draw.js';
 import { font, FONTS, faTime } from './text.js';
@@ -24,27 +24,29 @@ function mulberry(seed) {
   };
 }
 
-const R = mulberry(17);
 const HOMEX = new Float32Array(PN), HOMEY = new Float32Array(PN);
 const PH = new Float32Array(PN), SP = new Float32Array(PN), CL = new Float32Array(PN);
 const DIRX = new Float32Array(PN), DIRY = new Float32Array(PN);
 const TANX = new Float32Array(PN), TANY = new Float32Array(PN);
 const SGN = new Float32Array(PN);
 
-for (let i = 0; i < PN; i++) {
-  HOMEX[i] = R() * W;
-  HOMEY[i] = R() * H;
+/** خانهٔ ذرات به ابعاد قاب بستگی دارد، پس با تغییر نسبت بازسازی می‌شود */
+function seedParticles() {
+  const R = mulberry(17);
+  for (let i = 0; i < PN; i++) { HOMEX[i] = R() * W; HOMEY[i] = R() * H; }
+  for (let i = 0; i < PN; i++) PH[i] = R() * 6.2832;
+  for (let i = 0; i < PN; i++) SP[i] = 0.45 + R() * 1.25;
+  for (let i = 0; i < PN; i++) CL[i] = R();
+  for (let i = 0; i < PN; i++) {
+    const dx = HOMEX[i] - W / 2, dy = HOMEY[i] - H / 2;
+    const n = Math.hypot(dx, dy) + 1e-6;
+    DIRX[i] = dx / n; DIRY[i] = dy / n;
+    TANX[i] = -DIRY[i]; TANY[i] = DIRX[i];
+  }
+  for (let i = 0; i < PN; i++) SGN[i] = R() > 0.5 ? 1 : -1;
 }
-for (let i = 0; i < PN; i++) PH[i] = R() * 6.2832;
-for (let i = 0; i < PN; i++) SP[i] = 0.45 + R() * 1.25;
-for (let i = 0; i < PN; i++) CL[i] = R();
-for (let i = 0; i < PN; i++) {
-  const dx = HOMEX[i] - W / 2, dy = HOMEY[i] - H / 2;
-  const n = Math.hypot(dx, dy) + 1e-6;
-  DIRX[i] = dx / n; DIRY[i] = dy / n;
-  TANX[i] = -DIRY[i]; TANY[i] = DIRX[i];
-}
-for (let i = 0; i < PN; i++) SGN[i] = R() > 0.5 ? 1 : -1;
+seedParticles();
+onStageSize(seedParticles);
 
 const _px = new Float32Array(PN), _py = new Float32Array(PN);
 
@@ -96,24 +98,25 @@ export function particles(ctx, song, t, acc, kick,
 /* ── اثاثیهٔ ثابت قاب ─────────────────────────────────────────── */
 
 export function furniture(ctx, song, t, acc, light = false) {
-  const m = 62;
+  const sc = S();
+  const m = 62 * sc;
   const c = light ? C.BG : C.BONE;
 
   // براکت گوشه‌ها
   for (const [px, py, sx, sy] of [[m, m, 1, 1], [W - m, m, -1, 1],
                                   [m, H - m, 1, -1], [W - m, H - m, -1, -1]]) {
-    line(ctx, px, py, px + 24 * sx, py, c, 2.4, 0.5);
-    line(ctx, px, py, px, py + 24 * sy, c, 2.4, 0.5);
+    line(ctx, px, py, px + 24 * sc * sx, py, c, 2.4 * sc, 0.5);
+    line(ctx, px, py, px, py + 24 * sc * sy, c, 2.4 * sc, 0.5);
   }
 
-  textFa(ctx, song?.artist || NAME_FA, W - m - 12, m + 52, 30, c, 0.75, FONTS.bold, 'right', 'cap');
-  textMono(ctx, song?.tg ?? TG, m + 12, H - m - 30, 22, acc, 0.95, 4, 'left');
-  textFa(ctx, faTime(t), m + 12, m + 54, 28, c, 0.55, FONTS.bold, 'left', 'cap');
+  textFa(ctx, song?.artist || NAME_FA, W - m - 12 * sc, m + 52 * sc, 30 * sc, c, 0.75, FONTS.bold, 'right', 'cap');
+  textMono(ctx, song?.tg ?? TG, m + 12 * sc, H - m - 30 * sc, 22 * sc, acc, 0.95, 4 * sc, 'left');
+  textFa(ctx, faTime(t), m + 12 * sc, m + 54 * sc, 28 * sc, c, 0.55, FONTS.bold, 'left', 'cap');
 
   // نوار پیشرفت — راست‌به‌چپ
   const p = clamp(t / (song?.duration || SONG));
-  line(ctx, m + 12, H - m, W - m - 12, H - m, c, 3, 0.16);
-  line(ctx, W - m - 12, H - m, W - m - 12 - (W - 2 * m - 24) * p, H - m, acc, 5, 1.0);
+  line(ctx, m + 12 * sc, H - m, W - m - 12 * sc, H - m, c, 3 * sc, 0.16);
+  line(ctx, W - m - 12 * sc, H - m, W - m - 12 * sc - (W - 2 * m - 24 * sc) * p, H - m, acc, 5 * sc, 1.0);
 }
 
 /* ── پس‌زمینه‌های متحرک ───────────────────────────────────────── */
@@ -127,14 +130,14 @@ export function bgText(ctx, song, t, acc, kick, rows = 9, alpha = 0.05) {
   ctx.direction = 'rtl';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.font = font(30, FONTS.bold);
+  ctx.font = font(30 * S(), FONTS.bold);
   const wdt = ctx.measureText(txt).width;
   if (wdt < 10) { ctx.restore(); return; }
   ctx.fillStyle = rgba(C.BONE, alpha + 0.025 * kick);
   for (let r = 0; r < rows; r++) {
-    const y = 70 + (r * (H - 140)) / (rows - 1);
+    const y = 70 * S() + (r * (H - 140 * S())) / (rows - 1);
     const d = r % 2 === 0 ? 1 : -1;
-    const off = ((t * 44 * d) % wdt + wdt) % wdt;
+    const off = ((t * 44 * S() * d) % wdt + wdt) % wdt;
     for (let c = -1; c < W / wdt + 2; c++) ctx.fillText(txt, c * wdt + off, y);
   }
   ctx.restore();
@@ -144,9 +147,9 @@ export function bgText(ctx, song, t, acc, kick, rows = 9, alpha = 0.05) {
 export function beatGrid(ctx, song, t, kick, n = 10) {
   const bi = song.beatI(t);
   for (let i = 0; i <= n; i++) {
-    const x = 100 + ((W - 200) * i) / n;
+    const x = 100 * S() + ((W - 200 * S()) * i) / n;
     const on = bi % n === i;
-    line(ctx, x, H * 0.115, x, H * 0.885, C.BONE, 1.2,
+    line(ctx, x, H * 0.115, x, H * 0.885, C.BONE, 1.2 * S(),
          0.05 + (on ? 0.28 : 0) * (0.3 + 0.7 * kick));
   }
 }

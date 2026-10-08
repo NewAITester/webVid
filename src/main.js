@@ -3,8 +3,8 @@ import { Renderer } from './engine/renderer.js';
 import { Analysis } from './engine/analysis.js';
 import { parseLRC } from './engine/lyrics.js';
 import { loadFonts, faTime } from './engine/text.js';
-import { Song, SECT, SECTION_NAMES, DUR, C } from './engine/song.js';
-import { DESIGN_W, DESIGN_H } from './engine/core.js';
+import { Song, SECT, SECTION_NAMES, DUR, C, ASPECTS, setStageSize, W as SW, H as SH } from './engine/song.js';
+
 import { clearLayoutCache } from './engine/layout.js';
 import { clearGlyphCache } from './engine/glyphs.js';
 import { exportVideo, canExport, RESOLUTIONS } from './engine/export.js';
@@ -17,6 +17,10 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const BASE = import.meta.env.BASE_URL;
 const faN = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+
+// ابعاد زندهٔ فضای طراحی (با تغییر نسبت عوض می‌شوند)
+import * as SONG from './engine/song.js';
+const stageDims = () => ({ W: SONG.W, H: SONG.H });
 
 const canvas = $('#stage');
 const stage = new Stage(canvas);
@@ -58,8 +62,9 @@ function applyLook() {
 function fit() {
   const wrap = canvas.parentElement;
   if (!wrap.clientWidth) return;
-  const s = Math.min((wrap.clientWidth - 12) / DESIGN_W, (wrap.clientHeight - 12) / DESIGN_H);
-  const cw = Math.max(160, DESIGN_W * s), ch = Math.max(90, DESIGN_H * s);
+  const { W: dw, H: dh } = stageDims();
+  const s = Math.min((wrap.clientWidth - 12) / dw, (wrap.clientHeight - 12) / dh);
+  const cw = Math.max(140, dw * s), ch = Math.max(80, dh * s);
   canvas.style.width = cw + 'px';
   canvas.style.height = ch + 'px';
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -122,6 +127,7 @@ function go(name) {
   $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
   $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
   const home = name === 'home';
+  if (name === 'project') syncProject();
   $('#stagewrap').classList.toggle('hide', home);
   $('#transport').classList.toggle('hide', home);
   $('#panes').classList.toggle('tall', home);
@@ -155,7 +161,9 @@ function buildStrip() {
     const el = document.createElement('div');
     el.className = 'card';
     const c = document.createElement('canvas');
-    c.width = 236; c.height = 132;
+    const { W: dw, H: dh } = stageDims();
+    const tw = dh > dw ? 110 : 236;
+    c.width = tw; c.height = Math.round(tw * dh / dw);
     const lb = document.createElement('div');
     lb.className = 'lb';
     lb.textContent = SECTION_NAMES[sec[2]] || sec[2];
@@ -163,7 +171,7 @@ function buildStrip() {
     el.onclick = () => seek(sec[0] + 0.3);
     strip.append(el);
     cards.push({ el, sec });
-    const st = new Stage(c); st.resize(236, 132);
+    const st = new Stage(c); st.resize(c.width, c.height);
     const r2 = new Renderer(st);
     r2.setSong(app.song);
     r2.sections = R.sections;
@@ -324,14 +332,14 @@ function songMsg(t, cls = '') { $('#songMsg').textContent = t; $('#songMsg').cla
 async function buildProjList() {
   const host = $('#projList');
   host.innerHTML = '';
-  const add = (id, title, sub, removable) => {
+  const mk = (id, title, sub, removable, badge) => {
     const el = document.createElement('div');
     el.className = 'pcard' + (id === app.projectId ? ' on' : '');
-    el.innerHTML = `<div class="pi">${(title || '؟').trim().charAt(0)}</div>
-      <div class="pm"><div class="pt"></div><div class="ps"></div></div>`;
+    el.innerHTML = `<div class="pi"></div><div class="pm"><div class="pt"></div><div class="ps"></div></div>`;
+    el.querySelector('.pi').textContent = badge;
     el.querySelector('.pt').textContent = title;
     el.querySelector('.ps').textContent = sub;
-    el.onclick = () => openProject(id);
+    el.onclick = async () => { await openProject(id); go(app.song ? 'sections' : 'project'); };
     if (removable) {
       const x = document.createElement('button');
       x.className = 'px'; x.textContent = '×';
@@ -346,19 +354,36 @@ async function buildProjList() {
     }
     host.append(el);
   };
-  add('__demo', 'نقاب — زروان اکو', 'نمونهٔ همراه برنامه · ۳:۴۸', false);
+  mk('__demo', 'نقاب — زروان اکو', 'نمونهٔ همراه برنامه · ۳:۴۸ · ۱۶:۹', false, '۹:۱۶'.slice(0,0) || 'ن');
+  let n = 1;
   try {
     for (const p of await Library.all()) {
-      const m = Math.floor(p.duration / 60), s = Math.round(p.duration % 60);
-      add(p.id, p.title || p.name, `${faN(m)}:${faN(String(s).padStart(2, '0'))} · ${faN(p.analysis.tempo.toFixed(0))} ضرب`, true);
+      n++;
+      const asp = p.aspect || '16:9';
+      const sub = p.audio
+        ? `${faN(Math.floor(p.duration / 60))}:${faN(String(Math.round(p.duration % 60)).padStart(2, '0'))} · ${faN(p.analysis.tempo.toFixed(0))} ضرب · ${asp}`
+        : `بدون آهنگ · ${asp}`;
+      mk(p.id, p.title || p.name, sub, true, (p.title || p.name || '؟').trim().charAt(0));
     }
   } catch (e) { console.warn(e); }
+  $('#projCount').textContent = faN(n) + ' پروژه';
+}
+
+function setAspect(id) {
+  const a = ASPECTS.find(x => x.id === id) || ASPECTS[0];
+  setStageSize(a.w, a.h);
+  clearLayoutCache(); clearGlyphCache();
+  // قاب بلند به فضای بیشتری نیاز دارد
+  document.getElementById('app').classList.toggle('portrait', a.h > a.w);
+  return a;
 }
 
 async function openProject(id) {
   pause();
   clearLayoutCache(); clearGlyphCache();
+  app.projectId = id;
   if (id === '__demo') {
+    setAspect('16:9');
     const [lrc, an] = await Promise.all([
       fetch(`${BASE}data/lyrics.lrc`).then(r => r.text()),
       Analysis.load(`${BASE}data/analysis.json`),
@@ -366,65 +391,170 @@ async function openProject(id) {
     app.song = new Song(parseLRC(lrc), an, { duration: DUR });
     app.duration = DUR;
     app.audioUrl = `${BASE}data/Neghab.mp3`;
+    app.aspect = '16:9';
     R.sections = SECT.map(s => s.slice());
   } else {
     const p = await Library.get(id);
     if (!p) return;
-    app.song = new Song(parseLRC(p.lrc || ''), new Analysis(p.analysis), {
-      title: p.title || p.name, artist: p.artist || '', tg: p.tg || '', duration: p.duration,
-    });
-    app.duration = p.duration;
-    app.audioUrl = URL.createObjectURL(p.audio);
-    R.sections = p.sections ? p.sections.map(s => s.slice())
-                            : autoSections(app.song.lines, p.duration);
+    app.aspect = p.aspect || '16:9';
+    setAspect(app.aspect);
+    if (p.audio) {
+      app.song = new Song(parseLRC(p.lrc || ''), new Analysis(p.analysis), {
+        title: p.title || p.name, artist: p.artist || '', tg: p.tg || '', duration: p.duration,
+      });
+      app.duration = p.duration;
+      app.audioUrl = URL.createObjectURL(p.audio);
+      R.sections = p.sections ? p.sections.map(s => s.slice())
+                              : autoSections(app.song.lines, p.duration);
+    } else {
+      // پروژهٔ خالی: هنوز آهنگی ندارد
+      app.song = null; app.duration = 0; app.audioUrl = null; R.sections = null;
+    }
   }
-  app.projectId = id;
   R.setSong(app.song);
   applyLook();
-  app.audio = new Audio(app.audioUrl);
-  app.audio.preload = 'auto';
+  app.audio = app.audioUrl ? new Audio(app.audioUrl) : null;
+  if (app.audio) app.audio.preload = 'auto';
   app.t = 0;
-  $('#scrub').max = String(app.duration);
-  $('#tdur').textContent = faTime(app.duration);
-  $('#nowName').textContent = app.song.title || 'بدون نام';
-  buildStrip(); buildSecList(); buildProjList(); updateEstimate(); draw();
+  $('#scrub').max = String(app.duration || 1);
+  $('#tdur').textContent = faTime(app.duration || 0);
+  $('#nowName').textContent = app.song?.title || (await currentMeta())?.title || 'پروژهٔ خالی';
+  buildStrip(); buildSecList(); buildProjList(); syncProject(); updateEstimate();
+  fit(); draw();
 }
 
-$('#songGo').onclick = async () => {
+async function currentMeta() {
+  if (app.projectId === '__demo') {
+    return { title: 'نقاب', artist: 'زروان اکو', tg: 'Telegram: @ZurvanEcho', aspect: '16:9' };
+  }
+  return await Library.get(app.projectId);
+}
+
+/* ── شیت پروژهٔ جدید ─────────────────────────────────────── */
+let newAspect = '16:9';
+function buildAspectPicker() {
+  const host = $('#nwAspect');
+  host.innerHTML = '';
+  for (const a of ASPECTS) {
+    const el = document.createElement('div');
+    el.className = 'asp' + (a.id === newAspect ? ' on' : '');
+    const bw = a.w >= a.h ? 26 : Math.round(26 * a.w / a.h);
+    const bh = a.w >= a.h ? Math.round(26 * a.h / a.w) : 26;
+    el.innerHTML = `<div class="box" style="width:${bw}px;height:${bh}px"></div>
+      <div class="t"><b>${a.id}</b><span>${a.label.split('—')[1]?.trim() || ''}</span></div>`;
+    el.onclick = () => { newAspect = a.id; buildAspectPicker(); };
+    host.append(el);
+  }
+}
+$('#newProj').onclick = () => {
+  newAspect = '16:9'; buildAspectPicker();
+  $('#nwName').value = ''; $('#nwArtist').value = ''; $('#nwTg').value = '';
+  $('#sheet').classList.remove('hidden');
+};
+$('#sheetX').onclick = () => $('#sheet').classList.add('hidden');
+$('#sheet').onclick = e => { if (e.target.id === 'sheet') $('#sheet').classList.add('hidden'); };
+
+$('#nwGo').onclick = async () => {
+  const name = ($('#nwName').value || 'پروژهٔ بی‌نام').trim();
+  const proj = {
+    id: 'p' + Date.now(), name,
+    title: name,
+    artist: ($('#nwArtist').value || '').trim(),
+    tg: ($('#nwTg').value || '').trim(),
+    aspect: newAspect,
+    audio: null, lrc: '', analysis: null, duration: 0, sections: null,
+    createdAt: Date.now(),
+  };
+  await Library.put(proj);
+  $('#sheet').classList.add('hidden');
+  await openProject(proj.id);
+  go('project');
+};
+
+/* ── تب پروژه ────────────────────────────────────────────── */
+async function syncProject() {
+  const m = await currentMeta();
+  if (!m) return;
+  $('#projHead').textContent = m.title || m.name || 'پروژه';
+  $('#pjTitle').value = m.title || m.name || '';
+  $('#pjArtist').value = m.artist || '';
+  $('#pjTg').value = m.tg || '';
+  const sel = $('#pjAspect');
+  if (!sel.options.length) {
+    for (const a of ASPECTS) {
+      const o = document.createElement('option');
+      o.value = a.id; o.textContent = a.label;
+      sel.append(o);
+    }
+  }
+  sel.value = m.aspect || '16:9';
+  const demo = app.projectId === '__demo';
+  $('#needAudio').classList.toggle('hidden', !!app.song);
+  $('#pjSave').disabled = demo;
+  $('#pjSave').textContent = demo ? 'نمونه قابل ویرایش نیست' : 'ذخیرهٔ تنظیمات';
+}
+
+$('#pjSave').onclick = async () => {
+  if (app.projectId === '__demo') return;
+  const p = await Library.get(app.projectId);
+  if (!p) return;
+  p.title = ($('#pjTitle').value || p.name).trim();
+  p.artist = ($('#pjArtist').value || '').trim();
+  p.tg = ($('#pjTg').value || '').trim();
+  const aspChanged = p.aspect !== $('#pjAspect').value;
+  p.aspect = $('#pjAspect').value;
+  await Library.put(p);
+  if (aspChanged) await openProject(p.id);
+  else {
+    if (app.song) { app.song.title = p.title; app.song.artist = p.artist; app.song.tg = p.tg; }
+    $('#nowName').textContent = p.title;
+    $('#projHead').textContent = p.title;
+    buildStrip(); buildProjList(); draw();
+  }
+  $('#pjMsg').textContent = 'ذخیره شد';
+  $('#pjMsg').className = 'msg ok';
+};
+
+/** افزودن یا تعویض آهنگ پروژهٔ فعلی */
+async function attachAudio() {
   const af = $('#inAudio').files?.[0];
-  if (!af) { songMsg('اول یک فایل صوتی انتخاب کنید', 'err'); return; }
+  const lf = $('#inLrc').files?.[0];
+  if (!af && !lf) return;
+  if (app.projectId === '__demo') { songMsg('نمونه قابل ویرایش نیست — اول یک پروژهٔ جدید بسازید', 'err'); return; }
+  const p = await Library.get(app.projectId);
+  if (!p) return;
   const bar = $('#songBar'); bar.classList.remove('hidden');
   const fill = bar.querySelector('i');
   try {
-    songMsg('در حال خواندن فایل…');
-    const buf = await decodeAudioFile(af);
-    const analysis = await analyzeBuffer(buf, (p, m) => {
-      fill.style.width = (p * 100).toFixed(0) + '%';
-      songMsg(`${m} ${faN(Math.round(p * 100))}٪`);
-    });
-    let lrc = $('#inLrc').files?.[0] ? await $('#inLrc').files[0].text() : '';
-    if (lrc && !/\[\d+:\d/.test(lrc)) lrc = plainToLines(lrc, buf.duration);
-    const nm = af.name.replace(/\.[^.]+$/, '');
-    const lines = parseLRC(lrc);
-    const proj = {
-      id: 'p' + Date.now(), name: nm, audio: af, lrc, analysis,
-      duration: buf.duration,
-      title: ($('#inTitle').value || nm).trim(),
-      artist: ($('#inArtist').value || '').trim(),
-      tg: ($('#inTg').value || '').trim(),
-      sections: autoSections(lines, buf.duration),
-      createdAt: Date.now(),
-    };
-    await Library.put(proj);
-    await openProject(proj.id);
-    songMsg(`آماده شد — ${faN(analysis.tempo.toFixed(1))} ضرب در دقیقه · `
-          + `${faN(analysis.beats.length)} ضرب · ${faN(lines.length)} خط`, 'ok');
-    go('sections');
+    if (af) {
+      songMsg('در حال خواندن فایل…');
+      const buf = await decodeAudioFile(af);
+      p.analysis = await analyzeBuffer(buf, (q, m) => {
+        fill.style.width = (q * 100).toFixed(0) + '%';
+        songMsg(`${m} ${faN(Math.round(q * 100))}٪`);
+      });
+      p.audio = af;
+      p.duration = buf.duration;
+      p.sections = null;
+    }
+    if (lf) {
+      let lrc = await lf.text();
+      if (lrc && !/\[\d+:\d/.test(lrc)) lrc = plainToLines(lrc, p.duration || 60);
+      p.lrc = lrc;
+      p.sections = null;
+    }
+    if (p.audio && !p.sections) p.sections = autoSections(parseLRC(p.lrc || ''), p.duration);
+    await Library.put(p);
+    await openProject(p.id);
+    songMsg(p.analysis
+      ? `آماده — ${faN(p.analysis.tempo.toFixed(1))} ضرب در دقیقه · ${faN(p.analysis.beats.length)} ضرب · ${faN(app.song?.lines.length || 0)} خط`
+      : 'شعر اضافه شد', 'ok');
   } catch (e) {
-    console.error(e);
-    songMsg('خطا: ' + e.message, 'err');
+    console.error(e); songMsg('خطا: ' + e.message, 'err');
   } finally { bar.classList.add('hidden'); }
-};
+}
+$('#inAudio').onchange = attachAudio;
+$('#inLrc').onchange = attachAudio;
 
 /* ── خروجی ───────────────────────────────────────────────── */
 const resSel = $('#exRes');
@@ -436,9 +566,24 @@ RESOLUTIONS.forEach(r => {
 });
 const curRes = () => RESOLUTIONS.find(r => r.id === resSel.value) || RESOLUTIONS[2];
 
+/* ابعاد خروجی از نسبت پروژه می‌آید، نه از فهرست ثابت ۱۶:۹.
+   عدد رزولوشن (۱۰۸۰، ۷۲۰ …) را ضلع کوچک‌تر می‌گیریم: در قاب افقی
+   یعنی ارتفاع و در قاب عمودی یعنی عرض — همان قراردادی که همه
+   انتظار دارند. ابعاد باید زوج باشند وگرنه انکودر رد می‌کند. */
+function outDims() {
+  const { W: dw, H: dh } = stageDims();
+  const k = (+curRes().id) / Math.min(dw, dh);
+  return { w: Math.round(dw * k / 2) * 2, h: Math.round(dh * k / 2) * 2 };
+}
+const outW = () => outDims().w;
+const outH = () => outDims().h;
+
 function autoBitrate() {
   const fps = parseInt($('#exFps').value, 10);
-  const mbit = Math.round((curRes().rec / 1e6) * (fps >= 60 ? 1 : fps >= 30 ? 0.72 : 0.62));
+  const d = outDims();
+  // بیت‌ریت با تعداد پیکسل مقیاس می‌خورد، نه با نام رزولوشن
+  const px = (d.w * d.h) / (1920 * 1080);
+  const mbit = Math.round(12 * px * (fps >= 60 ? 1 : fps >= 30 ? 0.72 : 0.62));
   $('#exBr').value = String(Math.min(60, Math.max(1, mbit)));
   updateEstimate();
 }
@@ -451,8 +596,8 @@ function updateEstimate() {
   const el = $('#exEst');
   if (secs <= 0) { el.textContent = ''; return; }
   const mb = secs * (br + 224000) / 8 / 1048576;
-  const r = curRes();
-  el.textContent = `${r.w}×${r.h} · ${faN(parseInt($('#exFps').value, 10))} فریم · حدود ${faN(mb.toFixed(0))} مگابایت`;
+  const d = outDims();
+  el.textContent = `${d.w}×${d.h} · ${faN(parseInt($('#exFps').value, 10))} فریم · حدود ${faN(mb.toFixed(0))} مگابایت`;
   el.className = mb > 400 ? 'msg err' : mb > 180 ? 'msg warn' : 'msg';
   if (mb > 400) el.textContent += ' — ممکن است حافظه کم بیاورد، تکه‌تکه بگیرید';
 }
@@ -475,6 +620,7 @@ const setMsg = (t, cls = '') => { $('#exMsg').textContent = t; $('#exMsg').class
 $('#exGo').onclick = async () => {
   const from = Math.max(0, parseFloat($('#exFrom').value) || 0);
   const to = Math.min(app.duration, parseFloat($('#exTo').value) || 0);
+  if (!app.song) { setMsg('این پروژه هنوز آهنگ ندارد', 'err'); return; }
   if (to <= from) { setMsg('بازهٔ زمانی نامعتبر است', 'err'); return; }
   const cap = await canExport();
   if (!cap.ok) { setMsg('این دستگاه نمی‌تواند خروجی بگیرد: ' + cap.why, 'err'); return; }
@@ -490,7 +636,7 @@ $('#exGo').onclick = async () => {
     const blob = await exportVideo({
       song: app.song, from, to,
       audioUrl: app.audioUrl,
-      width: curRes().w, height: curRes().h,
+      width: outW(), height: outH(),
       fps: parseInt($('#exFps').value, 10),
       bitrate: parseInt($('#exBr').value, 10) * 1e6,
       grain: look.grain, overrides: OV, sections: R.sections,
@@ -546,6 +692,7 @@ window.addEventListener('keydown', e => {
 async function boot() {
   await loadFonts();
   applyLook();
+  buildAspectPicker();
   await openProject('__demo');
   autoBitrate();
   $('#loading').classList.add('gone');

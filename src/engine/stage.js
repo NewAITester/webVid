@@ -1,4 +1,4 @@
-import { DESIGN_W, DESIGN_H } from './core.js';
+import { W as DW, H as DH } from './song.js';
 
 /**
  * صحنه (Stage) — پل بین «فضای طراحی» و بوم واقعی.
@@ -23,7 +23,7 @@ export class Stage {
       this.canvas.width = w;
       this.canvas.height = h;
     }
-    this.scale = Math.min(w / DESIGN_W, h / DESIGN_H);
+    this.scale = Math.min(w / DW, h / DH);
     return this;
   }
 
@@ -33,8 +33,8 @@ export class Stage {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const ox = (canvas.width - DESIGN_W * scale) / 2;
-    const oy = (canvas.height - DESIGN_H * scale) / 2;
+    const ox = (canvas.width - DW * scale) / 2;
+    const oy = (canvas.height - DH * scale) / 2;
     ctx.setTransform(scale, 0, 0, scale, ox, oy);
     ctx.save();
     return ctx;
@@ -49,8 +49,8 @@ export class Stage {
     const r = this.canvas.getBoundingClientRect();
     const px = (clientX - r.left) * (this.canvas.width / r.width);
     const py = (clientY - r.top) * (this.canvas.height / r.height);
-    const ox = (this.canvas.width - DESIGN_W * this.scale) / 2;
-    const oy = (this.canvas.height - DESIGN_H * this.scale) / 2;
+    const ox = (this.canvas.width - DW * this.scale) / 2;
+    const oy = (this.canvas.height - DH * this.scale) / 2;
     return { x: (px - ox) / this.scale, y: (py - oy) / this.scale };
   }
 }
