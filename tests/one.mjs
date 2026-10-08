@@ -1,0 +1,13 @@
+import { chromium } from 'playwright';
+const T = Number(process.argv[2]);
+const b = await chromium.launch({ args: ['--no-sandbox'] });
+const pg = await b.newPage({ viewport: { width: 1980, height: 1200 }, deviceScaleFactor: 1 });
+await pg.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
+await pg.waitForFunction(() => document.querySelector('#loading')?.classList.contains('gone'), { timeout: 25000 });
+await pg.evaluate(() => { for (const s of ['.bar','.transport','#strip','#exPanel']) { const e=document.querySelector(s); if(e) e.style.display='none'; } window.dispatchEvent(new Event('resize')); });
+await pg.waitForTimeout(500);
+await pg.evaluate(x => window.dispatchEvent(new CustomEvent('seek-test', { detail: x })), T);
+await pg.waitForTimeout(300);
+await pg.locator('#stage').screenshot({ path: `tests/one.png` });
+console.log('بوم:', (await pg.evaluate(()=>{const c=document.querySelector('#stage');return [c.width,c.height]})).join('×'));
+await b.close();

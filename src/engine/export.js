@@ -106,8 +106,8 @@ async function loadAudioSlice(url, from, to) {
 export async function exportVideo({
   song, from = 0, to = 10, audioUrl = null,
   width = W, height = H, fps = FPS,
-  bitrate = 12_000_000, grain = 0.024, onProgress = () => {},
-  signal = null,
+  bitrate = 12_000_000, grain = 0.024, overrides = null,
+  onProgress = () => {}, signal = null,
 } = {}) {
   const t0 = performance.now();
   // ابعاد باید زوج باشند وگرنه انکودر رد می‌کند
@@ -129,6 +129,10 @@ export async function exportVideo({
   stage.resize(width, height);
   const R = new Renderer(stage).setSong(song);
   R.grain = grain;
+  // جابه‌جایی‌های دستی باید در خروجی هم باشند، وگرنه ویدیوی نهایی با
+  // چیزی که در پیش‌نمایش چیده‌اید فرق می‌کند.
+  R.overrides = overrides;
+  R.editMode = false;        // کادرهای ویرایش هرگز در خروجی نمی‌آیند
 
   const target = new ArrayBufferTarget();
   const vc = await pickVideo(bitrate, width, height);

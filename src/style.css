@@ -96,3 +96,7 @@ body{
   border-radius:50%;background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
 .rng::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
   background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
+
+#stage.editing{cursor:grab}
+#stage.editing.dragging{cursor:grabbing}
+.btn.on{background:var(--red);border-color:var(--red);color:#fff}

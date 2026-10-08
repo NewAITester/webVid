@@ -7,6 +7,7 @@ import { Song, SECT, SECTION_NAMES, DUR } from './engine/song.js';
 import { DESIGN_W, DESIGN_H } from './engine/core.js';
 import { exportVideo, canExport, RESOLUTIONS } from './engine/export.js';
 import { saveFile, shareFile } from './engine/save.js';
+import { Overrides } from './engine/overrides.js';
 
 const $ = s => document.querySelector(s);
 const BASE = import.meta.env.BASE_URL;
@@ -16,6 +17,8 @@ const stage  = new Stage(canvas);
 const R      = new Renderer(stage);
 
 let song = null;
+const OV = Overrides.load();
+R.overrides = OV;
 let audio = null;
 let playing = false;
 let t = 0;
@@ -153,6 +156,7 @@ async function boot() {
 
   fit();
   buildStrip();
+  refreshCount();
   draw();
   $('#loading').classList.add('gone');
 
@@ -165,10 +169,92 @@ $('#play').onclick = toggle;
 $('#scrub').oninput = e => { if (playing) pause(); seek(parseFloat(e.target.value)); };
 window.addEventListener('resize', fit);
 window.addEventListener('keydown', e => {
+  // در حالت ویرایش، کلیدهای جهت کلمهٔ انتخاب‌شده را پیکسلی جابه‌جا می‌کنند
+  if (editing && R.selected && e.code.startsWith('Arrow')) {
+    const s = e.shiftKey ? 10 : 1;
+    const d = { ArrowLeft: [-s, 0], ArrowRight: [s, 0], ArrowUp: [0, -s], ArrowDown: [0, s] }[e.code];
+    if (d) { e.preventDefault(); OV.nudge(R.selected, d[0], d[1]); OV.save(); draw(); return; }
+  }
   if (e.code === 'Space') { e.preventDefault(); toggle(); }
   if (e.code === 'ArrowRight') seek(t + (e.shiftKey ? 5 : 1 / 60));
   if (e.code === 'ArrowLeft')  seek(t - (e.shiftKey ? 5 : 1 / 60));
 });
+
+/* ── جابه‌جایی دستی کلمات ────────────────────────────────────── */
+const faN = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+let editing = false, drag = null;
+
+function setEdit(on) {
+  editing = on;
+  R.editMode = on;
+  $('#editBtn').classList.toggle('on', on);
+  $('#edPanel').classList.toggle('hidden', !on);
+  canvas.classList.toggle('editing', on);
+  if (!on) { R.selected = null; drag = null; }
+  draw();
+}
+$('#editBtn').onclick = () => setEdit(!editing);
+
+function refreshCount() {
+  $('#edCount').textContent = faN(OV.count) + ' تغییر';
+  const it = R.selected;
+  $('#edHint').textContent = it
+    ? 'انتخاب‌شده: « ' + (lastPicked?.word || '') + ' » — بکشید یا از دکمه‌ها استفاده کنید'
+    : 'روی یک کلمه بکشید تا جابه‌جا شود';
+}
+
+let lastPicked = null;
+
+function pointerPos(e) {
+  const p = e.touches?.[0] ?? e;
+  return stage.toDesign(p.clientX, p.clientY);
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (!editing) return;
+  const { x, y } = pointerPos(e);
+  const it = R.pickWord(t, x, y);
+  if (!it) { R.selected = null; lastPicked = null; refreshCount(); draw(); return; }
+  R.selected = it.id; lastPicked = it;
+  drag = { id: it.id, x, y };
+  canvas.classList.add('dragging');
+  canvas.setPointerCapture?.(e.pointerId);
+  refreshCount(); draw();
+  e.preventDefault();
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!editing || !drag) return;
+  const { x, y } = pointerPos(e);
+  OV.nudge(drag.id, x - drag.x, y - drag.y);
+  drag.x = x; drag.y = y;
+  draw();
+  e.preventDefault();
+});
+
+function endDrag(e) {
+  if (!drag) return;
+  drag = null;
+  canvas.classList.remove('dragging');
+  OV.save();
+  refreshCount();
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+
+function scaleSel(k) {
+  if (!R.selected) return;
+  const cur = OV.get(R.selected)?.scale ?? 1;
+  OV.setScale(R.selected, cur * k);
+  OV.save(); refreshCount(); draw();
+}
+$('#edBigger').onclick = () => scaleSel(1.08);
+$('#edSmaller').onclick = () => scaleSel(1 / 1.08);
+$('#edReset').onclick = () => { if (R.selected) { OV.clear(R.selected); OV.save(); refreshCount(); draw(); } };
+$('#edResetAll').onclick = () => {
+  if (!OV.count || !confirm('همهٔ جابه‌جایی‌ها پاک شوند؟')) return;
+  OV.clearAll(); OV.save(); R.selected = null; refreshCount(); draw();
+};
 
 /* ── خروجی گرفتن ─────────────────────────────────────────────── */
 const exPanel = $('#exPanel'), exMsg = $('#exMsg'), exBar = $('#exBar');
@@ -264,6 +350,7 @@ $('#exGo').onclick = async () => {
       fps: parseInt($('#exFps').value, 10),
       bitrate: parseInt($('#exBr').value, 10) * 1e6,
       grain: $('#exGrain').checked ? 0.024 : 0,
+      overrides: OV,
       signal: exAbort.signal,
       onProgress: p => {
         fill.style.width = (p.pct * 100).toFixed(1) + '%';
@@ -304,7 +391,8 @@ $('#exGo').onclick = async () => {
 };
 
 window.__studio = {
-  seek, play, pause, draw,
+  seek, play, pause, draw, setEdit,
+  get overrides() { return OV; },
   get time() { return t; },
   get song() { return song; },
   get renderer() { return R; },

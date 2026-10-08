@@ -65,6 +65,7 @@
     <div class="brand">لیریک<span>استودیو</span></div>
     <div class="spacer"></div>
     <div id="fps" class="pill">—</div>
+    <button id="editBtn" class="btn sm">جابه‌جایی کلمات</button>
     <button id="exportBtn" class="btn sm">خروجی</button>
   </header>
 
@@ -102,6 +103,18 @@
     <div id="exBar" class="bar2 hidden"><i></i></div>
     <div id="exEst" class="msg"></div>
     <div id="exMsg" class="msg"></div>
+  </div>
+
+  <div id="edPanel" class="panel hidden">
+    <div class="prow">
+      <span class="dim" id="edHint">روی یک کلمه بکشید تا جابه‌جا شود</span>
+      <div class="spacer"></div>
+      <span class="pill" id="edCount">۰ تغییر</span>
+      <button class="btn sm ghost" id="edSmaller">کوچک‌تر</button>
+      <button class="btn sm ghost" id="edBigger">بزرگ‌تر</button>
+      <button class="btn sm ghost" id="edReset">بازگردانی این کلمه</button>
+      <button class="btn sm ghost" id="edResetAll">بازگردانی همه</button>
+    </div>
   </div>
 
   <main class="stagewrap">

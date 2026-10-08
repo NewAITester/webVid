@@ -3,12 +3,21 @@ import { clamp, rgba, hash2 } from './core.js';
 import { rect } from './draw.js';
 import { particles, furniture, bgText, beatGrid } from './field.js';
 import { drawLyrics } from './lyricbody.js';
-import { STYLE_FN } from './styles.js';
+import { STYLE_FN, sMirror } from './styles.js';
+import { applyOverrides, hitWord } from './overrides.js';
+import { place, modeFor } from './layout.js';
 
 const TEXTUAL = new Set(['verse', 'chorus', 'pre', 'cold']);
 
-/** چقدر هر واحد grain میانگین تصویر را بالا می‌برد (اندازه‌گیری‌شده) */
-const GRAIN_LIFT = 70;
+/** ضریب شدت دانه و میزان بالا بردن میانگین — هر دو اندازه‌گیری‌شده.
+    دانه فقط زیبایی نیست: در گرادیان‌های تیره، باندینگ و بلوک‌های
+    فشرده‌سازی را می‌پوشاند. ضعیف بودنش در خروجی به‌صورت پله و خط
+    دیده می‌شود. */
+const GRAIN_GAIN = 3.2;
+const GRAIN_LIFT = 162;
+
+/** کاشی بزرگ‌تر = تکرار کمتر محسوس. پایتون میدان تصادفی تمام‌قاب داشت. */
+const GRAIN_TILE = 512;
 
 /**
  * رندرر — ترجمهٔ وفادار draw() از full.py
@@ -34,6 +43,9 @@ export class Renderer {
     this.tone = true;        // منحنی تُن نهایی
     this.chroma = 1.0;       // انحراف رنگی، برحسب پیکسل در ۱۹۲۰
     this.soloStyle = null;      // برای تصویر کوچک بخش‌ها
+    this.overrides = null;      // لایهٔ جابه‌جایی دستی
+    this.editMode = false;      // روکش ویرایش (هرگز در خروجی)
+    this.selected = null;       // شناسهٔ کلمهٔ انتخاب‌شده
     this._bloomCanvas = null;
     this._grainTile = null;
   }
@@ -90,12 +102,14 @@ export class Renderer {
         beatGrid(ctx, song, t, kick, 10);
       }
       if (this.showFurniture) furniture(ctx, song, t, acc, invert);
-      drawLyrics(ctx, song, t, style, acc, invert);
+      drawLyrics(ctx, song, t, style, acc, invert, this.overrides);
     } else {
       beatGrid(ctx, song, t, kick, 8);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
-      STYLE_FN[style]?.(ctx, song, t, acc, kick);
+      if (style === 'mirror') sMirror(ctx, song, t, acc, kick, this.overrides);
+      else STYLE_FN[style]?.(ctx, song, t, acc, kick);
     }
+    if (this.editMode) this._editOverlay(ctx, t, style);
     ctx.restore();
 
     /* ۴) فلاش */
@@ -209,16 +223,23 @@ export class Renderer {
        ب) اندازهٔ دانه باید در فضای طراحی ثابت باشد نه پیکسل دستگاه،
           وگرنه روی گوشی درشت‌تر از خروجی ۱۰۸۰p دیده می‌شود. */
     if (this.grain > 0.001) {
-      if (!this._grainTile) this._grainTile = makeGrain(256);
+      if (!this._grainTile) this._grainTile = makeGrain(GRAIN_TILE);
       const f = Math.floor(t * 60);
-      const k = w / W;
       ctx.save();
-      ctx.globalAlpha = Math.min(1, this.grain * 2.3);
+      ctx.globalAlpha = Math.min(1, this.grain * GRAIN_GAIN);
       ctx.globalCompositeOperation = 'lighter';
-      ctx.scale(k, k);
-      ctx.translate(-((hash2(f, 1) * 256) | 0), -((hash2(f, 2) * 256) | 0));
+      /* کاشی را عمداً مقیاس نمی‌دهیم.
+         قبلاً با ضریب w/W مقیاس می‌خورد (مثلاً ۱٫۰۲۳) و چون این عدد
+         کسری است، مرز هر کاشی درون‌یابی می‌شد و یک خط عمودی نازک
+         هر ۲۵۶ پیکسل می‌ساخت — همان «خط بین دو حرف» که روی شبح
+         دیده می‌شد. حالا یک‌به‌یک روی پیکسل بوم کشیده می‌شود و
+         جابه‌جایی هم عدد صحیح است، پس هیچ درون‌یابی‌ای رخ نمی‌دهد.
+         اندازهٔ ظاهری دانه حداکثر ۲٪ فرق می‌کند که دیده نمی‌شود،
+         و در خروجی ۱۹۲۰ دقیقاً یک‌به‌یک است. */
+      ctx.imageSmoothingEnabled = false;
+      ctx.translate(-((hash2(f, 1) * GRAIN_TILE) | 0), -((hash2(f, 2) * GRAIN_TILE) | 0));
       ctx.fillStyle = ctx.createPattern(this._grainTile, 'repeat');
-      ctx.fillRect(0, 0, w / k + 256, h / k + 256);
+      ctx.fillRect(0, 0, w + GRAIN_TILE, h + GRAIN_TILE);
       ctx.restore();
 
       /* جبران میانگین دانه.
@@ -230,7 +251,9 @@ export class Renderer {
          کم می‌شود: |dst - c| برای dst > c یعنی تفریق. */
       const lift = this.grain * GRAIN_LIFT;
       if (lift > 0.02) {
-        const c = 4;
+        // c باید کوچک بماند: difference فقط برای پیکسل‌های روشن‌تر از c
+        // تفریق واقعی است، و زمینهٔ ما حدود ۸ است.
+        const c = Math.max(3, Math.ceil(lift));
         ctx.save();
         ctx.globalCompositeOperation = 'difference';
         ctx.globalAlpha = Math.min(1, lift / c);
@@ -239,6 +262,53 @@ export class Renderer {
         ctx.restore();
       }
     }
+  }
+
+  /**
+   * کلمات قابل ویرایش در لحظهٔ t.
+   * همان منطق رندر است، فقط بدون کشیدن — تا کادرها دقیقاً سر جای
+   * واقعی کلمات بیفتند و درگ با چیزی که می‌بینید بخواند.
+   */
+  wordsAt(t) {
+    const song = this.song;
+    if (!song) return [];
+    const [, , style] = this.soloStyle ?? this.sectionAt(t);
+    const ctx = this.stage.ctx;
+    const out = [];
+    if (TEXTUAL.has(style)) {
+      const cur = song.activeLine(t);
+      if (cur < 0) return [];
+      for (const li of [cur - 1, cur]) {
+        if (li < 0) continue;
+        if (t < song.lineStart(li) - 0.2 || t > song.lineOut(li) + 0.2) continue;
+        const line = song.lines[li];
+        out.push(...applyOverrides(place(ctx, line, modeFor(line, style)), this.overrides));
+      }
+    } else if (style === 'mirror') {
+      const cur = song.activeLine(t);
+      if (cur < 0) return [];
+      out.push(...applyOverrides(place(ctx, song.lines[cur], 'giant'), this.overrides));
+    }
+    return out;
+  }
+
+  /** کدام کلمه زیر نقطهٔ (px,py) در فضای طراحی است */
+  pickWord(t, px, py) { return hitWord(this.wordsAt(t), px, py); }
+
+  /** کادر دور کلمات — فقط در حالت ویرایش، هرگز در خروجی */
+  _editOverlay(ctx, t) {
+    ctx.save();
+    ctx.setLineDash([7, 6]);
+    for (const it of this.wordsAt(t)) {
+      const hw = (it.w || it.size) / 2 + 10;
+      const hh = it.size * 0.62 + 8;
+      const on = this.selected === it.id;
+      ctx.strokeStyle = on ? '#E4142A'
+        : it.moved ? 'rgba(228,20,42,0.55)' : 'rgba(154,160,172,0.45)';
+      ctx.lineWidth = on ? 3 : 2;
+      ctx.strokeRect(it.cx - hw, it.cy - hh, hw * 2, hh * 2);
+    }
+    ctx.restore();
   }
 
   _scratch(key, w, h) {

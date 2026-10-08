@@ -4,6 +4,7 @@ import { rect, line, ring, textFa, textMono, outlineTextFa, wordDraw } from './d
 import { fitFa, place } from './layout.js';
 import { particles } from './field.js';
 import { FONTS } from './text.js';
+import { applyOverrides } from './overrides.js';
 
 /**
  * پنج سبک بخشِ بی‌کلام + تیتراژ و کارت پایان
@@ -82,11 +83,11 @@ export function sInstC(ctx, song, t, acc, kick) {
 }
 
 /** آینه: هر خط با بازتاب وارونه‌اش زیرش */
-export function sMirror(ctx, song, t, acc, kick) {
+export function sMirror(ctx, song, t, acc, kick, ov = null) {
   const cur = song.activeLine(t);
   if (cur < 0) return;
   const lineObj = song.lines[cur];
-  const items = place(ctx, lineObj, 'giant');
+  const items = applyOverrides(place(ctx, lineObj, 'giant'), ov);
   const start = song.lineStart(cur), out = song.lineOut(cur);
   const a = clamp((t - (start - 0.2)) / 0.3) * (1 - clamp((t - out) / 0.5));
   if (a <= 0.01) return;

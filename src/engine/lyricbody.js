@@ -4,6 +4,7 @@ import { place, modeFor, fitFa } from './layout.js';
 import { wordDraw, textFa } from './draw.js';
 import { textPoints } from './glyphs.js';
 import { FONTS } from './text.js';
+import { applyOverrides } from './overrides.js';
 
 /**
  * رندر بدنهٔ شعر — ترجمهٔ وفادار draw_lyrics
@@ -49,7 +50,7 @@ function shatter(ctx, song, line, mode, t, tSh, acc) {
   return true;
 }
 
-export function drawLyrics(ctx, song, t, style, acc, invert = false) {
+export function drawLyrics(ctx, song, t, style, acc, invert = false, ov = null) {
   const cur = song.activeLine(t);
   if (cur < 0) return;
 
@@ -67,7 +68,7 @@ export function drawLyrics(ctx, song, t, style, acc, invert = false) {
     const a = aIn * (1 - clamp((t - out) / 0.16));
     if (a <= 0.01) continue;
 
-    const items = place(ctx, line, mode);
+    const items = applyOverrides(place(ctx, line, mode), ov);
 
     // در کرس، کلمهٔ کلیدی به‌صورت یک شبح غول‌پیکر پشت متن می‌آید
     if (style === 'chorus' && li === cur) {

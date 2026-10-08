@@ -56,7 +56,7 @@ export function rowLayout(ctx, words, maxw, cap, key = ['', 1.0]) {
   let x = W / 2 + (wd.reduce((a, b) => a + b, 0) + space * (words.length - 1)) / 2;
   const items = [];
   for (let i = 0; i < words.length; i++) {
-    items.push({ word: words[i], cx: x - wd[i] / 2, size: size * sc[i] });
+    items.push({ word: words[i], cx: x - wd[i] / 2, size: size * sc[i], w: wd[i] });
     x -= wd[i] + space;
   }
   const out = { items, size };
@@ -112,7 +112,7 @@ export function place(ctx, line, mode) {
       const y = H * 0.50 + (ri - 0.5) * s0 * 1.34;
       items.forEach((it, k) => out.push({
         word: it.word, t: tt[ri][k], id: ii[ri][k],
-        cx: it.cx, cy: y, size: it.size, key: it.word === kw,
+        cx: it.cx, cy: y, size: it.size, w: it.w, key: it.word === kw,
       }));
     }
   } else {
@@ -120,7 +120,7 @@ export function place(ctx, line, mode) {
     const { items } = rowLayout(ctx, words, 1700, cap, key);
     items.forEach((it, k) => out.push({
       word: it.word, t: times[k], id: ids[k],
-      cx: it.cx, cy: H * 0.50, size: it.size, key: it.word === kw,
+      cx: it.cx, cy: H * 0.50, size: it.size, w: it.w, key: it.word === kw,
     }));
   }
 
