@@ -31,9 +31,9 @@ export function demoProject() {
     name: 'نقاب — زروان اکو',
     w: 1920, h: 1080, fps: 60,
     duration: 228.6,
-    audio: '/data/Neghab.mp3',
-    lyricsUrl: '/data/lyrics.lrc',
-    analysisUrl: '/data/analysis.json',
+    audio: `${import.meta.env.BASE_URL}data/Neghab.mp3`,
+    lyricsUrl: `${import.meta.env.BASE_URL}data/lyrics.lrc`,
+    analysisUrl: `${import.meta.env.BASE_URL}data/analysis.json`,
 
     layers: [
       { id: 'bg', effect: 'backdrop', params: {} },

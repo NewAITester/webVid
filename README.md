@@ -25,8 +25,26 @@
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # خروجی در dist/
-node tests/engine.test.mjs
+
+node tests/engine.test.mjs     # ۲۴ تست منطق موتور
+
+# تست‌های تصویری (یک‌بار نصب مرورگر لازم است)
+npx playwright install chromium
+node tests/shot.mjs 16.8 44.9  # اسکرین‌شات در لحظه‌های دلخواه
+node tests/dbg.mjs             # وضعیت داخلی موتور در یک لحظه
 ```
+
+## انتشار
+
+ورک‌فلو `.github/workflows/web.yml` در هر پوش به `main` بیلد می‌گیرد،
+تست‌ها را اجرا می‌کند و خروجی را به‌عنوان artifact می‌گذارد.
+
+برای داشتن آدرس زنده:
+۱. ریپو را **public** کنید (روی پلن رایگان، Pages فقط برای ریپوی عمومی کار می‌کند)
+۲. Settings ← Pages ← Source: **GitHub Actions**
+
+مسیرها نسبی‌اند (`base: './'`)، پس هم روی زیرمسیر `/webVid/` درست کار
+می‌کنند و هم بعداً داخل WebView که از `file://` لود می‌شود.
 
 ## معماری
 

@@ -14,9 +14,10 @@ export const FONTS = {
 
 /** فونت‌ها را قبل از اولین رندر لود می‌کند */
 export async function loadFonts() {
+  const B = import.meta.env.BASE_URL;
   const defs = [
-    [FONTS.black, '/fonts/IRANSansX-Black.ttf'],
-    [FONTS.bold,  '/fonts/IRANSansX-Bold.ttf'],
+    [FONTS.black, `${B}fonts/IRANSansX-Black.ttf`],
+    [FONTS.bold,  `${B}fonts/IRANSansX-Bold.ttf`],
   ];
   await Promise.all(defs.map(async ([name, url]) => {
     const f = new FontFace(name, `url(${url})`);

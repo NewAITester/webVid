@@ -1,0 +1,13 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch({ args: ['--no-sandbox'] });
+const pg = await b.newPage({ viewport: { width: 1280, height: 860 } });
+const bad = [];
+pg.on('pageerror', e => bad.push('PAGEERROR: ' + e.message));
+pg.on('response', r => { if (r.status() >= 400) bad.push(`${r.status()} ${r.url()}`); });
+await pg.goto('http://localhost:8099/webVid/', { waitUntil: 'networkidle' });
+await pg.waitForFunction(() => document.querySelector('#loading')?.classList.contains('gone'), { timeout: 20000 });
+await pg.evaluate(() => window.dispatchEvent(new CustomEvent('seek-test', { detail: 16.8 })));
+await pg.waitForTimeout(400);
+await pg.screenshot({ path: '/home/user/lyricstudio/tests/pages.png' });
+console.log(bad.length ? '❌ مشکلات:\n' + bad.join('\n') : '✅ بیلد پروداکشن روی زیرمسیر بدون هیچ خطا و ۴۰۴ اجرا شد');
+await b.close();
