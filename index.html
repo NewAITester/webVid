@@ -90,6 +90,7 @@
     <button id="zOut" class="icon sm">−</button>
     <button id="zIn" class="icon sm">+</button>
     <button id="secAdd" class="icon sm" title="بخش تازه">＋▦</button>
+    <button id="txtAdd" class="icon sm" title="متن تازه">＋T</button>
   </section>
 
   <div class="tlwrap">
@@ -100,16 +101,18 @@
   <div id="clipBar" class="clipbar hidden">
     <div class="cinfo"><b id="cbName">—</b><span id="cbTime"></span></div>
     <div class="spacer"></div>
-    <button class="cb" data-act="fx"><i>✦</i><b>افکت</b></button>
-    <button class="cb" data-act="color"><i>◐</i><b>رنگ</b></button>
-    <button class="cb" data-act="setA"><i>⇤</i><b>شروع اینجا</b></button>
-    <button class="cb" data-act="setB"><i>⇥</i><b>پایان اینجا</b></button>
-    <button class="cb" data-act="split"><i>⁄</i><b>تقسیم</b></button>
-    <button class="cb" data-act="del"><i>🗑</i><b>حذف</b></button>
-    <button class="cb" data-act="close"><i>✕</i><b>بستن</b></button>
+    <div id="cbActs" class="cbacts"></div>
   </div>
 
   <div class="panes" id="panes">
+
+    <!-- تنظیمات کلیپ -->
+    <section class="pane" data-pane="clip">
+      <div class="phead" id="clHead">تنظیمات<div class="spacer"></div>
+        <button id="clAll" class="btn sm ghost">اعمال روی همه</button>
+        <button id="clClear" class="btn sm ghost">پیش‌فرض</button></div>
+      <div id="clBody" class="form"></div>
+    </section>
 
     <!-- شعر -->
     <section class="pane" data-pane="lyrics">

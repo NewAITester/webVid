@@ -107,7 +107,7 @@ export async function exportVideo({
   song, from = 0, to = 10, audioUrl = null,
   width = W, height = H, fps = FPS,
   bitrate = 12_000_000, grain = 0.024, overrides = null,
-  sections = null, look = null, customSet = null,
+  sections = null, look = null, customSet = null, lineFx = null, texts = null,
   onProgress = () => {}, signal = null,
 } = {}) {
   const t0 = performance.now();
@@ -138,6 +138,8 @@ export async function exportVideo({
   // چیزی که در پیش‌نمایش چیده‌اید فرق می‌کند.
   if (sections) R.sections = sections;
   R.customSet = customSet;
+  R.lineFx = lineFx || {};
+  R.texts = texts || [];
   if (look) {
     R.bloom = look.bloom ?? R.bloom;
     R.chroma = look.chroma ?? R.chroma;

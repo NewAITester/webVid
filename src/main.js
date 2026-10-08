@@ -13,6 +13,7 @@ import { Overrides } from './engine/overrides.js';
 import { analyzeBuffer, decodeAudioFile } from './engine/analyze.js';
 import { Library, autoSections, plainToLines } from './engine/library.js';
 import { Timeline } from './ui/timeline.js';
+import { newText, TEXT_ANIM, layerBox } from './engine/textlayers.js';
 import { CustomSet, DEFAULT_CODE, SNIPPETS } from './engine/custom.js';
 import { LESSONS, CATEGORIES } from './engine/learn.js';
 import { TEXT_FX } from './engine/textfx.js';
@@ -56,6 +57,10 @@ let look = DEFAULT_LOOK();
 const OV = new Overrides({});
 R.overrides = OV;
 
+let lineFx = {};              // تنظیمات جداگانهٔ هر خط شعر
+let texts = [];               // لایه‌های متن آزاد
+R.lineFx = lineFx; R.texts = texts;
+
 const CSET = new CustomSet();
 R.customSet = CSET;
 let cfIdx = 0;                 // افکت سفارشی در حال ویرایش
@@ -74,7 +79,8 @@ let saveTimer = 0;
 function saveState() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
-    const payload = { look, overrides: OV.map, sections: R.sections, custom: CSET.toJSON() };
+    const payload = { look, overrides: OV.map, sections: R.sections,
+      custom: CSET.toJSON(), lineFx, texts };
     if (app.projectId === '__demo') {
       try { localStorage.setItem(DEMO_KEY, JSON.stringify(payload)); } catch {}
       return;
@@ -185,6 +191,7 @@ function go(name) {
   if (name === 'look') syncLook();
   if (name === 'words') refreshCount();
   if (name === 'code') syncCode();
+  if (name === 'clip') buildClipPanel();
   if (name === 'lyrics') syncLyricsPane();
   if (name === 'fx') { buildFxCats(); buildFxGrid(); buildCfList(); }
 }
@@ -265,8 +272,10 @@ const TL = new Timeline(document.getElementById('tl'), {
   getTime: () => app.t,
   getDuration: () => app.duration,
   seek: v => seek(v),
+  getTexts: () => texts,
+  getLineFx: () => lineFx,
   label: id => styleLabel(id),
-  onSelect: i => showClipBar(i),
+  onSelect: p => showClipBar(p),
   onChange: (done) => { if (done) { sortSections(); saveState(); buildStrip(); } draw(); },
 });
 const buildSecList = () => { TL.draw(); showClipBar(TL.sel); };
@@ -278,50 +287,259 @@ function sortSections() {
   TL.draw();
 }
 
-function showClipBar(i) {
-  const bar = $('#clipBar');
-  const s = sections()[i];
-  if (!s) { bar.classList.add('hidden'); return; }
-  bar.classList.remove('hidden');
-  $('#cbName').textContent = styleLabel(s[2]);
-  $('#cbTime').textContent = `${s[0].toFixed(1)} – ${s[1].toFixed(1)}s · ${(s[1]-s[0]).toFixed(1)}s`;
+const ACTS = {
+  section: [['fx','✦','افکت'],['color','◐','رنگ'],['setA','⇤','شروع اینجا'],
+            ['setB','⇥','پایان اینجا'],['split','⁄','تقسیم'],['del','🗑','حذف'],['close','✕','بستن']],
+  line:    [['opts','⚙','تنظیمات'],['fx','✦','افکت'],['all','⇈','روی همه'],
+            ['clear','↺','پیش‌فرض'],['close','✕','بستن']],
+  text:    [['opts','⚙','تنظیمات'],['setA','⇤','شروع اینجا'],['setB','⇥','پایان اینجا'],
+            ['dup','⧉','تکثیر'],['del','🗑','حذف'],['close','✕','بستن']],
+};
+
+function curPick() { return TL.pick; }
+function pickedText() {
+  const p = TL.pick;
+  return p?.kind === 'text' ? texts.find(x => x.id === p.id) : null;
 }
 
-$$('#clipBar .cb').forEach(b => {
-  b.onclick = () => {
-    const i = TL.sel, s = sections()[i];
-    switch (b.dataset.act) {
-      case 'close': TL.select(-1); break;
-      case 'fx': go('fx'); break;
-      case 'color': go('look'); setTimeout(() => $('#lkAccent').click(), 60); break;
-      case 'setA':
-        if (!s || app.t >= s[1] - 0.4) return;
-        s[0] = +app.t.toFixed(2);
-        saveState(); sortSections(); buildStrip(); showClipBar(TL.sel); draw();
-        break;
-      case 'setB':
-        if (!s || app.t <= s[0] + 0.4) return;
-        s[1] = +Math.min(app.t, app.duration).toFixed(2);
-        saveState(); sortSections(); buildStrip(); showClipBar(TL.sel); draw();
-        break;
-      case 'split': {
-        if (!s || app.t <= s[0] + 0.4 || app.t >= s[1] - 0.4) return;
-        const nu = [+app.t.toFixed(2), s[1], s[2], s[3]];
-        s[1] = +app.t.toFixed(2);
-        sections().splice(i + 1, 0, nu);
-        saveState(); sortSections(); buildStrip(); draw();
-        break;
-      }
-      case 'del': {
-        if (!s || sections().length <= 1) return;
-        sections().splice(i, 1);
-        TL.sel = -1; showClipBar(-1);
-        saveState(); TL.draw(); buildStrip(); draw();
-        break;
-      }
+function showClipBar(p) {
+  const bar = $('#clipBar');
+  R.selText = p?.kind === 'text' ? p.id : null;
+  if (!p) { bar.classList.add('hidden'); if (app.pane === 'clip') go('lyrics'); draw(); return; }
+  bar.classList.remove('hidden');
+
+  let name = '', time = '';
+  if (p.kind === 'section') {
+    const s = sections()[p.i]; if (!s) { bar.classList.add('hidden'); return; }
+    name = styleLabel(s[2]); time = `${s[0].toFixed(1)} – ${s[1].toFixed(1)}s · ${(s[1]-s[0]).toFixed(1)}s`;
+  } else if (p.kind === 'line') {
+    const L = app.song?.lines[p.i]; if (!L) { bar.classList.add('hidden'); return; }
+    name = L.text.slice(0, 18) + (L.text.length > 18 ? '…' : '');
+    time = `خط ${faN(p.i + 1)}` + (lineFx[p.i] ? ' · تنظیم‌شده' : '');
+  } else {
+    const L = pickedText(); if (!L) { bar.classList.add('hidden'); return; }
+    name = (L.text || 'متن').slice(0, 18);
+    time = `${L.t0.toFixed(1)} – ${L.t1.toFixed(1)}s`;
+  }
+  $('#cbName').textContent = name;
+  $('#cbTime').textContent = time;
+
+  const host = $('#cbActs');
+  host.innerHTML = '';
+  for (const [act, ic, lb] of ACTS[p.kind]) {
+    const b = document.createElement('button');
+    b.className = 'cb'; b.dataset.act = act;
+    b.innerHTML = `<i></i><b></b>`;
+    b.querySelector('i').textContent = ic;
+    b.querySelector('b').textContent = lb;
+    b.onclick = () => clipAct(act);
+    host.append(b);
+  }
+  if (app.pane === 'clip') buildClipPanel();
+  draw();
+}
+
+function clipAct(act) {
+  const p = TL.pick; if (!p) return;
+  const s = p.kind === 'section' ? sections()[p.i] : null;
+  const L = pickedText();
+  switch (act) {
+    case 'close': TL.choose(null); break;
+    case 'opts': go('clip'); break;
+    case 'fx':
+      if (p.kind === 'line') { go('clip'); }
+      else go('fx');
+      break;
+    case 'color': go('look'); break;
+    case 'all': {
+      const src = lineFx[p.i];
+      if (!src) return;
+      for (const l of app.song.lines) lineFx[l.i] = JSON.parse(JSON.stringify(src));
+      saveState(); TL.draw(); draw();
+      break;
     }
-  };
-});
+    case 'clear': delete lineFx[p.i]; saveState(); TL.draw(); draw(); buildClipPanel(); break;
+    case 'setA':
+      if (s) { if (app.t < s[1] - 0.4) { s[0] = +app.t.toFixed(2); sortSections(); } }
+      else if (L && app.t < L.t1 - 0.3) L.t0 = +app.t.toFixed(2);
+      saveState(); TL.draw(); showClipBar(p); draw(); break;
+    case 'setB':
+      if (s) { if (app.t > s[0] + 0.4) { s[1] = +app.t.toFixed(2); sortSections(); } }
+      else if (L && app.t > L.t0 + 0.3) L.t1 = +app.t.toFixed(2);
+      saveState(); TL.draw(); showClipBar(p); draw(); break;
+    case 'split': {
+      if (!s || app.t <= s[0] + 0.4 || app.t >= s[1] - 0.4) return;
+      sections().splice(p.i + 1, 0, [+app.t.toFixed(2), s[1], s[2], s[3]]);
+      s[1] = +app.t.toFixed(2);
+      saveState(); sortSections(); buildStrip(); draw(); break;
+    }
+    case 'dup': {
+      if (!L) return;
+      const n = JSON.parse(JSON.stringify(L));
+      n.id = newText(0).id; n.t0 = L.t1; n.t1 = L.t1 + (L.t1 - L.t0);
+      texts.push(n); saveState(); TL.choose({ kind: 'text', id: n.id }); break;
+    }
+    case 'del': {
+      if (s && sections().length > 1) { sections().splice(p.i, 1); }
+      else if (L) { const i = texts.indexOf(L); if (i >= 0) texts.splice(i, 1); }
+      TL.choose(null); saveState(); TL.draw(); buildStrip(); draw(); break;
+    }
+  }
+}
+
+/* ── پنل تنظیمات کلیپ ─────────────────────────────────────
+   هر نوع کلیپ تنظیمات خودش را می‌گیرد — همان الگوی CapCut که
+   با انتخاب هر چیز، پنل مربوط به همان ظاهر می‌شود. */
+function row(label, el, valEl) {
+  const d = document.createElement('div');
+  d.className = 'ctl';
+  const l = document.createElement('label'); l.textContent = label;
+  d.append(l, el);
+  if (valEl) d.append(valEl);
+  return d;
+}
+function slider(min, max, step, val, fmt, on) {
+  const i = document.createElement('input');
+  i.type = 'range'; i.className = 'rng';
+  i.min = min; i.max = max; i.step = step; i.value = val;
+  const v = document.createElement('span');
+  v.className = 'v'; v.textContent = fmt(val);
+  i.oninput = () => { v.textContent = fmt(+i.value); on(+i.value); };
+  return [i, v];
+}
+
+function buildClipPanel() {
+  const host = $('#clBody');
+  host.innerHTML = '';
+  const p = TL.pick;
+  if (!p) { $('#clHead').firstChild.textContent = 'تنظیمات'; return; }
+
+  if (p.kind === 'line') {
+    $('#clHead').firstChild.textContent = `خط ${faN(p.i + 1)}`;
+    const fx = lineFx[p.i] || (lineFx[p.i] = {});
+    const upd = () => { saveState(); TL.draw(); draw(); };
+
+    // گالری افکت کوچک، مخصوص همین خط
+    const g = document.createElement('div');
+    g.className = 'fxmini';
+    const cur = fx.style || sections()[curSecIndex()]?.[2];
+    for (const id of Object.values(FX_CATS).flat().concat(CSET.styles().map(x => x.id))) {
+      const c = document.createElement('div');
+      c.className = 'fxcard' + (id === cur ? ' on' : '');
+      const lb = document.createElement('div');
+      lb.className = 'fl'; lb.textContent = styleLabel(id);
+      c.append(lb);
+      c.onclick = () => { fx.style = id; upd(); buildClipPanel(); };
+      g.append(c);
+    }
+    host.append(g);
+
+    const ac = document.createElement('input');
+    ac.type = 'color'; ac.value = fx.accent || sections()[curSecIndex()]?.[3] || C.CRIMSON;
+    ac.oninput = () => { fx.accent = ac.value; upd(); };
+    host.append(row('رنگ', ac));
+
+    host.append(row('اندازه', ...slider(50, 200, 1, Math.round((fx.scale ?? 1) * 100),
+      v => v + '٪', v => { fx.scale = v / 100; upd(); })));
+    host.append(row('شفافیت', ...slider(10, 100, 1, Math.round((fx.opacity ?? 1) * 100),
+      v => v + '٪', v => { fx.opacity = v / 100; upd(); })));
+    host.append(row('افقی', ...slider(-400, 400, 2, fx.dx || 0,
+      v => String(v), v => { fx.dx = v; upd(); })));
+    host.append(row('عمودی', ...slider(-400, 400, 2, fx.dy || 0,
+      v => String(v), v => { fx.dy = v; upd(); })));
+    return;
+  }
+
+  if (p.kind === 'text') {
+    const L = pickedText(); if (!L) return;
+    $('#clHead').firstChild.textContent = 'متن';
+    const upd = () => { saveState(); TL.draw(); draw(); };
+
+    const ta = document.createElement('input');
+    ta.type = 'text'; ta.className = 'txt'; ta.value = L.text;
+    ta.oninput = () => { L.text = ta.value; upd(); showClipBar(p); };
+    host.append(row('متن', ta));
+
+    const col = document.createElement('input');
+    col.type = 'color'; col.value = L.color;
+    col.oninput = () => { L.color = col.value; upd(); };
+    host.append(row('رنگ', col));
+
+    host.append(row('اندازه', ...slider(20, 300, 2, L.size, v => String(v), v => { L.size = v; upd(); })));
+    host.append(row('شفافیت', ...slider(10, 100, 1, Math.round(L.opacity * 100),
+      v => v + '٪', v => { L.opacity = v / 100; upd(); })));
+    host.append(row('چرخش', ...slider(-45, 45, 1, L.rot, v => v + '°', v => { L.rot = v; upd(); })));
+    host.append(row('افقی', ...slider(0, 100, 1, Math.round(L.x * 100),
+      v => v + '٪', v => { L.x = v / 100; upd(); })));
+    host.append(row('عمودی', ...slider(0, 100, 1, Math.round(L.y * 100),
+      v => v + '٪', v => { L.y = v / 100; upd(); })));
+
+    const sel = document.createElement('select');
+    for (const [k, o] of Object.entries(TEXT_ANIM)) {
+      const op = document.createElement('option');
+      op.value = k; op.textContent = o.label;
+      if (k === L.anim) op.selected = true;
+      sel.append(op);
+    }
+    sel.onchange = () => { L.anim = sel.value; upd(); };
+    host.append(row('ورود', sel));
+
+    host.append(row('مدت ورود', ...slider(10, 150, 5, Math.round(L.dur * 100),
+      v => (v / 100).toFixed(2), v => { L.dur = v / 100; upd(); })));
+
+    const bo = document.createElement('label');
+    bo.style.fontSize = '12px';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = L.bold;
+    cb.onchange = () => { L.bold = cb.checked; upd(); };
+    bo.append(cb, document.createTextNode(' ضخیم'));
+    const ou = document.createElement('label');
+    ou.style.fontSize = '12px';
+    const cb2 = document.createElement('input');
+    cb2.type = 'checkbox'; cb2.checked = L.outline;
+    cb2.onchange = () => { L.outline = cb2.checked; upd(); };
+    ou.append(cb2, document.createTextNode(' توخالی'));
+    const r = document.createElement('div'); r.className = 'frow';
+    r.append(bo, ou); host.append(r);
+    return;
+  }
+
+  // بخش
+  $('#clHead').firstChild.textContent = 'بخش';
+  const s = sections()[p.i]; if (!s) return;
+  const ac = document.createElement('input');
+  ac.type = 'color'; ac.value = s[3] || C.CRIMSON;
+  ac.oninput = () => { s[3] = ac.value; look.accents[p.i] = ac.value; saveState(); TL.draw(); draw(); };
+  host.append(row('رنگ تأکید', ac));
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.textContent = 'برای تغییر افکت این بخش، دکمهٔ «افکت» را بزنید.';
+  host.append(note);
+}
+
+$('#clAll').onclick = () => {
+  const p = TL.pick;
+  if (p?.kind === 'line' && lineFx[p.i]) {
+    for (const l of app.song.lines) lineFx[l.i] = JSON.parse(JSON.stringify(lineFx[p.i]));
+    saveState(); TL.draw(); draw();
+  } else if (p?.kind === 'section') {
+    const st = sections()[p.i][2];
+    for (const x of sections()) x[2] = st;
+    saveState(); TL.draw(); buildStrip(); draw();
+  }
+};
+$('#clClear').onclick = () => {
+  const p = TL.pick;
+  if (p?.kind === 'line') { delete lineFx[p.i]; saveState(); TL.draw(); draw(); buildClipPanel(); }
+};
+
+$('#txtAdd').onclick = () => {
+  const L = newText(app.t, Math.min(4, Math.max(1.5, app.duration - app.t)));
+  texts.push(L);
+  saveState();
+  TL.choose({ kind: 'text', id: L.id });
+  go('clip');
+};
 
 $('#zIn').onclick = () => TL.setZoom(1.5);
 /* جا دادن: بخش انتخاب‌شده را کامل در صفحه می‌آورد تا دستگیره‌هایش
@@ -392,7 +610,20 @@ function refreshCount() {
 }
 const pos = e => stage.toDesign((e.touches?.[0] ?? e).clientX, (e.touches?.[0] ?? e).clientY);
 
+/* کشیدن لایهٔ متن روی خود بوم — مثل CapCut */
+let txDrag = null;
 canvas.addEventListener('pointerdown', e => {
+  if (TL.pick?.kind === 'text') {
+    const { x, y } = pos(e);
+    const L = pickedText();
+    if (L) {
+      const b = layerBox(stage.ctx, L);
+      if (Math.abs(x - b.cx) < b.w / 2 + 30 && Math.abs(y - b.cy) < b.h / 2 + 20) {
+        txDrag = { L, x, y }; canvas.setPointerCapture?.(e.pointerId);
+        e.preventDefault(); return;
+      }
+    }
+  }
   if (app.pane !== 'words') return;
   const { x, y } = pos(e);
   const it = R.pickWord(app.t, x, y);
@@ -404,13 +635,23 @@ canvas.addEventListener('pointerdown', e => {
   refreshCount(); draw(); e.preventDefault();
 });
 canvas.addEventListener('pointermove', e => {
+  if (txDrag) {
+    const { x, y } = pos(e);
+    const { W: dw, H: dh } = stageDims();
+    txDrag.L.x = clampN((txDrag.L.x * dw + (x - txDrag.x)) / dw, 0, 1);
+    txDrag.L.y = clampN((txDrag.L.y * dh + (y - txDrag.y)) / dh, 0, 1);
+    txDrag.x = x; txDrag.y = y;
+    draw(); e.preventDefault(); return;
+  }
   if (!drag) return;
   const { x, y } = pos(e);
   OV.nudge(drag.id, x - drag.x, y - drag.y);
   drag.x = x; drag.y = y;
   draw(); e.preventDefault();
 });
-const endDrag = () => { if (!drag) return; drag = null; canvas.classList.remove('dragging'); OV.save(); refreshCount(); };
+const endDrag = () => {
+  if (txDrag) { txDrag = null; saveState(); buildClipPanel(); return; }
+  if (!drag) return; drag = null; canvas.classList.remove('dragging'); OV.save(); refreshCount(); };
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 
@@ -528,6 +769,9 @@ async function openProject(id) {
     if (st.sections?.length) R.sections = st.sections.map(x => x.slice());
     CSET.load(st.custom || (st.code ? [{ name: 'افکت من', code: st.code }] : null));
     cfIdx = 0;
+    lineFx = JSON.parse(JSON.stringify(st.lineFx || {}));
+    texts = JSON.parse(JSON.stringify(st.texts || []));
+    R.lineFx = lineFx; R.texts = texts; R.selText = null;
   }
   R.selected = null; lastPicked = null;
   R.setSong(app.song);
@@ -582,7 +826,7 @@ $('#nwGo').onclick = async () => {
     tg: ($('#nwTg').value || '').trim(),
     aspect: newAspect,
     audio: null, lrc: '', analysis: null, duration: 0, sections: null,
-    look: DEFAULT_LOOK(), overrides: {}, custom: null,
+    look: DEFAULT_LOOK(), overrides: {}, custom: null, lineFx: {}, texts: [],
     createdAt: Date.now(),
   };
   await Library.put(proj);
@@ -761,6 +1005,7 @@ $('#exGo').onclick = async () => {
       fps: parseInt($('#exFps').value, 10),
       bitrate: parseInt($('#exBr').value, 10) * 1e6,
       grain: look.grain, overrides: OV, sections: R.sections, customSet: CSET,
+      lineFx, texts,
       look,
       signal: exAbort.signal,
       onProgress: p => {
@@ -1150,6 +1395,8 @@ window.__studio = {
   get time() { return app.t; },
   get renderer() { return R; },
   get tl() { return TL; },
+  get lineFx() { return lineFx; },
+  get texts() { return texts; },
   get overrides() { return OV; },
   get look() { return look; },
   exportVideo, canExport,

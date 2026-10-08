@@ -9,6 +9,7 @@ import { TEXT_FX2 } from './textfx2.js';
 
 const ALLFX = { ...TEXT_FX, ...TEXT_FX2 };
 import { applyOverrides, hitWord } from './overrides.js';
+import { drawLayers, hitLayer, outlineLayer } from './textlayers.js';
 import { place, modeFor } from './layout.js';
 
 const TEXTUAL = new Set(['verse', 'chorus', 'pre', 'cold']);
@@ -52,6 +53,9 @@ export class Renderer {
     this.selected = null;       // شناسهٔ کلمهٔ انتخاب‌شده
     this.sections = null;       // جدول بخش سفارشی (برای آهنگ وارد‌شده)
     this.customSet = null;      // مجموعهٔ افکت‌های سفارشی
+    this.lineFx = {};           // تنظیمات جداگانهٔ هر خط شعر
+    this.texts = [];            // لایه‌های متن آزاد
+    this.selText = null;        // شناسهٔ لایهٔ متن انتخاب‌شده
     this._bloomCanvas = null;
     this._grainTile = null;
   }
@@ -71,8 +75,17 @@ export class Renderer {
     if (!song) { this.stage.end(); return null; }
 
     const sec = this.soloStyle ?? this.sectionAt(t);
-    const [, , style, acc] = sec;
+    let [, , style, acc] = sec;
     const kick = song.kick(t);
+
+    /* تنظیمات جداگانهٔ خط فعال.
+       اگر خطی تنظیم خودش را داشته باشد، سبک و رنگ بخش را کنار
+       می‌زند. مقیاس و جابه‌جایی و شفافیت را هم اینجا با ترنسفرم
+       اعمال می‌کنیم تا هیچ‌کدام از ۲۳ افکت لازم نباشد عوض شوند. */
+    const curLine = song.activeLine(t);
+    const lf = curLine >= 0 ? this.lineFx?.[curLine] : null;
+    if (lf?.style) style = lf.style;
+    if (lf?.accent) acc = lf.accent;
 
     // وارونگی تک‌فریمی: فقط در کرس، هر ۱۶ ضرب یک‌بار
     let invert = false;
@@ -100,6 +113,14 @@ export class Renderer {
     ctx.scale(z, z);
     ctx.translate(-W / 2, -H / 2);
 
+    if (lf && (lf.scale !== undefined || lf.dx || lf.dy || lf.opacity !== undefined)) {
+      ctx.translate(W / 2 + (lf.dx || 0), H / 2 + (lf.dy || 0));
+      const k = lf.scale ?? 1;
+      ctx.scale(k, k);
+      ctx.translate(-W / 2, -H / 2);
+      if (lf.opacity !== undefined) ctx.globalAlpha *= lf.opacity;
+    }
+
     /* ۳) محتوا */
     if (TEXTUAL.has(style)) {
       if (!invert) {
@@ -125,8 +146,21 @@ export class Renderer {
       if (style === 'mirror') sMirror(ctx, song, t, acc, kick, this.overrides);
       else STYLE_FN[style]?.(ctx, song, t, acc, kick);
     }
-    if (this.editMode) this._editOverlay(ctx, t, style);
     ctx.restore();
+
+    /* لایه‌های متن آزاد — بیرون از ترنسفرم دوربین، چون جایشان را
+       خودتان تعیین کرده‌اید و نباید با لرزش ضرب تکان بخورند. */
+    drawLayers(ctx, this.texts, t, acc);
+    if (this.editMode) {
+      ctx.save();
+      ctx.translate(W / 2 + sx, H / 2 + sy); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+      this._editOverlay(ctx, t, style);
+      ctx.restore();
+    }
+    if (this.selText) {
+      const L = this.texts?.find(x => x.id === this.selText);
+      if (L) outlineLayer(ctx, L, t);
+    }
 
     /* ۴) فلاش */
     if (kick > 0.6 && !invert) {
@@ -320,6 +354,9 @@ export class Renderer {
 
   /** کدام کلمه زیر نقطهٔ (px,py) در فضای طراحی است */
   pickWord(t, px, py) { return hitWord(this.wordsAt(t), px, py); }
+
+  /** کدام لایهٔ متن آزاد زیر این نقطه است */
+  pickText(t, px, py) { return hitLayer(this.stage.ctx, this.texts, t, px, py); }
 
   /** کادر دور کلمات — فقط در حالت ویرایش، هرگز در خروجی */
   _editOverlay(ctx, t) {
