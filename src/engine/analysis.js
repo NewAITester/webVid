@@ -13,6 +13,7 @@ import { clamp, lerp } from './core.js';
 export class Analysis {
   constructor(data) {
     Object.assign(this, data);
+    this.rmsRaw = Array.isArray(data.rms) ? data.rms.slice() : null;
     this._norm('rms'); this._norm('low'); this._norm('voc'); this._norm('centroid');
   }
 

@@ -3,30 +3,29 @@ import { Renderer } from './engine/renderer.js';
 import { Analysis } from './engine/analysis.js';
 import { parseLRC } from './engine/lyrics.js';
 import { loadFonts, faTime } from './engine/text.js';
-import { demoProject } from './engine/project.js';
+import { Song, SECT, SECTION_NAMES, DUR } from './engine/song.js';
 import { DESIGN_W, DESIGN_H } from './engine/core.js';
 
 const $ = s => document.querySelector(s);
+const BASE = import.meta.env.BASE_URL;
 
 const canvas = $('#stage');
 const stage  = new Stage(canvas);
 const R      = new Renderer(stage);
 
-let project = demoProject();
-let audio   = null;
+let song = null;
+let audio = null;
 let playing = false;
-let t       = 0;
-let raf     = 0;
+let t = 0;
+let raf = 0;
 
-/* ── اندازهٔ بوم: همیشه نسبت ۱۶:۹، با در نظر گرفتن DPI صفحه ─────── */
+/* ── اندازهٔ بوم ─────────────────────────────────────────────── */
 function fit() {
   const wrap = canvas.parentElement;
-  const availW = wrap.clientWidth - 16;
-  const availH = wrap.clientHeight - 16;
-  const s = Math.min(availW / DESIGN_W, availH / DESIGN_H);
+  const s = Math.min((wrap.clientWidth - 16) / DESIGN_W, (wrap.clientHeight - 16) / DESIGN_H);
   const cssW = Math.max(160, DESIGN_W * s);
-  const cssH = Math.max(90,  DESIGN_H * s);
-  canvas.style.width  = cssW + 'px';
+  const cssH = Math.max(90, DESIGN_H * s);
+  canvas.style.width = cssW + 'px';
   canvas.style.height = cssH + 'px';
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   stage.resize(cssW * dpr, cssH * dpr);
@@ -42,7 +41,6 @@ function draw() {
   const sc = $('#scrub');
   if (document.activeElement !== sc) sc.value = String(t);
   markActiveCard();
-
   if (playing) {
     frames++;
     const now = performance.now();
@@ -56,7 +54,7 @@ function draw() {
 function loop() {
   if (!playing) return;
   t = audio ? audio.currentTime : t + 1 / 60;
-  if (t >= project.duration) { pause(); t = project.duration; }
+  if (t >= DUR) { pause(); t = DUR; }
   draw();
   raf = requestAnimationFrame(loop);
 }
@@ -78,96 +76,78 @@ function pause() {
 }
 const toggle = () => (playing ? pause() : play());
 
-/* ── نوار بخش‌ها: از هر بخش یک فریم نماینده ───────────────────── */
+function seek(v) {
+  t = Math.max(0, Math.min(DUR, v));
+  if (audio) audio.currentTime = t;
+  draw();
+}
+
+/* ── نوار بخش‌ها ─────────────────────────────────────────────── */
 let cards = [];
 
-/**
- * بهترین لحظه برای تصویر کوچک یک بخش.
- *
- * نمی‌شود کورکورانه وسط بخش را گرفت: ممکن است دقیقاً وسط محوشدن
- * ورود یک خط بیفتد و تصویر خالی دربیاید. پس اگر بخش متنی است،
- * دنبال خطی می‌گردیم که داخل بازه شروع شود و کمی بعد از شروعش
- * نمونه می‌گیریم — جایی که متن کاملاً ظاهر شده.
- */
+/** لحظهٔ نماینده: جایی که محتوا واقعاً روی صفحه است */
 function thumbTime(sec) {
-  const mid = sec.t0 + (sec.t1 - sec.t0) * 0.4;
-  const textual = sec.effect === 'wordReveal' || sec.effect === 'shatter';
-  if (!textual) return mid;
-
-  const L = R.lyrics.find(l => l.t >= sec.t0 && l.t < sec.t1 - 0.3);
+  const [t0, t1, style] = sec;
+  const mid = t0 + (t1 - t0) * 0.4;
+  if (!['verse', 'chorus', 'pre', 'cold', 'mirror'].includes(style)) return mid;
+  const L = song.lines.find(l => l.words[0].t >= t0 && l.words[0].t < t1 - 0.4);
   if (!L) return mid;
-
-  // پاشیدن: وسط خود انفجار جالب‌ترین لحظه است
-  if (sec.effect === 'shatter') {
-    const pr = { hold: 0.85, burstDur: 1.15, ...(sec.params || {}) };
-    return Math.min(L.t + pr.hold + pr.burstDur * 0.38, sec.t1 - 0.1);
-  }
-  // متن معمولی: کمی بعد از شروع خط تا چند کلمه رنگی شده باشند
-  const span = Math.max(0.6, L.end - L.t);
-  return Math.min(L.t + span * 0.55, sec.t1 - 0.15);
+  const span = Math.max(0.8, song.lineOut(L.i) - song.lineStart(L.i));
+  return Math.min(song.lineStart(L.i) + span * 0.5, t1 - 0.2);
 }
 
 function buildStrip() {
   const strip = $('#strip');
   strip.innerHTML = '';
   cards = [];
-
-  // رندرر جدا با بوم کوچک برای تصاویر کوچک
-  for (const sec of project.sections) {
+  SECT.forEach((sec, i) => {
     const el = document.createElement('div');
     el.className = 'card';
     const c = document.createElement('canvas');
     c.width = 264; c.height = 148;
     const lb = document.createElement('div');
     lb.className = 'lb';
-    lb.textContent = sec.name;
+    lb.textContent = SECTION_NAMES[sec[2]] || sec[2];
     el.append(c, lb);
-    el.onclick = () => { seek(sec.t0 + 0.35); };
+    el.onclick = () => seek(sec[0] + 0.3);
     strip.append(el);
     cards.push({ el, sec });
 
-    // یک فریم از وسط بخش می‌کشیم
     const st = new Stage(c);
     st.resize(264, 148);
     const r2 = new Renderer(st);
-    r2.setProject(project).setLyrics(R.lyrics).setAnalysis(R.analysis);
+    r2.setSong(song);
     r2.showFurniture = false;
-    r2.soloSection = sec;
-    r2.renderFrame(thumbTime(sec));
-  }
+    r2.grain = 0;
+    r2.bloom = 0.4;
+    r2.soloStyle = sec;
+    try { r2.renderFrame(thumbTime(sec)); } catch (e) { console.warn('thumb', sec[2], e); }
+  });
 }
 
 function markActiveCard() {
   for (const c of cards) {
-    const on = t >= c.sec.t0 && t < c.sec.t1;
+    const on = t >= c.sec[0] && t < c.sec[1];
     if (on !== c.el.classList.contains('on')) c.el.classList.toggle('on', on);
   }
-}
-
-function seek(v) {
-  t = Math.max(0, Math.min(project.duration, v));
-  if (audio) audio.currentTime = t;
-  draw();
 }
 
 /* ── راه‌اندازی ──────────────────────────────────────────────── */
 async function boot() {
   await loadFonts();
-
   const [lrcText, analysis] = await Promise.all([
-    fetch(project.lyricsUrl).then(r => r.text()),
-    Analysis.load(project.analysisUrl),
+    fetch(`${BASE}data/lyrics.lrc`).then(r => r.text()),
+    Analysis.load(`${BASE}data/analysis.json`),
   ]);
 
-  R.setProject(project)
-   .setLyrics(parseLRC(lrcText))
-   .setAnalysis(analysis);
+  song = new Song(parseLRC(lrcText), analysis);
+  R.setSong(song);
 
-  audio = new Audio(project.audio);
+  audio = new Audio(`${BASE}data/Neghab.mp3`);
   audio.preload = 'auto';
 
-  $('#scrub').max = String(project.duration);
-  $('#tdur').textContent = faTime(project.duration);
+  $('#scrub').max = String(DUR);
+  $('#tdur').textContent = faTime(DUR);
 
   fit();
   buildStrip();
@@ -175,13 +155,10 @@ async function boot() {
   $('#loading').classList.add('gone');
 
   console.log(
-    `%c لیریک استودیو %c ${R.lyrics.length} خط · ${analysis.beats.length} ضرب · ${analysis.tempo.toFixed(1)} BPM · ${analysis.key}`,
-    'background:#E4142A;color:#fff;padding:2px 6px;border-radius:3px',
-    'color:#9AA0AC'
-  );
+    `%c لیریک استودیو %c ${song.lines.length} خط · ${song.beats.length} ضرب · ${analysis.tempo.toFixed(1)} BPM · ${SECT.length} بخش`,
+    'background:#E4142A;color:#fff;padding:2px 6px;border-radius:3px', 'color:#9AA0AC');
 }
 
-/* ── رویدادها ────────────────────────────────────────────────── */
 $('#play').onclick = toggle;
 $('#scrub').oninput = e => { if (playing) pause(); seek(parseFloat(e.target.value)); };
 window.addEventListener('resize', fit);
@@ -191,11 +168,10 @@ window.addEventListener('keydown', e => {
   if (e.code === 'ArrowLeft')  seek(t - (e.shiftKey ? 5 : 1 / 60));
 });
 
-/* ── دریچهٔ دیباگ و تست خودکار ───────────────────────────────── */
 window.__studio = {
   seek, play, pause, draw,
   get time() { return t; },
-  get project() { return project; },
+  get song() { return song; },
   get renderer() { return R; },
 };
 window.addEventListener('seek-test', e => seek(e.detail));

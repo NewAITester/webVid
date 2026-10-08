@@ -47,7 +47,9 @@ jobs:
         run: npm ci
 
       - name: تست موتور
-        run: node tests/engine.test.mjs
+        run: |
+          node tests/engine.test.mjs
+          node tests/song.test.mjs
 
       - name: بیلد وب
         run: npm run build
