@@ -1,0 +1,12 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch({ args: ['--no-sandbox'] });
+const pg = await b.newPage({ viewport: { width: 1400, height: 980 } });
+await pg.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
+await pg.waitForFunction(() => document.querySelector('#loading')?.classList.contains('gone'), { timeout: 25000 });
+await pg.click('#songBtn'); await pg.waitForTimeout(400);
+const opts = await pg.evaluate(()=>[...document.querySelectorAll('#songList option')].map(o=>o.value));
+await pg.selectOption('#songList', opts[opts.length-1]);
+await pg.click('#songLoad'); await pg.waitForTimeout(1200);
+await pg.locator('#strip').screenshot({path:'tests/strip.png'});
+console.log('تعداد کارت:', await pg.evaluate(()=>document.querySelectorAll('#strip .card').length));
+await b.close();

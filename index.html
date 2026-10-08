@@ -65,6 +65,7 @@
     <div class="brand">لیریک<span>استودیو</span></div>
     <div class="spacer"></div>
     <div id="fps" class="pill">—</div>
+    <button id="songBtn" class="btn sm">آهنگ</button>
     <button id="editBtn" class="btn sm">جابه‌جایی کلمات</button>
     <button id="exportBtn" class="btn sm">خروجی</button>
   </header>
@@ -103,6 +104,32 @@
     <div id="exBar" class="bar2 hidden"><i></i></div>
     <div id="exEst" class="msg"></div>
     <div id="exMsg" class="msg"></div>
+  </div>
+
+  <div id="songPanel" class="panel hidden">
+    <div class="prow">
+      <label>فایل صوتی</label>
+      <input id="inAudio" type="file" accept="audio/*">
+      <label>شعر</label>
+      <input id="inLrc" type="file" accept=".lrc,.txt,text/plain">
+      <div class="spacer"></div>
+      <button id="songGo" class="btn primary sm">ساخت پروژه</button>
+    </div>
+    <div class="prow">
+      <label>عنوان</label><input id="inTitle" type="text" placeholder="نقاب" class="txt">
+      <label>هنرمند</label><input id="inArtist" type="text" placeholder="زروان اکو" class="txt">
+      <label>تلگرام</label><input id="inTg" type="text" placeholder="Telegram: @ZurvanEcho" class="txt wide">
+      <button id="metaApply" class="btn sm ghost">اعمال</button>
+    </div>
+    <div class="prow">
+      <span class="dim">اگر شعر تایم‌بندی نداشته باشد، خودکار روی طول آهنگ پخش می‌شود.</span>
+      <div class="spacer"></div>
+      <select id="songList"></select>
+      <button id="songLoad" class="btn sm ghost">باز کردن</button>
+      <button id="songDel" class="btn sm ghost">حذف</button>
+    </div>
+    <div id="songBar" class="bar2 hidden"><i></i></div>
+    <div id="songMsg" class="msg"></div>
   </div>
 
   <div id="edPanel" class="panel hidden">

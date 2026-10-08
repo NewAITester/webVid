@@ -1,4 +1,8 @@
 import { W, H, C, TITLE_FA, NAME_FA, TG, outExpo } from './song.js';
+
+const T = s => s?.title || TITLE_FA;
+const N = s => s?.artist || NAME_FA;
+const G = s => (s?.tg ?? TG);
 import { clamp } from './core.js';
 import { rect, line, ring, textFa, textMono, outlineTextFa, wordDraw } from './draw.js';
 import { fitFa, place } from './layout.js';
@@ -14,12 +18,12 @@ import { applyOverrides } from './overrides.js';
 /** تیتراژ: عنوان تورفته که بزرگ می‌شود، با سه حلقهٔ نفس‌کش */
 export function sIntro(ctx, song, t, acc, kick) {
   const k = clamp(t / 3.0);
-  const sz = fitFa(ctx, TITLE_FA, 300 + 420 * outExpo(clamp(t / 6.0)));
-  outlineTextFa(ctx, TITLE_FA, W / 2, H * 0.46, sz, C.BONE, 0.20 + 0.45 * k, FONTS.black, 5);
+  const sz = fitFa(ctx, T(song), 300 + 420 * outExpo(clamp(t / 6.0)));
+  outlineTextFa(ctx, T(song), W / 2, H * 0.46, sz, C.BONE, 0.20 + 0.45 * k, FONTS.black, 5);
 
   if (t > 4.2) {
     const a = clamp((t - 4.2) / 1.2);
-    textFa(ctx, NAME_FA, W / 2, H * 0.72, 62, C.BONE, 0.9 * a, FONTS.bold);
+    textFa(ctx, N(song), W / 2, H * 0.72, 62, C.BONE, 0.9 * a, FONTS.bold);
     line(ctx, W / 2 - 250 * a, H * 0.78, W / 2 + 250 * a, H * 0.78, acc, 3, a);
   }
   for (let i = 0; i < 3; i++) {
@@ -33,8 +37,8 @@ export function sInstA(ctx, song, t, acc, kick) {
   const k = clamp((t - 19.34) / 3.2);
   const v = song.rms(t);
   particles(ctx, song, t, acc, kick, { amp: 70 + 130 * v, alpha: 0.35 + 0.65 * k });
-  const sz = fitFa(ctx, TITLE_FA, 620);
-  outlineTextFa(ctx, TITLE_FA, W / 2, H * 0.5, sz * (1 + 0.045 * kick),
+  const sz = fitFa(ctx, T(song), 620);
+  outlineTextFa(ctx, T(song), W / 2, H * 0.5, sz * (1 + 0.045 * kick),
                 C.BONE, 0.55, FONTS.black, 5);
 }
 
@@ -53,9 +57,9 @@ export function sInstB(ctx, song, t, acc, kick) {
       const on = ((bi + idx * 3) % 11) < 2;
       if (on) {
         rect(ctx, x - cw / 2, y - ch / 2, cw, ch, acc, 0.9);
-        textFa(ctx, TITLE_FA, x, y, sz, C.BG, 1.0);
+        textFa(ctx, T(song), x, y, sz, C.BG, 1.0);
       } else {
-        textFa(ctx, TITLE_FA, x, y, sz, C.BONE, 0.10 + 0.10 * kick);
+        textFa(ctx, T(song), x, y, sz, C.BONE, 0.10 + 0.10 * kick);
       }
     }
   }
@@ -63,7 +67,7 @@ export function sInstB(ctx, song, t, acc, kick) {
   const sc = 1.0 + 0.5 * clamp((t - 129.0) / 29.0);
   ctx.save();
   ctx.translate(W / 2, H / 2); ctx.scale(sc, sc); ctx.translate(-W / 2, -H / 2);
-  outlineTextFa(ctx, NAME_FA, W / 2, H / 2, 210, C.BONE, 0.5, FONTS.black, 4);
+  outlineTextFa(ctx, N(song), W / 2, H / 2, 210, C.BONE, 0.5, FONTS.black, 4);
   ctx.restore();
 }
 
@@ -77,9 +81,9 @@ export function sInstC(ctx, song, t, acc, kick) {
   }
   particles(ctx, song, t, acc, kick,
             { amp: 30 + 60 * song.rms(t), alpha: 0.55, n: 620, swirl: 1.6 });
-  const sz = fitFa(ctx, TITLE_FA, 520);
-  outlineTextFa(ctx, TITLE_FA, W / 2, H * 0.5, sz, C.BONE, 0.38, FONTS.black, 4);
-  textFa(ctx, NAME_FA, W / 2, H * 0.78, 54, C.BONE, 0.55, FONTS.bold);
+  const sz = fitFa(ctx, T(song), 520);
+  outlineTextFa(ctx, T(song), W / 2, H * 0.5, sz, C.BONE, 0.38, FONTS.black, 4);
+  textFa(ctx, N(song), W / 2, H * 0.78, 54, C.BONE, 0.55, FONTS.bold);
 }
 
 /** آینه: هر خط با بازتاب وارونه‌اش زیرش */
@@ -115,16 +119,16 @@ export function sMirror(ctx, song, t, acc, kick, ov = null) {
 /** کارت پایان: عنوان → نام → تلگرام، سه‌مرحله‌ای، بعد محو به سیاه */
 export function sEnd(ctx, song, t, acc, kick) {
   const k = clamp((t - 207.4) / 1.4);
-  const sz = fitFa(ctx, TITLE_FA, 300 + 380 * outExpo(k));
-  textFa(ctx, TITLE_FA, W / 2, H * 0.38, sz, C.BONE, k);
+  const sz = fitFa(ctx, T(song), 300 + 380 * outExpo(k));
+  textFa(ctx, T(song), W / 2, H * 0.38, sz, C.BONE, k);
 
   const k2 = clamp((t - 209.4) / 1.2);
   if (k2 > 0) {
-    textFa(ctx, NAME_FA, W / 2, H * 0.64, 96, C.BONE, k2, FONTS.bold);
+    textFa(ctx, N(song), W / 2, H * 0.64, 96, C.BONE, k2, FONTS.bold);
     line(ctx, W / 2 - 430 * k2, H * 0.71, W / 2 + 430 * k2, H * 0.71, acc, 4, k2);
   }
   const k3 = clamp((t - 211.2) / 1.2);
-  if (k3 > 0) textMono(ctx, TG, W / 2, H * 0.78, 42, acc, k3, 10, 'center');
+  if (k3 > 0) textMono(ctx, G(song), W / 2, H * 0.78, 42, acc, k3, 10, 'center');
 
   const fade = clamp((t - 222.0) / 4.4);
   if (fade > 0) rect(ctx, 0, 0, W, H, C.BG, fade);

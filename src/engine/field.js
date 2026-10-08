@@ -106,12 +106,12 @@ export function furniture(ctx, song, t, acc, light = false) {
     line(ctx, px, py, px, py + 24 * sy, c, 2.4, 0.5);
   }
 
-  textFa(ctx, NAME_FA, W - m - 12, m + 52, 30, c, 0.75, FONTS.bold, 'right', 'cap');
-  textMono(ctx, TG, m + 12, H - m - 30, 22, acc, 0.95, 4, 'left');
+  textFa(ctx, song?.artist || NAME_FA, W - m - 12, m + 52, 30, c, 0.75, FONTS.bold, 'right', 'cap');
+  textMono(ctx, song?.tg ?? TG, m + 12, H - m - 30, 22, acc, 0.95, 4, 'left');
   textFa(ctx, faTime(t), m + 12, m + 54, 28, c, 0.55, FONTS.bold, 'left', 'cap');
 
   // نوار پیشرفت — راست‌به‌چپ
-  const p = clamp(t / SONG);
+  const p = clamp(t / (song?.duration || SONG));
   line(ctx, m + 12, H - m, W - m - 12, H - m, c, 3, 0.16);
   line(ctx, W - m - 12, H - m, W - m - 12 - (W - 2 * m - 24) * p, H - m, acc, 5, 1.0);
 }

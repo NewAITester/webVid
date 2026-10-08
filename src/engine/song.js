@@ -55,9 +55,14 @@ export const outExpo  = t => (t >= 1 ? 1 : 1 - Math.pow(2, -11 * t));
 
 /** همهٔ حالت زمانی آهنگ در یک شیء */
 export class Song {
-  constructor(lines, analysis) {
+  constructor(lines, analysis, meta = {}) {
     this.lines = lines;              // از parseLRC
     this.A = analysis;
+    // عنوان و نام هنرمند قابل تنظیم‌اند تا اپ به یک آهنگ گره نخورد
+    this.title = meta.title || TITLE_FA;
+    this.artist = meta.artist || NAME_FA;
+    this.tg = meta.tg ?? TG;
+    this.duration = meta.duration || DUR;
     this.beats = analysis.beats;
     // RMS در پایتون بر صدک ۹۹ تقسیم می‌شد، نه بر بیشینه
     const r = analysis.rmsRaw || analysis.rms;

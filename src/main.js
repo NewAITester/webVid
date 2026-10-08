@@ -4,10 +4,17 @@ import { Analysis } from './engine/analysis.js';
 import { parseLRC } from './engine/lyrics.js';
 import { loadFonts, faTime } from './engine/text.js';
 import { Song, SECT, SECTION_NAMES, DUR } from './engine/song.js';
+let DURATION = DUR;
+let currentAudioUrl = null;
 import { DESIGN_W, DESIGN_H } from './engine/core.js';
 import { exportVideo, canExport, RESOLUTIONS } from './engine/export.js';
 import { saveFile, shareFile } from './engine/save.js';
 import { Overrides } from './engine/overrides.js';
+import { analyzeBuffer, decodeAudioFile } from './engine/analyze.js';
+import { Library, autoSections, plainToLines } from './engine/library.js';
+import { clearLayoutCache } from './engine/layout.js';
+import { clearGlyphCache } from './engine/glyphs.js';
+import { Analysis as Anal } from './engine/analysis.js';
 
 const $ = s => document.querySelector(s);
 const BASE = import.meta.env.BASE_URL;
@@ -59,7 +66,7 @@ function draw() {
 function loop() {
   if (!playing) return;
   t = audio ? audio.currentTime : t + 1 / 60;
-  if (t >= DUR) { pause(); t = DUR; }
+  if (t >= DURATION) { pause(); t = DURATION; }
   draw();
   raf = requestAnimationFrame(loop);
 }
@@ -82,7 +89,7 @@ function pause() {
 const toggle = () => (playing ? pause() : play());
 
 function seek(v) {
-  t = Math.max(0, Math.min(DUR, v));
+  t = Math.max(0, Math.min(DURATION, v));
   if (audio) audio.currentTime = t;
   draw();
 }
@@ -105,7 +112,7 @@ function buildStrip() {
   const strip = $('#strip');
   strip.innerHTML = '';
   cards = [];
-  SECT.forEach((sec, i) => {
+  (R.sections || SECT).forEach((sec, i) => {
     const el = document.createElement('div');
     el.className = 'card';
     const c = document.createElement('canvas');
@@ -151,8 +158,8 @@ async function boot() {
   audio = new Audio(`${BASE}data/Neghab.mp3`);
   audio.preload = 'auto';
 
-  $('#scrub').max = String(DUR);
-  $('#tdur').textContent = faTime(DUR);
+  $('#scrub').max = String(DURATION);
+  $('#tdur').textContent = faTime(DURATION);
 
   fit();
   buildStrip();
@@ -179,6 +186,122 @@ window.addEventListener('keydown', e => {
   if (e.code === 'ArrowRight') seek(t + (e.shiftKey ? 5 : 1 / 60));
   if (e.code === 'ArrowLeft')  seek(t - (e.shiftKey ? 5 : 1 / 60));
 });
+
+/* ── وارد کردن آهنگ خودتان ───────────────────────────────────── */
+let customSections = null;   // اگر پروژهٔ وارد‌شده فعال باشد
+
+function songMsg(t, cls = '') { $('#songMsg').textContent = t; $('#songMsg').className = 'msg ' + cls; }
+
+$('#songBtn').onclick = () => {
+  $('#songPanel').classList.toggle('hidden');
+  if (!$('#songPanel').classList.contains('hidden')) refreshLibrary();
+};
+
+async function refreshLibrary() {
+  try {
+    const all = await Library.all();
+    const sel = $('#songList');
+    sel.innerHTML = '';
+    const def = document.createElement('option');
+    def.value = '__demo'; def.textContent = 'نقاب — زروان اکو (پیش‌فرض)';
+    sel.append(def);
+    for (const p of all) {
+      const o = document.createElement('option');
+      o.value = p.id; o.textContent = p.name;
+      sel.append(o);
+    }
+  } catch (e) { console.warn(e); }
+}
+
+$('#songGo').onclick = async () => {
+  const af = $('#inAudio').files?.[0];
+  if (!af) { songMsg('اول یک فایل صوتی انتخاب کنید', 'err'); return; }
+  const lf = $('#inLrc').files?.[0];
+  const bar = $('#songBar'); bar.classList.remove('hidden');
+  const fill = bar.querySelector('i');
+  try {
+    songMsg('در حال خواندن فایل…');
+    const buf = await decodeAudioFile(af);
+    const analysis = await analyzeBuffer(buf, (p, m) => {
+      fill.style.width = (p * 100).toFixed(0) + '%';
+      songMsg(m + ' ' + Math.round(p * 100) + '٪');
+    });
+    let lrc = lf ? await lf.text() : '';
+    if (lrc && !/\[\d+:\d/.test(lrc)) lrc = plainToLines(lrc, buf.duration);
+    const nm = af.name.replace(/\.[^.]+$/, '');
+    const proj = {
+      id: 'p' + Date.now(),
+      name: nm,
+      audio: af, lrc, analysis,
+      duration: buf.duration,
+      title: ($('#inTitle').value || nm).trim(),
+      artist: ($('#inArtist').value || '').trim(),
+      tg: ($('#inTg').value || '').trim(),
+      createdAt: Date.now(),
+    };
+    await Library.put(proj);
+    await refreshLibrary();
+    $('#songList').value = proj.id;
+    await loadProject(proj);
+    songMsg(`آماده شد — ${analysis.tempo.toFixed(1)} ضرب در دقیقه · `
+          + `${analysis.beats.length} ضرب · ${song.lines.length} خط شعر`, 'ok');
+  } catch (e) {
+    console.error(e);
+    songMsg('خطا: ' + e.message, 'err');
+  } finally { bar.classList.add('hidden'); }
+};
+
+$('#songLoad').onclick = async () => {
+  const id = $('#songList').value;
+  if (id === '__demo') { location.reload(); return; }
+  const p = await Library.get(id);
+  if (p) { await loadProject(p); songMsg('باز شد: ' + p.name, 'ok'); }
+};
+$('#songDel').onclick = async () => {
+  const id = $('#songList').value;
+  if (id === '__demo') return;
+  await Library.remove(id); await refreshLibrary(); songMsg('حذف شد');
+};
+
+/** یک پروژهٔ وارد‌شده را فعال می‌کند */
+async function loadProject(p) {
+  pause();
+  // کش‌های چیدمان و ابر نقطه به آهنگ قبلی گره خورده‌اند
+  clearLayoutCache();
+  clearGlyphCache();
+  const lines = parseLRC(p.lrc || '');
+  song = new Song(lines, new Anal(p.analysis), {
+    title: p.title || p.name, artist: p.artist || '', tg: p.tg || '',
+    duration: p.duration,
+  });
+  customSections = autoSections(lines, p.duration);
+  R.setSong(song);
+  R.sections = customSections;
+  DURATION = p.duration;
+  audio = new Audio(URL.createObjectURL(p.audio));
+  audio.preload = 'auto';
+  currentAudioUrl = audio.src;
+  $('#scrub').max = String(DURATION);
+  $('#tdur').textContent = faTime(DURATION);
+  t = 0;
+  buildStrip();
+  updateEstimate();
+  draw();
+}
+
+$('#metaApply').onclick = async () => {
+  const id = $('#songList').value;
+  if (id === '__demo' || !song) { songMsg('اول یک پروژهٔ وارد‌شده را باز کنید', 'err'); return; }
+  const p = await Library.get(id);
+  if (!p) return;
+  p.title = ($('#inTitle').value || p.name).trim();
+  p.artist = ($('#inArtist').value || '').trim();
+  p.tg = ($('#inTg').value || '').trim();
+  await Library.put(p);
+  song.title = p.title; song.artist = p.artist; song.tg = p.tg;
+  buildStrip(); draw();
+  songMsg('اعمال شد', 'ok');
+};
 
 /* ── جابه‌جایی دستی کلمات ────────────────────────────────────── */
 const faN = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
@@ -296,7 +419,7 @@ function autoBitrate() {
 /** برآورد حجم فایل قبل از شروع — تا غافلگیر نشوید */
 function updateEstimate() {
   const from = Math.max(0, parseFloat($('#exFrom').value) || 0);
-  const to = Math.min(DUR, parseFloat($('#exTo').value) || 0);
+  const to = Math.min(DURATION, parseFloat($('#exTo').value) || 0);
   const br = parseInt($('#exBr').value, 10) * 1e6;
   const r = curRes();
   const fps = parseInt($('#exFps').value, 10);
@@ -330,7 +453,7 @@ $('#exCancel').onclick = () => { exAbort?.abort(); };
 
 $('#exGo').onclick = async () => {
   const from = Math.max(0, parseFloat($('#exFrom').value) || 0);
-  const to = Math.min(DUR, parseFloat($('#exTo').value) || 0);
+  const to = Math.min(DURATION, parseFloat($('#exTo').value) || 0);
   if (to <= from) { setMsg('بازهٔ زمانی نامعتبر است', 'err'); return; }
 
   pause();
@@ -345,7 +468,7 @@ $('#exGo').onclick = async () => {
     const blob = await exportVideo({
       song,
       from, to,
-      audioUrl: `${BASE}data/Neghab.mp3`,
+      audioUrl: currentAudioUrl || `${BASE}data/Neghab.mp3`,
       width: curRes().w, height: curRes().h,
       fps: parseInt($('#exFps').value, 10),
       bitrate: parseInt($('#exBr').value, 10) * 1e6,

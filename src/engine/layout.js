@@ -79,7 +79,10 @@ export function modeFor(line, style) {
  * خروجی: [{ word, t, cx, cy, size, key }]
  */
 export function place(ctx, line, mode) {
-  const ck = `${line.i}|${mode}`;
+  // کلید باید شامل خودِ متن باشد، نه فقط شمارهٔ خط.
+  // وقتی آهنگ عوض می‌شود شماره‌ها تکرار می‌شوند و کش قبلی برمی‌گردد —
+  // نتیجه‌اش این بود که در تصویر بخش‌ها شعر آهنگ قبلی دیده می‌شد.
+  const ck = `${line.i}|${mode}|${line.text}`;
   const hit = _placeCache.get(ck);
   if (hit) return hit;
 

@@ -46,6 +46,7 @@ export class Renderer {
     this.overrides = null;      // لایهٔ جابه‌جایی دستی
     this.editMode = false;      // روکش ویرایش (هرگز در خروجی)
     this.selected = null;       // شناسهٔ کلمهٔ انتخاب‌شده
+    this.sections = null;       // جدول بخش سفارشی (برای آهنگ وارد‌شده)
     this._bloomCanvas = null;
     this._grainTile = null;
   }
@@ -54,8 +55,9 @@ export class Renderer {
 
   /** بخش فعال در لحظهٔ t */
   sectionAt(t) {
-    for (const s of SECT) if (t >= s[0] && t < s[1]) return s;
-    return SECT[SECT.length - 1];
+    const tbl = this.sections || SECT;
+    for (const s of tbl) if (t >= s[0] && t < s[1]) return s;
+    return tbl[tbl.length - 1];
   }
 
   renderFrame(t) {
