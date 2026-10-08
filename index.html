@@ -84,23 +84,37 @@
   <section class="transport">
     <button id="play" class="btn primary round">▶</button>
     <div class="time" id="tc">۰۰:۰۰٫۰۰</div>
-    <input id="scrub" class="scrub" type="range" min="0" max="228.6" step="0.01" value="0">
     <div class="time dim" id="tdur">—</div>
+    <div class="spacer"></div>
+    <button id="zFit" class="icon sm" title="جا دادن">⤢</button>
+    <button id="zOut" class="icon sm">−</button>
+    <button id="zIn" class="icon sm">+</button>
+    <button id="secAdd" class="icon sm" title="بخش تازه">＋▦</button>
   </section>
 
-  <div class="panes" id="panes">
+  <div class="tlwrap">
+    <canvas id="tl"></canvas>
+  </div>
 
-    <section class="pane" data-pane="sections">
-      <div class="phead">بخش‌ها<div class="spacer"></div>
-        <button id="secAdd" class="btn sm ghost">افزودن</button>
-        <button id="secAuto" class="btn sm ghost">خودکار</button></div>
-      <div class="strip" id="strip"></div>
-      <div id="secList" class="list"></div>
-    </section>
+  <!-- نوار کارِ بلوک انتخاب‌شده -->
+  <div id="clipBar" class="clipbar hidden">
+    <div class="cinfo"><b id="cbName">—</b><span id="cbTime"></span></div>
+    <div class="spacer"></div>
+    <button class="cb" data-act="fx"><i>✦</i><b>افکت</b></button>
+    <button class="cb" data-act="color"><i>◐</i><b>رنگ</b></button>
+    <button class="cb" data-act="setA"><i>⇤</i><b>شروع اینجا</b></button>
+    <button class="cb" data-act="setB"><i>⇥</i><b>پایان اینجا</b></button>
+    <button class="cb" data-act="split"><i>⁄</i><b>تقسیم</b></button>
+    <button class="cb" data-act="del"><i>🗑</i><b>حذف</b></button>
+    <button class="cb" data-act="close"><i>✕</i><b>بستن</b></button>
+  </div>
+
+  <div class="panes" id="panes">
 
     <!-- شعر -->
     <section class="pane" data-pane="lyrics">
       <div class="phead">شعر<div class="spacer"></div>
+        <button id="secAuto" class="btn sm ghost">چیدمان خودکار</button>
         <button id="lyWrite" class="btn sm ghost on">نوشتن</button>
         <button id="lySync" class="btn sm ghost">هم‌زمان‌سازی</button></div>
 
@@ -229,8 +243,7 @@
   </div>
 
   <nav class="nav" id="nav">
-    <button data-go="sections" class="on"><i>▦</i><b>بخش‌ها</b></button>
-    <button data-go="lyrics"><i>✎</i><b>شعر</b></button>
+    <button data-go="lyrics" class="on"><i>✎</i><b>شعر</b></button>
     <button data-go="fx"><i>✦</i><b>افکت</b></button>
     <button data-go="words"><i>✥</i><b>کلمات</b></button>
     <button data-go="look"><i>◐</i><b>ظاهر</b></button>
