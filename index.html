@@ -9,11 +9,6 @@
 </head>
 <body>
 
-<!--
-  فیلترهای گرید نهایی.
-  color-interpolation-filters="sRGB" حیاتی است: پیش‌فرض SVG فضای
-  linearRGB است، ولی پایتون روی بایت‌های خام کار می‌کرد.
--->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <filter id="tone" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
@@ -33,7 +28,6 @@
         <feFuncB type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
       </feComponentTransfer>
     </filter>
-
     <filter id="bloomThresh" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
       <feComponentTransfer>
         <feFuncR type="linear" slope="2.5" intercept="-1.5"/>
@@ -41,253 +35,201 @@
         <feFuncB type="linear" slope="2.5" intercept="-1.5"/>
       </feComponentTransfer>
     </filter>
-
-    <!-- فرسایش با هستهٔ مربعی — معادل دقیق minimum_filter پایتون -->
     <filter id="erode" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
       <feMorphology id="erodeOp" operator="erode" radius="5"/>
     </filter>
   </defs>
 </svg>
 
-<div id="app">
+<div id="app" data-screen="library">
 
-  <header class="bar">
+<!-- ══════════ صفحهٔ ۱: کتابخانه ══════════ -->
+<section class="screen" data-screen="library">
+  <header class="top">
     <div class="brand">لیریک<span>استودیو</span></div>
-    <div class="now" id="nowName">نقاب</div>
     <div class="spacer"></div>
-    <div id="fps" class="pill">—</div>
+    <button id="learnBtn" class="icon" title="آموزش">؟</button>
   </header>
 
-  <!-- ─── صحنه ─────────────────────────────────────────────── -->
+  <div class="scroll">
+    <div class="hero">
+      <h1>پروژه‌های من</h1>
+      <p id="projCount" class="sub"></p>
+    </div>
+    <div id="projList" class="cards"></div>
+    <button id="newProj" class="btn primary wide big">+ پروژهٔ جدید</button>
+  </div>
+</section>
+
+<!-- ══════════ صفحهٔ ۲: ویرایشگر ══════════ -->
+<section class="screen" data-screen="editor">
+  <header class="top">
+    <button id="backBtn" class="icon">→</button>
+    <div class="etitle" id="nowName">—</div>
+    <div class="spacer"></div>
+    <div id="fps" class="pill">—</div>
+    <button id="gearBtn" class="icon" title="تنظیمات پروژه">⚙</button>
+  </header>
+
   <main class="stagewrap" id="stagewrap">
     <canvas id="stage"></canvas>
     <div id="loading" class="loading">در حال آماده‌سازی…</div>
+    <div id="noAudio" class="overlay hidden">
+      <div class="bigicon">♪</div>
+      <div>این پروژه هنوز آهنگ ندارد</div>
+      <button id="addAudioBtn" class="btn sm">افزودن آهنگ</button>
+    </div>
   </main>
 
-  <!-- ─── نوار پخش ─────────────────────────────────────────── -->
-  <section class="transport" id="transport">
-    <button id="play" class="btn primary" title="پخش / توقف">▶</button>
+  <section class="transport">
+    <button id="play" class="btn primary round">▶</button>
     <div class="time" id="tc">۰۰:۰۰٫۰۰</div>
     <input id="scrub" class="scrub" type="range" min="0" max="228.6" step="0.01" value="0">
     <div class="time dim" id="tdur">—</div>
   </section>
 
-  <!-- ─── پنل‌ها ───────────────────────────────────────────── -->
   <div class="panes" id="panes">
 
-    <!-- خانه: فقط فهرست پروژه‌ها -->
-    <section class="pane" data-pane="home">
-      <div class="phead">پروژه‌های من<div class="spacer"></div>
-        <span class="pill" id="projCount"></span></div>
-      <div id="projList" class="cards"></div>
-      <button id="newProj" class="btn primary wide">+ پروژهٔ جدید</button>
-    </section>
-
-    <!-- پروژه: افزودن آهنگ و تنظیمات -->
-    <section class="pane" data-pane="project">
-      <div class="phead" id="projHead">پروژه</div>
-      <div class="form">
-        <div id="needAudio" class="empty hidden">
-          <div class="bigicon">♪</div>
-          <div>برای شروع، فایل صوتی را اضافه کنید</div>
-        </div>
-        <div class="frow">
-          <label>فایل صوتی</label>
-          <input id="inAudio" type="file" accept="audio/*">
-        </div>
-        <div class="frow">
-          <label>شعر <span class="dim">(lrc یا txt)</span></label>
-          <input id="inLrc" type="file" accept=".lrc,.txt,text/plain">
-        </div>
-        <div id="songBar" class="bar2 hidden"><i></i></div>
-        <div id="songMsg" class="msg"></div>
-
-        <div class="sep"></div>
-        <div class="frow"><label>عنوان</label><input id="pjTitle" type="text" class="txt"></div>
-        <div class="frow"><label>هنرمند</label><input id="pjArtist" type="text" class="txt"></div>
-        <div class="frow"><label>تلگرام</label><input id="pjTg" type="text" class="txt ltr"></div>
-        <div class="frow"><label>نسبت تصویر</label><select id="pjAspect"></select></div>
-        <button id="pjSave" class="btn wide">ذخیرهٔ تنظیمات</button>
-        <div id="pjMsg" class="msg"></div>
-      </div>
-    </section>
-
-    <!-- بخش‌ها -->
     <section class="pane" data-pane="sections">
-      <div class="phead">
-        بخش‌ها
-        <div class="spacer"></div>
+      <div class="phead">بخش‌ها<div class="spacer"></div>
         <button id="secAdd" class="btn sm ghost">افزودن</button>
-        <button id="secAuto" class="btn sm ghost">ساخت خودکار</button>
-      </div>
-      <div id="secList" class="list"></div>
+        <button id="secAuto" class="btn sm ghost">خودکار</button></div>
       <div class="strip" id="strip"></div>
+      <div id="secList" class="list"></div>
     </section>
 
-    <!-- کلمات -->
     <section class="pane" data-pane="words">
-      <div class="phead">
-        جابه‌جایی کلمات
-        <div class="spacer"></div>
-        <span class="pill" id="edCount">۰ تغییر</span>
+      <div class="phead">جابه‌جایی کلمات<div class="spacer"></div>
+        <span class="pill" id="edCount">۰</span></div>
+      <p class="note" id="edHint">روی یک کلمه بکشید تا جابه‌جا شود.</p>
+      <div class="frow btns">
+        <button class="btn sm ghost nudge" data-n="-1,0">←</button>
+        <button class="btn sm ghost nudge" data-n="1,0">→</button>
+        <button class="btn sm ghost nudge" data-n="0,-1">↑</button>
+        <button class="btn sm ghost nudge" data-n="0,1">↓</button>
+        <button class="btn sm" id="edBigger">بزرگ‌تر</button>
+        <button class="btn sm" id="edSmaller">کوچک‌تر</button>
       </div>
-      <div class="form">
-        <p class="note" id="edHint">روی یک کلمه بکشید تا جابه‌جا شود.
-          کادرهای نقطه‌چین راهنما هستند و در خروجی نمی‌آیند.</p>
-        <div class="frow btns">
-          <button class="btn sm" id="edBigger">بزرگ‌تر</button>
-          <button class="btn sm" id="edSmaller">کوچک‌تر</button>
-          <button class="btn sm ghost" id="edReset">بازگردانی این کلمه</button>
-          <button class="btn sm ghost" id="edResetAll">بازگردانی همه</button>
-        </div>
-        <div class="frow btns">
-          <button class="btn sm ghost nudge" data-n="-1,0">←</button>
-          <button class="btn sm ghost nudge" data-n="1,0">→</button>
-          <button class="btn sm ghost nudge" data-n="0,-1">↑</button>
-          <button class="btn sm ghost nudge" data-n="0,1">↓</button>
-          <span class="dim">تنظیم پیکسلی</span>
-        </div>
+      <div class="frow btns">
+        <button class="btn sm ghost" id="edReset">بازگردانی این کلمه</button>
+        <button class="btn sm ghost" id="edResetAll">بازگردانی همه</button>
       </div>
     </section>
 
-    <!-- ظاهر -->
     <section class="pane" data-pane="look">
       <div class="phead">ظاهر</div>
       <div class="form">
-        <div class="frow">
-          <label>رنگ تأکید این بخش</label>
+        <div class="frow"><label>رنگ تأکید</label>
           <input id="lkAccent" type="color" value="#E4142A">
-          <button id="lkAccentAll" class="btn sm ghost">روی همه</button>
-        </div>
-        <div class="frow slider">
-          <label>دانهٔ فیلم</label>
+          <button id="lkAccentAll" class="btn sm ghost">روی همهٔ بخش‌ها</button></div>
+        <div class="frow slider"><label>دانه</label>
           <input id="lkGrain" type="range" min="0" max="60" value="24" class="rng">
-          <span class="pill" id="lkGrainV">۰٫۰۲۴</span>
-        </div>
-        <div class="frow slider">
-          <label>درخشش</label>
+          <span class="pill" id="lkGrainV">۰٫۰۲۴</span></div>
+        <div class="frow slider"><label>درخشش</label>
           <input id="lkBloom" type="range" min="0" max="120" value="55" class="rng">
-          <span class="pill" id="lkBloomV">۰٫۵۵</span>
-        </div>
-        <div class="frow slider">
-          <label>انحراف رنگی</label>
+          <span class="pill" id="lkBloomV">۰٫۵۵</span></div>
+        <div class="frow slider"><label>انحراف رنگی</label>
           <input id="lkChroma" type="range" min="0" max="40" value="10" class="rng">
-          <span class="pill" id="lkChromaV">۱٫۰</span>
-        </div>
-        <div class="frow">
-          <label><input id="lkFurn" type="checkbox" checked> اثاثیهٔ قاب (نام، تایم‌کد، نوار پیشرفت)</label>
-        </div>
-        <button id="lkReset" class="btn sm ghost">بازگردانی به پیش‌فرض</button>
+          <span class="pill" id="lkChromaV">۱٫۰</span></div>
+        <div class="frow"><label><input id="lkFurn" type="checkbox" checked> اثاثیهٔ قاب</label>
+          <div class="spacer"></div>
+          <button id="lkReset" class="btn sm ghost">پیش‌فرض</button></div>
       </div>
     </section>
 
-    <!-- خروجی -->
-    <section class="pane" data-pane="export">
-      <div class="phead">خروجی ویدیو</div>
-      <div class="form">
-        <div class="frow">
-          <label>از</label><input id="exFrom" type="number" value="0" min="0" step="1">
-          <label>تا</label><input id="exTo" type="number" value="10" min="1" step="1">
-          <span class="dim">ثانیه</span>
-        </div>
-        <div class="frow btns">
-          <button class="btn sm ghost" data-range="0,10">۱۰ ثانیه</button>
-          <button class="btn sm ghost" data-range="0,30">۳۰ ثانیه</button>
-          <button class="btn sm ghost" id="exAll">کل آهنگ</button>
-        </div>
-        <div class="frow">
-          <label>رزولوشن</label><select id="exRes"></select>
-          <label>فریم</label>
-          <select id="exFps">
-            <option value="60" selected>۶۰</option>
-            <option value="30">۳۰</option>
-            <option value="24">۲۴</option>
-          </select>
-        </div>
-        <div class="frow slider">
-          <label>بیت‌ریت</label>
-          <input id="exBr" type="range" min="1" max="60" step="1" value="12" class="rng">
-          <span class="pill" id="exBrV">۱۲ مگابیت</span>
-          <button class="btn sm ghost" id="exBrAuto">خودکار</button>
-        </div>
-        <div class="frow btns">
-          <button id="exGo" class="btn primary">شروع خروجی</button>
-          <button id="exCancel" class="btn sm hidden">لغو</button>
-          <button id="exShare" class="btn sm hidden">اشتراک‌گذاری</button>
-        </div>
-        <div id="exBar" class="bar2 hidden"><i></i></div>
-        <div id="exEst" class="msg"></div>
-        <div id="exMsg" class="msg"></div>
-      </div>
-    </section>
-
-    <!-- کد سفارشی -->
     <section class="pane" data-pane="code">
-      <div class="phead">افکت سفارشی
-        <div class="spacer"></div>
+      <div class="phead">افکت سفارشی<div class="spacer"></div>
         <select id="cdSnip"><option value="">نمونه‌ها…</option></select>
-        <button id="cdReset" class="btn sm ghost">پیش‌فرض</button>
-      </div>
-      <p class="note">بخشی را به سبک «سفارشی» بگذارید تا این کد اجرا شود.
-        هر تغییری بلافاصله در پیش‌نمایش دیده می‌شود.</p>
+        <button id="cdReset" class="btn sm ghost">پیش‌فرض</button></div>
+      <p class="note">بخشی را به سبک «سفارشی» بگذارید تا اجرا شود.</p>
       <textarea id="cdText" class="code" spellcheck="false"></textarea>
       <div id="cdMsg" class="msg"></div>
     </section>
 
-    <!-- آموزش -->
-    <section class="pane" data-pane="learn">
-      <div class="phead" id="lnHead">آموزش
-        <div class="spacer"></div>
-        <button id="lnBack" class="btn sm ghost hidden">بازگشت</button>
-      </div>
-      <div id="lnList" class="lessons"></div>
-      <article id="lnBody" class="lesson hidden"></article>
-    </section>
-
-  </div>
-
-  <!-- ─── شیت ساخت پروژه ───────────────────────────────────── -->
-  <div id="sheet" class="sheet hidden">
-    <div class="sheetbox">
-      <div class="phead">پروژهٔ جدید<div class="spacer"></div>
-        <button id="sheetX" class="px">×</button></div>
+    <section class="pane" data-pane="export">
+      <div class="phead">خروجی ویدیو</div>
       <div class="form">
-        <div class="frow"><label>نام پروژه</label>
-          <input id="nwName" type="text" class="txt" placeholder="مثلاً: نقاب"></div>
-        <div class="frow"><label>هنرمند</label>
-          <input id="nwArtist" type="text" class="txt" placeholder="نام شما"></div>
-        <div class="frow"><label>تلگرام</label>
-          <input id="nwTg" type="text" class="txt ltr" placeholder="Telegram: @channel"></div>
-        <div class="phead" style="margin-top:6px">نسبت تصویر</div>
-        <div id="nwAspect" class="aspects"></div>
-        <button id="nwGo" class="btn primary wide">بساز و باز کن</button>
+        <div class="frow"><label>از</label><input id="exFrom" type="number" value="0" min="0" step="1">
+          <label>تا</label><input id="exTo" type="number" value="10" min="1" step="1">
+          <span class="dim">ثانیه</span></div>
+        <div class="frow btns">
+          <button class="btn sm ghost" data-range="0,10">۱۰ ثانیه</button>
+          <button class="btn sm ghost" data-range="0,30">۳۰ ثانیه</button>
+          <button class="btn sm ghost" id="exAll">کل آهنگ</button></div>
+        <div class="frow"><label>کیفیت</label><select id="exRes"></select>
+          <label>فریم</label><select id="exFps">
+            <option value="60" selected>۶۰</option><option value="30">۳۰</option>
+            <option value="24">۲۴</option></select></div>
+        <div class="frow slider"><label>بیت‌ریت</label>
+          <input id="exBr" type="range" min="1" max="60" step="1" value="12" class="rng">
+          <span class="pill" id="exBrV">۱۲</span>
+          <button class="btn sm ghost" id="exBrAuto">خودکار</button></div>
+        <div id="exEst" class="msg"></div>
+        <div class="frow btns">
+          <button id="exGo" class="btn primary">شروع خروجی</button>
+          <button id="exCancel" class="btn sm hidden">لغو</button>
+          <button id="exShare" class="btn sm hidden">اشتراک‌گذاری</button></div>
+        <div id="exBar" class="bar2 hidden"><i></i></div>
+        <div id="exMsg" class="msg"></div>
       </div>
-    </div>
+    </section>
   </div>
 
-  <div id="moreSheet" class="sheet hidden">
-    <div class="sheetbox">
-      <div class="phead">بیشتر<div class="spacer"></div><button id="moreX" class="px">×</button></div>
-      <div class="cards">
-        <div class="pcard" data-more="look"><div class="pi">◐</div>
-          <div class="pm"><div class="pt">ظاهر</div><div class="ps">رنگ، دانه، درخشش</div></div></div>
-        <div class="pcard" data-more="code"><div class="pi">{ }</div>
-          <div class="pm"><div class="pt">افکت سفارشی</div><div class="ps">کد خودتان را بنویسید</div></div></div>
-        <div class="pcard" data-more="learn"><div class="pi">؟</div>
-          <div class="pm"><div class="pt">آموزش</div><div class="ps">همه‌چیز از پایه</div></div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── ناوبری پایین ─────────────────────────────────────── -->
   <nav class="nav" id="nav">
-    <button data-go="home"     class="on"><i>⌂</i><b>خانه</b></button>
-    <button data-go="project"><i>♪</i><b>پروژه</b></button>
-    <button data-go="sections"><i>▦</i><b>بخش‌ها</b></button>
+    <button data-go="sections" class="on"><i>▦</i><b>بخش‌ها</b></button>
     <button data-go="words"><i>✥</i><b>کلمات</b></button>
+    <button data-go="look"><i>◐</i><b>ظاهر</b></button>
+    <button data-go="code"><i>{}</i><b>کد</b></button>
     <button data-go="export"><i>↓</i><b>خروجی</b></button>
-    <button id="moreBtn"><i>⋯</i><b>بیشتر</b></button>
   </nav>
+</section>
+
+<!-- ══════════ صفحهٔ ۳: آموزش ══════════ -->
+<section class="screen" data-screen="learn">
+  <header class="top">
+    <button id="lnBack" class="icon">→</button>
+    <div class="etitle" id="lnHead">آموزش</div>
+  </header>
+  <div class="scroll">
+    <div id="lnList" class="lessons"></div>
+    <article id="lnBody" class="lesson hidden"></article>
+  </div>
+</section>
+
+<!-- ══════════ شیت‌ها ══════════ -->
+<div id="sheet" class="sheet hidden">
+  <div class="sheetbox">
+    <div class="shead">پروژهٔ جدید<div class="spacer"></div><button id="sheetX" class="icon">×</button></div>
+    <div class="form">
+      <div class="frow"><label>نام</label><input id="nwName" type="text" class="txt" placeholder="مثلاً: نقاب"></div>
+      <div class="frow"><label>هنرمند</label><input id="nwArtist" type="text" class="txt" placeholder="نام شما"></div>
+      <div class="frow"><label>تلگرام</label><input id="nwTg" type="text" class="txt ltr" placeholder="Telegram: @channel"></div>
+      <div class="shead sm">نسبت تصویر</div>
+      <div id="nwAspect" class="aspects"></div>
+      <button id="nwGo" class="btn primary wide big">بساز و باز کن</button>
+    </div>
+  </div>
+</div>
+
+<div id="pjSheet" class="sheet hidden">
+  <div class="sheetbox">
+    <div class="shead">تنظیمات پروژه<div class="spacer"></div><button id="pjX" class="icon">×</button></div>
+    <div class="form">
+      <div class="shead sm">آهنگ و شعر</div>
+      <div class="frow"><label>فایل صوتی</label><input id="inAudio" type="file" accept="audio/*"></div>
+      <div class="frow"><label>شعر</label><input id="inLrc" type="file" accept=".lrc,.txt,text/plain"></div>
+      <div id="songBar" class="bar2 hidden"><i></i></div>
+      <div id="songMsg" class="msg"></div>
+      <div class="shead sm">مشخصات</div>
+      <div class="frow"><label>عنوان</label><input id="pjTitle" type="text" class="txt"></div>
+      <div class="frow"><label>هنرمند</label><input id="pjArtist" type="text" class="txt"></div>
+      <div class="frow"><label>تلگرام</label><input id="pjTg" type="text" class="txt ltr"></div>
+      <div class="frow"><label>نسبت تصویر</label><select id="pjAspect"></select></div>
+      <button id="pjSave" class="btn primary wide">ذخیره</button>
+      <div id="pjMsg" class="msg"></div>
+    </div>
+  </div>
+</div>
 
 </div>
 <script type="module" src="./src/main.js"></script>

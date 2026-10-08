@@ -38,7 +38,7 @@ const app = {
   t: 0,
   playing: false,
   raf: 0,
-  pane: 'home',
+  pane: 'sections',
 };
 
 /* ── حالت هر پروژه ───────────────────────────────────────────
@@ -155,36 +155,45 @@ function seek(v) {
   draw();
 }
 
-/* ── ناوبری پایین ────────────────────────────────────────── */
+/* ── ناوبری: سه صفحه، و تب‌ها فقط داخل ویرایشگر ───────────
+   کتابخانه و ویرایش دو سطح متفاوت‌اند و نباید در یک نوار کنار هم
+   باشند. حالا کتابخانه یک صفحهٔ مستقل است، ویرایشگر صفحهٔ دیگر با
+   تب‌های خودش، و آموزش صفحهٔ سوم. تنظیمات پروژه هم کار همیشگی
+   نیست، پس به یک شیت پشت دکمهٔ چرخ‌دنده رفت. */
+const APP = document.getElementById('app');
+
+function screen(name) {
+  APP.dataset.screen = name;
+  if (name !== 'editor') pause();
+  if (name === 'editor') { fit(); draw(); }
+  if (name === 'learn') buildLessons();
+  if (name === 'library') buildProjList();
+}
+
 function go(name) {
   app.pane = name;
   $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
-  $$('#nav button').forEach(b => b.classList.toggle('on',
-    b.dataset.go === name || (b.id === 'moreBtn' && MORE.includes(name))));
-  const home = name === 'home';
-  if (name === 'project') syncProject();
-  $('#stagewrap').classList.toggle('hide', home);
-  $('#transport').classList.toggle('hide', home);
-  $('#panes').classList.toggle('tall', home);
-  // «کلمات» تنها جایی است که کادرها و درگ فعال‌اند
+  $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
   R.editMode = name === 'words';
   canvas.classList.toggle('editing', name === 'words');
-  if (home) pause(); else { fit(); draw(); }
+  fit(); draw();
   if (name === 'sections') buildSecList();
   if (name === 'look') syncLook();
   if (name === 'words') refreshCount();
   if (name === 'code') syncCode();
-  if (name === 'learn') buildLessons();
 }
 $$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go); });
 
-const MORE = ['look', 'code', 'learn'];
-$('#moreBtn').onclick = () => $('#moreSheet').classList.remove('hidden');
-$('#moreX').onclick = () => $('#moreSheet').classList.add('hidden');
-$('#moreSheet').onclick = e => { if (e.target.id === 'moreSheet') $('#moreSheet').classList.add('hidden'); };
-$$('[data-more]').forEach(el => {
-  el.onclick = () => { $('#moreSheet').classList.add('hidden'); go(el.dataset.more); };
-});
+$('#backBtn').onclick = () => screen('library');
+$('#learnBtn').onclick = () => screen('learn');
+$('#lnBack').onclick = () => {
+  if (!$('#lnBody').classList.contains('hidden')) { buildLessons(); return; }
+  screen('library');
+};
+$('#gearBtn').onclick = () => { syncProject(); $('#pjSheet').classList.remove('hidden'); };
+$('#pjX').onclick = () => $('#pjSheet').classList.add('hidden');
+$('#pjSheet').onclick = e => { if (e.target.id === 'pjSheet') $('#pjSheet').classList.add('hidden'); };
+$('#addAudioBtn').onclick = () => { syncProject(); $('#pjSheet').classList.remove('hidden'); };
 
 /* ── نوار تصاویر بخش ─────────────────────────────────────── */
 let cards = [];
@@ -388,7 +397,7 @@ async function buildProjList() {
     el.querySelector('.pi').textContent = badge;
     el.querySelector('.pt').textContent = title;
     el.querySelector('.ps').textContent = sub;
-    el.onclick = async () => { await openProject(id); go(app.song ? 'sections' : 'project'); };
+    el.onclick = async () => { await openProject(id); screen('editor'); go('sections'); };
     if (removable) {
       const x = document.createElement('button');
       x.className = 'px'; x.textContent = '×';
@@ -479,7 +488,8 @@ async function openProject(id) {
   $('#scrub').max = String(app.duration || 1);
   $('#tdur').textContent = faTime(app.duration || 0);
   $('#nowName').textContent = app.song?.title || (await currentMeta())?.title || 'پروژهٔ خالی';
-  buildStrip(); buildSecList(); buildProjList(); syncProject(); updateEstimate();
+  $('#noAudio').classList.toggle('hidden', !!app.song);
+  buildStrip(); buildSecList(); buildProjList(); updateEstimate();
   fit(); draw();
 }
 
@@ -529,14 +539,15 @@ $('#nwGo').onclick = async () => {
   await Library.put(proj);
   $('#sheet').classList.add('hidden');
   await openProject(proj.id);
-  go('project');
+  screen('editor'); go('sections');
+  syncProject();
+  $('#pjSheet').classList.remove('hidden');   // بلافاصله برای افزودن آهنگ
 };
 
 /* ── تب پروژه ────────────────────────────────────────────── */
 async function syncProject() {
   const m = await currentMeta();
   if (!m) return;
-  $('#projHead').textContent = m.title || m.name || 'پروژه';
   $('#pjTitle').value = m.title || m.name || '';
   $('#pjArtist').value = m.artist || '';
   $('#pjTg').value = m.tg || '';
@@ -550,9 +561,9 @@ async function syncProject() {
   }
   sel.value = m.aspect || '16:9';
   const demo = app.projectId === '__demo';
-  $('#needAudio').classList.toggle('hidden', !!app.song);
   $('#pjSave').disabled = demo;
-  $('#pjSave').textContent = demo ? 'نمونه قابل ویرایش نیست' : 'ذخیرهٔ تنظیمات';
+  $('#pjSave').textContent = demo ? 'نمونه قابل ویرایش نیست' : 'ذخیره';
+  $('#projHead') && ($('#projHead').textContent = m.title || m.name || 'پروژه');
 }
 
 $('#pjSave').onclick = async () => {
@@ -565,11 +576,11 @@ $('#pjSave').onclick = async () => {
   const aspChanged = p.aspect !== $('#pjAspect').value;
   p.aspect = $('#pjAspect').value;
   await Library.put(p);
+  $('#pjSheet').classList.add('hidden');
   if (aspChanged) await openProject(p.id);
   else {
     if (app.song) { app.song.title = p.title; app.song.artist = p.artist; app.song.tg = p.tg; }
     $('#nowName').textContent = p.title;
-    $('#projHead').textContent = p.title;
     buildStrip(); buildProjList(); draw();
   }
   $('#pjMsg').textContent = 'ذخیره شد';
@@ -781,8 +792,7 @@ $('#cdSnip').onchange = e => {
 function buildLessons() {
   $('#lnBody').classList.add('hidden');
   $('#lnList').classList.remove('hidden');
-  $('#lnBack').classList.add('hidden');
-  $('#lnHead').firstChild.textContent = 'آموزش';
+  $('#lnHead').textContent = 'آموزش';
   const host = $('#lnList');
   if (host.childElementCount) return;
   for (const cat of CATEGORIES) {
@@ -819,11 +829,10 @@ function openLesson(L) {
   b.innerHTML = html;
   b.classList.remove('hidden');
   $('#lnList').classList.add('hidden');
-  $('#lnBack').classList.remove('hidden');
-  $('#lnHead').firstChild.textContent = 'درس';
-  $('#panes').scrollTop = 0;
+  $('#lnHead').textContent = L.title;
+  document.querySelector('.screen[data-screen="learn"] .scroll').scrollTop = 0;
 }
-$('#lnBack').onclick = buildLessons;
+
 
 /* ── رویدادهای عمومی ─────────────────────────────────────── */
 $('#play').onclick = toggle;
@@ -848,13 +857,14 @@ async function boot() {
   await openProject('__demo');
   autoBitrate();
   $('#loading').classList.add('gone');
-  go('home');
+  go('sections');
+  screen('library');
   console.log('%c لیریک استودیو %c آماده',
     'background:#E4142A;color:#fff;padding:2px 6px;border-radius:3px', 'color:#9AA0AC');
 }
 
 window.__studio = {
-  seek, play, pause, draw, go, openProject,
+  seek, play, pause, draw, go, screen, openProject,
   get app() { return app; },
   get song() { return app.song; },
   get time() { return app.t; },
