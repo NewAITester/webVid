@@ -118,67 +118,96 @@ export function textMono(ctx, s, x, y, size, color, a = 1, tracking = 4, align =
  * نتیجه کش می‌شود، چون عنوان‌ها در طول کلیپ ثابت‌اند و این کار گران است.
  */
 const _outlineCache = new Map();
-const ERODE_DIRS = 16;
+const OUT_CACHE_MAX = 20;
+let _erodeOp = null;
 
+/**
+ * ساخت پوستهٔ توخالی و کش کردن آن.
+ *
+ * فرسایش با feMorphology انجام می‌شود که هستهٔ مربعی دارد — دقیقاً
+ * معادل minimum_filter(size=2w+1) در پایتون.
+ *
+ * روش قبلی (اشتراک ۱۶ کپی جابه‌جاشده) غلط بود: آلفای لبه‌های نرم
+ * شانزده بار در هم ضرب می‌شد و عملاً خیلی بیشتر از w می‌فرسود، پس
+ * خط کلفت‌تر می‌شد و اتصال باریک بین دو حرف کاملاً پر می‌شد — همان
+ * خط عمودی وسط کلمه.
+ *
+ * اندازه به پله‌های ۲٪ گرد می‌شود و موقع کشیدن مقیاس اصلاح می‌شود،
+ * وگرنه در تیتراژ که عنوان بزرگ می‌شود هر فریم یک کش تازه می‌سازد.
+ */
 function buildOutline(s, size, family, w, color) {
-  const key = `${s}|${size.toFixed(1)}|${family}|${w}|${color}`;
+  const q = Math.max(1, size * 0.02);
+  const qs = Math.round(size / q) * q;
+  const key = `${s}|${qs.toFixed(1)}|${family}|${w}|${color}`;
   const hit = _outlineCache.get(key);
-  if (hit) return hit;
+  if (hit) { _outlineCache.delete(key); _outlineCache.set(key, hit); return hit; }
 
   const probe = document.createElement('canvas').getContext('2d');
-  probe.font = font(size, family);
+  probe.font = font(qs, family);
   const m = probe.measureText(s);
-  const asc = Number.isFinite(m.actualBoundingBoxAscent) ? m.actualBoundingBoxAscent : size * 0.8;
-  const dsc = Number.isFinite(m.actualBoundingBoxDescent) ? m.actualBoundingBoxDescent : size * 0.3;
-  const pad = Math.ceil(w * 2 + 6);
+  const asc = Number.isFinite(m.actualBoundingBoxAscent) ? m.actualBoundingBoxAscent : qs * 0.8;
+  const dsc = Number.isFinite(m.actualBoundingBoxDescent) ? m.actualBoundingBoxDescent : qs * 0.3;
+  const pad = Math.ceil(w * 3 + 8);
   const cw = Math.ceil(m.width + pad * 2);
   const ch = Math.ceil(asc + dsc + pad * 2);
   if (cw < 2 || ch < 2 || cw > 8000 || ch > 4000) return null;
 
-  const mk = (fn) => {
+  const mk = () => {
     const c = document.createElement('canvas');
     c.width = cw; c.height = ch;
-    fn(c.getContext('2d'));
     return c;
   };
 
-  // ۱) ماسک پر — کل کلمه، یکپارچه
-  const drawText = (g) => {
-    g.direction = 'rtl';
-    g.textAlign = 'center';
-    g.textBaseline = 'alphabetic';
-    g.font = font(size, family);
-    g.fillStyle = '#fff';
-    g.fillText(s, cw / 2, ch / 2 + (asc - dsc) / 2);
-  };
-  const mask = mk(drawText);
+  // ۱) ماسک پر — کل کلمه یکپارچه، پس اتصال حروف مرزی ندارد
+  const mask = mk();
+  const mg = mask.getContext('2d');
+  mg.direction = 'rtl';
+  mg.textAlign = 'center';
+  mg.textBaseline = 'alphabetic';
+  mg.font = font(qs, family);
+  mg.fillStyle = '#fff';
+  mg.fillText(s, cw / 2, ch / 2 + (asc - dsc) / 2);
 
-  // ۲) نسخهٔ فرسوده: اشتراک کپی‌های جابه‌جاشده
-  const eroded = mk(g => { g.drawImage(mask, 0, 0); });
-  const eg = eroded.getContext('2d');
-  eg.globalCompositeOperation = 'destination-in';
-  for (let i = 0; i < ERODE_DIRS; i++) {
-    const a = (i / ERODE_DIRS) * Math.PI * 2;
-    eg.drawImage(mask, Math.cos(a) * w, Math.sin(a) * w);
-  }
-  eg.globalCompositeOperation = 'source-over';
-
-  // ۳) اصل منهای فرسوده = پوستهٔ توخالی
-  const shell = mk(g => { g.drawImage(mask, 0, 0); });
+  // ۲) نسخهٔ فرسوده
+  if (!_erodeOp) _erodeOp = document.getElementById('erodeOp');
+  const r = Math.max(1, Math.round(w));
+  const shell = mk();
   const sg = shell.getContext('2d');
-  sg.globalCompositeOperation = 'destination-out';
-  sg.drawImage(eroded, 0, 0);
-  // ۴) رنگ‌آمیزی
+  sg.drawImage(mask, 0, 0);
+
+  if (_erodeOp) {
+    _erodeOp.setAttribute('radius', String(r));
+    const eroded = mk();
+    const eg = eroded.getContext('2d');
+    eg.filter = 'url(#erode)';
+    eg.drawImage(mask, 0, 0);
+    eg.filter = 'none';
+    sg.globalCompositeOperation = 'destination-out';
+    sg.drawImage(eroded, 0, 0);
+  } else {
+    // اگر مرورگر feMorphology نداشت: عقب‌نشینی به روش جابه‌جایی
+    sg.globalCompositeOperation = 'destination-out';
+    const eroded = mk();
+    const eg = eroded.getContext('2d');
+    eg.drawImage(mask, 0, 0);
+    eg.globalCompositeOperation = 'destination-in';
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      eg.drawImage(mask, Math.cos(a) * r, Math.sin(a) * r);
+    }
+    sg.drawImage(eroded, 0, 0);
+  }
+
+  // ۳) رنگ‌آمیزی
   sg.globalCompositeOperation = 'source-in';
   sg.fillStyle = color;
   sg.fillRect(0, 0, cw, ch);
   sg.globalCompositeOperation = 'source-over';
 
-  const out = { canvas: shell, cw, ch };
+  const out = { canvas: shell, cw, ch, size: qs };
   _outlineCache.set(key, out);
-  if (_outlineCache.size > 40) {
-    const k0 = _outlineCache.keys().next().value;
-    _outlineCache.delete(k0);
+  if (_outlineCache.size > OUT_CACHE_MAX) {
+    _outlineCache.delete(_outlineCache.keys().next().value);
   }
   return out;
 }
@@ -188,9 +217,10 @@ export function outlineTextFa(ctx, s, x, y, size, color, a = 1,
   if (a <= 0.004 || !s) return;
   const o = buildOutline(s, size, family, w, color);
   if (!o) return;
+  const k = size / o.size;           // اصلاح پلهٔ گرد کردن
   ctx.save();
   ctx.globalAlpha = a;
-  ctx.drawImage(o.canvas, x - o.cw / 2, y - o.ch / 2);
+  ctx.drawImage(o.canvas, x - (o.cw * k) / 2, y - (o.ch * k) / 2, o.cw * k, o.ch * k);
   ctx.restore();
 }
 

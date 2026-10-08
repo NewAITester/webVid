@@ -18,6 +18,15 @@ import { W, H } from './song.js';
 
 export const FPS = 60;
 
+/** رزولوشن‌های آماده — همه ۱۶:۹ */
+export const RESOLUTIONS = [
+  { id: '2160', w: 3840, h: 2160, label: '4K — ۳۸۴۰×۲۱۶۰', rec: 45_000_000 },
+  { id: '1440', w: 2560, h: 1440, label: '2K — ۲۵۶۰×۱۴۴۰', rec: 24_000_000 },
+  { id: '1080', w: 1920, h: 1080, label: 'Full HD — ۱۹۲۰×۱۰۸۰', rec: 12_000_000 },
+  { id: '720',  w: 1280, h: 720,  label: 'HD — ۱۲۸۰×۷۲۰',   rec: 6_000_000 },
+  { id: '540',  w: 960,  h: 540,  label: 'کم‌حجم — ۹۶۰×۵۴۰', rec: 3_000_000 },
+];
+
 /**
  * کدک‌ها به ترتیب اولویت.
  * H.264 اول است چون همه‌جا پخش می‌شود و روی گوشی انکودر سخت‌افزاری
@@ -35,11 +44,11 @@ const AUDIO_CODECS = [
   { codec: 'opus',      mux: 'opus', label: 'Opus' },
 ];
 
-async function pickVideo(bitrate = 12_000_000) {
+async function pickVideo(bitrate = 12_000_000, width = W, height = H) {
   for (const c of VIDEO_CODECS) {
     try {
       const r = await VideoEncoder.isConfigSupported({
-        codec: c.codec, width: W, height: H, bitrate, framerate: FPS,
+        codec: c.codec, width, height, bitrate, framerate: FPS,
       });
       if (r.supported) return c;
     } catch { /* کدک بعدی */ }
@@ -96,11 +105,15 @@ async function loadAudioSlice(url, from, to) {
  */
 export async function exportVideo({
   song, from = 0, to = 10, audioUrl = null,
+  width = W, height = H, fps = FPS,
   bitrate = 12_000_000, grain = 0.024, onProgress = () => {},
   signal = null,
 } = {}) {
   const t0 = performance.now();
-  const total = Math.max(1, Math.round((to - from) * FPS));
+  // ابعاد باید زوج باشند وگرنه انکودر رد می‌کند
+  width = Math.round(width / 2) * 2;
+  height = Math.round(height / 2) * 2;
+  const total = Math.max(1, Math.round((to - from) * fps));
 
   // بوم مستقل در اندازهٔ کامل — مستقل از صفحهٔ کاربر.
   //
@@ -110,22 +123,22 @@ export async function exportVideo({
   // می‌شوند و خروجی روشن و مه‌آلود درمی‌آید. بوم DOM جداشده این
   // مشکل را ندارد.
   const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
+  canvas.width = width; canvas.height = height;
 
   const stage = new Stage(canvas);
-  stage.resize(W, H);
+  stage.resize(width, height);
   const R = new Renderer(stage).setSong(song);
   R.grain = grain;
 
   const target = new ArrayBufferTarget();
-  const vc = await pickVideo(bitrate);
+  const vc = await pickVideo(bitrate, width, height);
   if (!vc) throw new Error('هیچ انکودر ویدیویی در دسترس نیست');
   const ac = audioUrl ? await pickAudio() : null;
 
   const muxer = new Muxer({
     target,
     fastStart: 'in-memory',
-    video: { codec: vc.mux, width: W, height: H, frameRate: FPS },
+    video: { codec: vc.mux, width, height, frameRate: fps },
     ...(ac ? { audio: { codec: ac.mux, sampleRate: 48000, numberOfChannels: 2 } } : {}),
   });
 
@@ -136,25 +149,25 @@ export async function exportVideo({
     error: e => { encErr = e; },
   });
   venc.configure({
-    codec: vc.codec, width: W, height: H,
-    bitrate, framerate: FPS,
+    codec: vc.codec, width, height,
+    bitrate, framerate: fps,
     latencyMode: 'quality',
     ...(vc.mux === 'avc' ? { avc: { format: 'avc' } } : {}),
   });
 
-  const FRAME_US = 1e6 / FPS;
+  const FRAME_US = 1e6 / fps;
   for (let i = 0; i < total; i++) {
     if (signal?.aborted) { venc.close(); throw new Error('لغو شد'); }
     if (encErr) throw encErr;
 
-    R.renderFrame(from + i / FPS);
+    R.renderFrame(from + i / fps);
 
     const frame = new VideoFrame(canvas, {
       timestamp: Math.round(i * FRAME_US),
       duration: Math.round(FRAME_US),
     });
     // هر ۲ ثانیه یک کی‌فریم — مثل -g 120 در نسخهٔ پایتون
-    venc.encode(frame, { keyFrame: i % (FPS * 2) === 0 });
+    venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
     frame.close();
 
     // صف را خالی نگه دار تا حافظه نترکد

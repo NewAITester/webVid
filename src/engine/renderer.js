@@ -7,6 +7,9 @@ import { STYLE_FN } from './styles.js';
 
 const TEXTUAL = new Set(['verse', 'chorus', 'pre', 'cold']);
 
+/** چقدر هر واحد grain میانگین تصویر را بالا می‌برد (اندازه‌گیری‌شده) */
+const GRAIN_LIFT = 70;
+
 /**
  * رندرر — ترجمهٔ وفادار draw() از full.py
  *
@@ -29,6 +32,7 @@ export class Renderer {
     this.grain = 0.024;
     this.bloom = 0.55;
     this.tone = true;        // منحنی تُن نهایی
+    this.chroma = 1.0;       // انحراف رنگی، برحسب پیکسل در ۱۹۲۰
     this.soloStyle = null;      // برای تصویر کوچک بخش‌ها
     this._bloomCanvas = null;
     this._grainTile = null;
@@ -157,8 +161,19 @@ export class Renderer {
       ctx.restore();
     }
 
-    /* ۲) منحنی تُن — تصویر را از خودش عبور می‌دهیم */
+    /* ۲) انحراف رنگی + منحنی تُن — در یک پاس */
     if (this.tone) {
+      // انحراف باید با رزولوشن مقیاس بخورد: ۱ پیکسل در ۱۹۲۰
+      if (this.chroma > 0) {
+        const dx = Math.max(0.4, (w / W) * this.chroma);
+        if (dx !== this._lastDx) {
+          this._chR ??= document.getElementById('chromaR');
+          this._chB ??= document.getElementById('chromaB');
+          this._chR?.setAttribute('dx', String(dx));
+          this._chB?.setAttribute('dx', String(-dx));
+          this._lastDx = dx;
+        }
+      }
       const tc = this._scratch('_toneCanvas', w, h);
       const tx = tc.getContext('2d');
       tx.setTransform(1, 0, 0, 1, 0, 0);
@@ -205,6 +220,24 @@ export class Renderer {
       ctx.fillStyle = ctx.createPattern(this._grainTile, 'repeat');
       ctx.fillRect(0, 0, w / k + 256, h / k + 256);
       ctx.restore();
+
+      /* جبران میانگین دانه.
+         نویز پایتون متقارن بود (میانگین صفر)، ولی نویز ما فقط مثبت
+         است چون حالت lighter نمی‌تواند کم کند. نتیجه این بود که کل
+         تصویر حدود ۱٫۷ واحد بالا می‌رفت و سیاهی‌ها خاکستری می‌شدند —
+         همان چیزی که به‌نظر می‌رسید «متن پس‌زمینه روشن‌تر شده».
+         با حالت difference روی یک رنگ ثابتِ کوچک، دقیقاً همان مقدار
+         کم می‌شود: |dst - c| برای dst > c یعنی تفریق. */
+      const lift = this.grain * GRAIN_LIFT;
+      if (lift > 0.02) {
+        const c = 4;
+        ctx.save();
+        ctx.globalCompositeOperation = 'difference';
+        ctx.globalAlpha = Math.min(1, lift / c);
+        ctx.fillStyle = `rgb(${c},${c},${c})`;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+      }
     }
   }
 

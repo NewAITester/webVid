@@ -5,7 +5,7 @@ import { parseLRC } from './engine/lyrics.js';
 import { loadFonts, faTime } from './engine/text.js';
 import { Song, SECT, SECTION_NAMES, DUR } from './engine/song.js';
 import { DESIGN_W, DESIGN_H } from './engine/core.js';
-import { exportVideo, canExport } from './engine/export.js';
+import { exportVideo, canExport, RESOLUTIONS } from './engine/export.js';
 import { saveFile, shareFile } from './engine/save.js';
 
 const $ = s => document.querySelector(s);
@@ -186,24 +186,51 @@ $('#exportBtn').onclick = async () => {
   }
 };
 
+// پر کردن فهرست رزولوشن‌ها
+const resSel = $('#exRes');
+RESOLUTIONS.forEach(r => {
+  const o = document.createElement('option');
+  o.value = r.id; o.textContent = r.label;
+  if (r.id === '1080') o.selected = true;
+  resSel.append(o);
+});
+const curRes = () => RESOLUTIONS.find(r => r.id === resSel.value) || RESOLUTIONS[2];
+
+const faNum = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+
+/** بیت‌ریت پیشنهادی بر اساس رزولوشن و نرخ فریم */
+function autoBitrate() {
+  const r = curRes();
+  const fps = parseInt($('#exFps').value, 10);
+  const mbit = Math.round((r.rec / 1e6) * (fps >= 60 ? 1 : fps >= 30 ? 0.72 : 0.62));
+  $('#exBr').value = String(Math.min(60, Math.max(1, mbit)));
+  updateEstimate();
+}
+
 /** برآورد حجم فایل قبل از شروع — تا غافلگیر نشوید */
 function updateEstimate() {
   const from = Math.max(0, parseFloat($('#exFrom').value) || 0);
   const to = Math.min(DUR, parseFloat($('#exTo').value) || 0);
-  const br = parseInt($('#exQ').value, 10);
+  const br = parseInt($('#exBr').value, 10) * 1e6;
+  const r = curRes();
+  const fps = parseInt($('#exFps').value, 10);
+  const brv = $('#exBrV'); if (brv) brv.textContent = faNum(br / 1e6) + ' مگابیت';
   const secs = Math.max(0, to - from);
-  const mb = (secs * (br + 224000) / 8 / 1048576);
   const el = $('#exEst');
   if (!el) return;
   if (secs <= 0) { el.textContent = ''; return; }
-  el.textContent = `حدود ${mb.toFixed(0)} مگابایت · ${secs.toFixed(0)} ثانیه ویدیو`;
+  const mb = (secs * (br + 224000) / 8 / 1048576);
+  el.textContent = `${r.w}×${r.h} · ${faNum(fps)} فریم · حدود ${faNum(mb.toFixed(0))} مگابایت`;
   // کل فایل در حافظه ساخته می‌شود، پس بالای ~۴۰۰ مگابایت روی گوشی خطرناک است
   el.className = mb > 400 ? 'msg err' : mb > 180 ? 'msg warn' : 'msg';
-  if (mb > 400) el.textContent += ' — روی گوشی ممکن است حافظه کم بیاورد، تکه‌تکه بگیرید';
+  if (mb > 400) el.textContent += ' — ممکن است حافظهٔ گوشی کم بیاورد، تکه‌تکه بگیرید';
 }
-['#exFrom', '#exTo', '#exQ'].forEach(id => {
+['#exFrom', '#exTo', '#exBr'].forEach(id => {
   const e = $(id); if (e) { e.oninput = updateEstimate; e.onchange = updateEstimate; }
 });
+['#exRes', '#exFps'].forEach(id => { const e = $(id); if (e) e.onchange = autoBitrate; });
+$('#exBrAuto').onclick = autoBitrate;
+autoBitrate();
 
 document.querySelectorAll('[data-range]').forEach(b => {
   b.onclick = () => {
@@ -233,7 +260,9 @@ $('#exGo').onclick = async () => {
       song,
       from, to,
       audioUrl: `${BASE}data/Neghab.mp3`,
-      bitrate: parseInt($('#exQ').value, 10),
+      width: curRes().w, height: curRes().h,
+      fps: parseInt($('#exFps').value, 10),
+      bitrate: parseInt($('#exBr').value, 10) * 1e6,
       grain: $('#exGrain').checked ? 0.024 : 0,
       signal: exAbort.signal,
       onProgress: p => {
@@ -246,7 +275,7 @@ $('#exGo').onclick = async () => {
     });
 
     const mb = (blob.size / 1048576).toFixed(1);
-    const name = `neghab_${from.toFixed(0)}-${to.toFixed(0)}.mp4`;
+    const name = `neghab_${from.toFixed(0)}-${to.toFixed(0)}_${curRes().id}p.mp4`;
     setMsg(`در حال ذخیره… (${mb} مگابایت)`);
     const res = await saveFile(blob, name, p => {
       fill.style.width = (p * 100).toFixed(0) + '%';

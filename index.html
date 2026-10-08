@@ -16,10 +16,25 @@
 -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <!-- منحنی تُن: y = (x^1.05)²(3-2x^1.05)·0.92 + x^1.05·0.08 -->
+    <!-- پاس نهایی: اول انحراف رنگی، بعد منحنی تن.
+         هر دو در یک فیلترند تا فقط یک بار کل تصویر کپی شود.
+
+         انحراف رنگی = معادل np.roll روی کانال قرمز و آبی در پایتون:
+         قرمز یک پیکسل به راست، آبی یک پیکسل به چپ. dx از جاوااسکریپت
+         تنظیم می شود تا در رزولوشن بالاتر هم نسبت درست بماند. -->
     <filter id="tone" x="0" y="0" width="100%" height="100%"
             color-interpolation-filters="sRGB">
-      <feComponentTransfer>
+      <feOffset id="chromaR" in="SourceGraphic" dx="1" dy="0" result="sr"/>
+      <feOffset id="chromaB" in="SourceGraphic" dx="-1" dy="0" result="sb"/>
+      <feColorMatrix in="sr" type="matrix" result="cR"
+        values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+      <feColorMatrix in="SourceGraphic" type="matrix" result="cG"
+        values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+      <feColorMatrix in="sb" type="matrix" result="cB"
+        values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+      <feComposite in="cR" in2="cG" operator="arithmetic" k2="1" k3="1" result="cRG"/>
+      <feComposite in="cRG" in2="cB" operator="arithmetic" k2="1" k3="1" result="cRGB"/>
+      <feComponentTransfer in="cRGB">
         <feFuncR type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
         <feFuncG type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
         <feFuncB type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
@@ -34,6 +49,13 @@
         <feFuncG type="linear" slope="2.5" intercept="-1.5"/>
         <feFuncB type="linear" slope="2.5" intercept="-1.5"/>
       </feComponentTransfer>
+    </filter>
+
+    <!-- فرسایش با هستهٔ مربعی — معادل دقیق minimum_filter(size=2w+1) پایتون.
+         شعاع قبل از هر استفاده از جاوااسکریپت تنظیم می‌شود. -->
+    <filter id="erode" x="-25%" y="-25%" width="150%" height="150%"
+            color-interpolation-filters="sRGB">
+      <feMorphology id="erodeOp" operator="erode" radius="5"/>
     </filter>
   </defs>
 </svg>
@@ -57,13 +79,21 @@
       <button class="btn sm ghost" data-range="0,228.6">کل آهنگ</button>
     </div>
     <div class="prow">
-      <label>کیفیت</label>
-      <select id="exQ">
-        <option value="6000000">سبک — ۶ مگابیت</option>
-        <option value="12000000" selected>خوب — ۱۲ مگابیت</option>
-        <option value="24000000">بالا — ۲۴ مگابیت</option>
+      <label>رزولوشن</label>
+      <select id="exRes"></select>
+      <label>فریم</label>
+      <select id="exFps">
+        <option value="60" selected>۶۰</option>
+        <option value="30">۳۰</option>
+        <option value="24">۲۴</option>
       </select>
       <label><input id="exGrain" type="checkbox" checked> دانهٔ فیلم</label>
+    </div>
+    <div class="prow">
+      <label>بیت‌ریت</label>
+      <input id="exBr" type="range" min="1" max="60" step="1" value="12" class="rng">
+      <span id="exBrV" class="pill">۱۲ مگابیت</span>
+      <button class="btn sm ghost" id="exBrAuto">خودکار</button>
       <div class="spacer"></div>
       <button id="exGo" class="btn primary sm">شروع</button>
       <button id="exCancel" class="btn sm hidden">لغو</button>

@@ -89,3 +89,10 @@ body{
 .msg.err{color:#FF6B6B}
 .msg.ok{color:#5FD38D}
 .msg.warn{color:#E8B339}
+
+.rng{flex:1;min-width:120px;-webkit-appearance:none;appearance:none;height:5px;
+  background:#20242F;border-radius:99px;outline:none;direction:ltr}
+.rng::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;
+  border-radius:50%;background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
+.rng::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
+  background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
