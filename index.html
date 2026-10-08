@@ -7,6 +7,37 @@
 <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
+
+<!--
+  فیلترهای گرید نهایی.
+  color-interpolation-filters="sRGB" حیاتی است: پیش‌فرض SVG فضای
+  linearRGB است، ولی پایتون روی بایت‌های خام کار می‌کرد. بدون این
+  خط، منحنی تُن نتیجهٔ کاملاً متفاوتی می‌دهد.
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- منحنی تُن: y = (x^1.05)²(3-2x^1.05)·0.92 + x^1.05·0.08 -->
+    <filter id="tone" x="0" y="0" width="100%" height="100%"
+            color-interpolation-filters="sRGB">
+      <feComponentTransfer>
+        <feFuncR type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
+        <feFuncG type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
+        <feFuncB type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
+      </feComponentTransfer>
+    </filter>
+
+    <!-- آستانهٔ بلوم: (x - 0.60) / 0.40 ، یعنی فقط روشنایی‌های بالای ۶۰٪ -->
+    <filter id="bloomThresh" x="0" y="0" width="100%" height="100%"
+            color-interpolation-filters="sRGB">
+      <feComponentTransfer>
+        <feFuncR type="linear" slope="2.5" intercept="-1.5"/>
+        <feFuncG type="linear" slope="2.5" intercept="-1.5"/>
+        <feFuncB type="linear" slope="2.5" intercept="-1.5"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+</svg>
+
 <div id="app">
   <header class="bar">
     <div class="brand">لیریک<span>استودیو</span></div>

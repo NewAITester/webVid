@@ -31,8 +31,34 @@ export function ring(ctx, cx, cy, r, color, lw = 2, a = 1) {
 /* ── متن ────────────────────────────────────────────────────── */
 
 /**
- * متن فارسی وسط‌چین.
- * baseline: 'mid' وسط حرف، 'cap' بالای حرف
+ * جابه‌جایی لازم برای مرکز کردن روی «جعبهٔ جوهر»
+ *
+ * تفاوت ظریف ولی مهم: پایتون متن را روی ماسک رندرشده مرکز می‌کرد،
+ * یعنی وسطِ پیکسل‌های واقعیِ حرف. ولی textBaseline='middle' در canvas
+ * روی متریک فونت (em) مرکز می‌کند که برای فونت فارسی با صعودی‌های
+ * بلند، چند ده پیکسل بالاتر می‌افتد.
+ *
+ * نتیجه‌اش این بود که عنوان کارت پایان ۲۴ پیکسل بالاتر از اصل بود.
+ */
+const _inkCache = new Map();
+
+function inkOffset(ctx, s, size, family) {
+  const k = `${s}|${size}|${family}`;
+  const hit = _inkCache.get(k);
+  if (hit !== undefined) return hit;
+  ctx.font = font(size, family);
+  const m = ctx.measureText(s);
+  const asc = m.actualBoundingBoxAscent, dsc = m.actualBoundingBoxDescent;
+  // اگر مرورگر این متریک‌ها را نداشت، به حالت قبلی برگرد
+  const v = Number.isFinite(asc) && Number.isFinite(dsc) ? (asc - dsc) / 2 : null;
+  _inkCache.set(k, v);
+  if (_inkCache.size > 900) _inkCache.delete(_inkCache.keys().next().value);
+  return v;
+}
+
+/**
+ * متن فارسی.
+ * baseline: 'mid' وسطِ جوهر، 'cap' بالای حرف
  */
 export function textFa(ctx, s, x, y, size, color, a = 1,
                        family = FONTS.black, align = 'center', baseline = 'mid') {
@@ -40,10 +66,22 @@ export function textFa(ctx, s, x, y, size, color, a = 1,
   ctx.save();
   ctx.direction = 'rtl';
   ctx.textAlign = align;
-  ctx.textBaseline = baseline === 'mid' ? 'middle' : 'alphabetic';
   ctx.font = font(size, family);
   ctx.fillStyle = rgba(color, a);
-  ctx.fillText(s, x, baseline === 'cap' ? y + size * 0.74 : y);
+
+  if (baseline === 'cap') {
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(s, x, y + size * 0.74);
+  } else {
+    const off = inkOffset(ctx, s, size, family);
+    if (off === null) {
+      ctx.textBaseline = 'middle';
+      ctx.fillText(s, x, y);
+    } else {
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(s, x, y + off);
+    }
+  }
   ctx.restore();
 }
 
@@ -74,12 +112,13 @@ export function outlineTextFa(ctx, s, x, y, size, color, a = 1,
   ctx.save();
   ctx.direction = 'rtl';
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
   ctx.font = font(size, family);
   ctx.lineWidth = w;
   ctx.lineJoin = 'round';
   ctx.strokeStyle = rgba(color, a);
-  ctx.strokeText(s, x, y);
+  const off = inkOffset(ctx, s, size, family);
+  if (off === null) { ctx.textBaseline = 'middle'; ctx.strokeText(s, x, y); }
+  else { ctx.textBaseline = 'alphabetic'; ctx.strokeText(s, x, y + off); }
   ctx.restore();
 }
 

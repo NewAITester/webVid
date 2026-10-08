@@ -28,6 +28,7 @@ export class Renderer {
     this.showFurniture = true;
     this.grain = 0.024;
     this.bloom = 0.55;
+    this.tone = true;        // منحنی تُن نهایی
     this.soloStyle = null;      // برای تصویر کوچک بخش‌ها
     this._bloomCanvas = null;
     this._grainTile = null;
@@ -106,11 +107,16 @@ export class Renderer {
   }
 
   /**
-   * گرید نهایی
+   * گرید نهایی — ترجمهٔ وفادار grade()
    *
-   * در پایتون با numpy روی پیکسل‌ها انجام می‌شد و گران بود. اینجا
-   * بلوم را با filter بومی مرورگر می‌گیریم که روی GPU اجرا می‌شود،
-   * پس عملاً رایگان است.
+   * ترتیب دقیقاً مثل پایتون است و ترتیبش مهم است:
+   *   ۱) بلوم با آستانهٔ ۰٫۶۰ (فقط روشنایی‌ها می‌درخشند، نه کل تصویر)
+   *   ۲) منحنی تُن (نواحی تاریک را تا ۳ برابر تیره‌تر می‌کند)
+   *   ۳) ویگنت ضربی
+   *   ۴) دانهٔ افزایشی
+   *
+   * در پایتون همهٔ این‌ها با numpy روی پیکسل‌ها بود و گران. اینجا
+   * فیلترهای SVG روی GPU اجرا می‌شوند.
    */
   _grade(t) {
     const cv = this.stage.canvas;
@@ -120,57 +126,112 @@ export class Renderer {
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    // بلوم: کپی تار‌شده را با حالت screen روی تصویر می‌گذاریم
+    /* ۱) بلوم با آستانه */
     if (this.bloom > 0.01) {
-      if (!this._bloomCanvas) this._bloomCanvas = document.createElement('canvas');
-      const bc = this._bloomCanvas;
-      const bw = Math.max(2, w >> 2), bh = Math.max(2, h >> 2);
-      if (bc.width !== bw || bc.height !== bh) { bc.width = bw; bc.height = bh; }
-      const bx = bc.getContext('2d');
-      bx.setTransform(1, 0, 0, 1, 0, 0);
-      bx.clearRect(0, 0, bw, bh);
-      bx.filter = `blur(${Math.max(1, bw * 0.012)}px)`;
-      bx.drawImage(cv, 0, 0, bw, bh);
-      bx.filter = 'none';
+      const bw = Math.max(4, w >> 2), bh = Math.max(4, h >> 2);
+      // دو بوم جدا لازم است: کشیدن یک بوم روی خودش با فیلتر، رفتار
+      // تعریف‌نشده دارد و هالهٔ غول‌پیکر تولید می‌کرد.
+      const ba = this._scratch('_bloomA', bw, bh);
+      const bb = this._scratch('_bloomB', bw, bh);
+      const ax = ba.getContext('2d');
+      ax.setTransform(1, 0, 0, 1, 0, 0);
+      ax.globalCompositeOperation = 'copy';
+      ax.filter = 'url(#bloomThresh)';
+      ax.drawImage(cv, 0, 0, bw, bh);
+      ax.filter = 'none';
+      ax.globalCompositeOperation = 'source-over';
+
+      const bxx = bb.getContext('2d');
+      bxx.setTransform(1, 0, 0, 1, 0, 0);
+      bxx.globalCompositeOperation = 'copy';
+      // sigma معادل بلوم پایتون: sqrt((54²+13²)/12) ≈ ۱۶ پیکسل در مقیاس کامل
+      bxx.filter = `blur(${Math.max(0.8, bw * 0.0085)}px)`;
+      bxx.drawImage(ba, 0, 0);
+      bxx.filter = 'none';
+      bxx.globalCompositeOperation = 'source-over';
 
       ctx.save();
       ctx.globalCompositeOperation = 'screen';
-      ctx.globalAlpha = this.bloom * 0.42;
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(bc, 0, 0, w, h);
+      ctx.globalAlpha = this.bloom;
+      ctx.drawImage(bb, 0, 0, w, h);
       ctx.restore();
     }
 
-    // ویگنت
-    const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.34,
-                                        w / 2, h / 2, Math.max(w, h) * 0.78);
+    /* ۲) منحنی تُن — تصویر را از خودش عبور می‌دهیم */
+    if (this.tone) {
+      const tc = this._scratch('_toneCanvas', w, h);
+      const tx = tc.getContext('2d');
+      tx.setTransform(1, 0, 0, 1, 0, 0);
+      tx.globalCompositeOperation = 'copy';
+      tx.filter = 'none';
+      tx.drawImage(cv, 0, 0);
+      ctx.save();
+      ctx.globalCompositeOperation = 'copy';
+      ctx.filter = 'url(#tone)';
+      ctx.drawImage(tc, 0, 0);
+      ctx.filter = 'none';
+      ctx.restore();
+    }
+
+    /* ۳) ویگنت — در پایتون ضربی بود، پس اینجا هم multiply */
+    const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.30,
+                                        w / 2, h / 2, Math.hypot(w, h) * 0.56);
     vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(0,0,0,0.26)');
+    vg.addColorStop(0.6, 'rgba(0,0,0,0.10)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.44)');
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, w, h);
 
-    // دانهٔ فیلم
+    /* ۴) دانه
+       دو نکته که اول اشتباه کرده بودم:
+
+       الف) حالت overlay روی پیکسل‌های تیره تقریباً بی‌اثر است
+            (۲×base×blend)، و این ویدیو تقریباً تماماً تیره است.
+            پایتون نویز افزایشی اضافه می‌کرد، پس اینجا هم lighter.
+            چون زمینه سیاه است، نیمهٔ منفی نویز در پایتون هم به صفر
+            بریده می‌شد — یعنی عملاً همان نویز افزایشی است.
+
+       ب) اندازهٔ دانه باید در فضای طراحی ثابت باشد نه پیکسل دستگاه،
+          وگرنه روی گوشی درشت‌تر از خروجی ۱۰۸۰p دیده می‌شود. */
     if (this.grain > 0.001) {
-      if (!this._grainTile) this._grainTile = makeGrain(128);
+      if (!this._grainTile) this._grainTile = makeGrain(256);
       const f = Math.floor(t * 60);
+      const k = w / W;
       ctx.save();
-      ctx.globalAlpha = this.grain * 4.0;
-      ctx.globalCompositeOperation = 'overlay';
-      ctx.translate(-((hash2(f, 1) * 128) | 0), -((hash2(f, 2) * 128) | 0));
+      ctx.globalAlpha = Math.min(1, this.grain * 2.3);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.scale(k, k);
+      ctx.translate(-((hash2(f, 1) * 256) | 0), -((hash2(f, 2) * 256) | 0));
       ctx.fillStyle = ctx.createPattern(this._grainTile, 'repeat');
-      ctx.fillRect(0, 0, w + 128, h + 128);
+      ctx.fillRect(0, 0, w / k + 256, h / k + 256);
       ctx.restore();
     }
   }
+
+  _scratch(key, w, h) {
+    let c = this[key];
+    if (!c) { c = this[key] = document.createElement('canvas'); }
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    return c;
+  }
 }
 
+/**
+ * کاشی دانه: نویز گاوسی، فقط نیمهٔ مثبت.
+ * (نیمهٔ منفی روی زمینهٔ سیاه به صفر بریده می‌شود، پس نگه داشتنش
+ *  معنایی ندارد.)
+ */
 function makeGrain(size) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d');
   const img = g.createImageData(size, size);
   for (let i = 0; i < size * size; i++) {
-    const v = (hash2(i % size, (i / size) | 0) * 255) | 0;
+    // Box-Muller از دو hash تکرارپذیر
+    const u1 = Math.max(1e-6, hash2(i, 11));
+    const u2 = hash2(i, 29);
+    const gauss = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    const v = Math.min(255, Math.max(0, gauss) * 160) | 0;
     img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
     img.data[i * 4 + 3] = 255;
   }
