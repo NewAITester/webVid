@@ -3,108 +3,161 @@
 
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0A0B0E; --panel:#111319; --line:#1E222C; --ink:#E8EAF0;
-  --dim:#7C8495; --red:#E4142A; --grey:#9AA0AC;
+  --bg:#0A0B0E; --panel:#111319; --panel2:#0E1016; --line:#1E222C;
+  --ink:#E8EAF0; --dim:#7C8495; --red:#E4142A; --ok:#5FD38D; --warn:#E8B339;
+  --navh:60px;
 }
-html,body{height:100%}
+html,body{height:100%;overscroll-behavior:none}
 body{
   background:var(--bg);color:var(--ink);
   font-family:"IRANSansX Bold",system-ui,sans-serif;
   overflow:hidden;-webkit-tap-highlight-color:transparent;
+  -webkit-text-size-adjust:100%;
 }
 #app{display:flex;flex-direction:column;height:100dvh}
 
-.bar{display:flex;align-items:center;gap:12px;padding:10px 16px;
+/* ── نوار بالا ───────────────────────────────────────────── */
+.bar{display:flex;align-items:center;gap:10px;padding:9px 14px;
   background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
-.brand{font-family:"IRANSansX Black";font-size:17px;letter-spacing:-.3px}
+.brand{font-family:"IRANSansX Black";font-size:15px;letter-spacing:-.3px;white-space:nowrap}
 .brand span{color:var(--red)}
+.now{font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;max-width:40vw}
 .spacer{flex:1}
-.pill{font-size:12px;color:var(--dim);background:#0C0E13;
-  border:1px solid var(--line);padding:4px 10px;border-radius:999px;direction:ltr}
+.pill{font-size:11px;color:var(--dim);background:#0C0E13;border:1px solid var(--line);
+  padding:3px 9px;border-radius:999px;direction:ltr;white-space:nowrap}
 
-.stagewrap{flex:1;position:relative;display:grid;place-items:center;
+/* ── صحنه ────────────────────────────────────────────────── */
+.stagewrap{flex:1 1 auto;position:relative;display:grid;place-items:center;
   background:#000;min-height:0;overflow:hidden}
+.stagewrap.hide{display:none}
 #stage{max-width:100%;max-height:100%;display:block;touch-action:none}
-.loading{position:absolute;inset:0;display:grid;place-items:center;
-  background:#000;color:var(--dim);font-size:14px;transition:opacity .4s}
-.loading.gone{opacity:0;pointer-events:none}
-
-.transport{display:flex;align-items:center;gap:12px;padding:10px 16px;
-  background:var(--panel);border-top:1px solid var(--line);flex:0 0 auto}
-.btn{background:#171A22;color:var(--ink);border:1px solid var(--line);
-  border-radius:10px;padding:8px 14px;font-size:15px;cursor:pointer;
-  font-family:inherit;transition:.15s}
-.btn:hover{background:#1E222C}
-.btn.primary{background:var(--red);border-color:var(--red);min-width:50px}
-.btn.primary:hover{filter:brightness(1.12)}
-.time{font-size:13px;color:var(--ink);min-width:78px;text-align:center;
-  font-variant-numeric:tabular-nums}
-.time.dim{color:var(--dim)}
-.scrub{flex:1;-webkit-appearance:none;appearance:none;height:5px;
-  background:#20242F;border-radius:99px;outline:none;direction:ltr}
-.scrub::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;
-  border-radius:50%;background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
-.scrub::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
-  background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
-
-.strip{display:flex;gap:8px;padding:10px 16px 14px;overflow-x:auto;
-  background:var(--panel);border-top:1px solid var(--line);flex:0 0 auto;
-  scrollbar-width:thin}
-.card{flex:0 0 auto;width:132px;border:1px solid var(--line);border-radius:10px;
-  overflow:hidden;background:#0C0E13;cursor:pointer;transition:.15s}
-.card:hover{border-color:#333B4A}
-.card.on{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset}
-.card canvas{display:block;width:100%;height:74px;background:#000}
-.card .lb{padding:5px 8px 7px;font-size:11px;color:var(--dim);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card.on .lb{color:var(--ink)}
-
-@media (max-width:640px){
-  .strip{padding:8px 10px 12px}
-  .card{width:108px}
-  .card canvas{height:61px}
-  .transport{gap:8px;padding:8px 10px}
-  .time{min-width:66px;font-size:12px}
-}
-
-/* ── پنل خروجی ─────────────────────────────────────────── */
-.btn.sm{padding:5px 11px;font-size:13px;border-radius:8px}
-.btn.ghost{background:transparent;color:var(--dim)}
-.btn.ghost:hover{color:var(--ink);background:#171A22}
-.hidden{display:none !important}
-.panel{background:#0E1016;border-bottom:1px solid var(--line);
-  padding:10px 16px;display:flex;flex-direction:column;gap:9px;flex:0 0 auto}
-.prow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.prow label{font-size:12px;color:var(--dim)}
-.prow input[type=number]{width:72px;background:#07080B;color:var(--ink);
-  border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:13px;
-  font-family:inherit;direction:ltr;text-align:center}
-.prow select{background:#07080B;color:var(--ink);border:1px solid var(--line);
-  border-radius:7px;padding:5px 8px;font-size:12px;font-family:inherit}
-.prow input[type=checkbox]{accent-color:var(--red);margin-inline-end:4px}
-.bar2{height:6px;background:#1A1E27;border-radius:99px;overflow:hidden}
-.bar2 i{display:block;height:100%;width:0;background:var(--red);
-  border-radius:99px;transition:width .2s}
-.msg{font-size:12px;color:var(--dim);min-height:16px}
-.msg.err{color:#FF6B6B}
-.msg.ok{color:#5FD38D}
-.msg.warn{color:#E8B339}
-
-.rng{flex:1;min-width:120px;-webkit-appearance:none;appearance:none;height:5px;
-  background:#20242F;border-radius:99px;outline:none;direction:ltr}
-.rng::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;
-  border-radius:50%;background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
-.rng::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
-  background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
-
 #stage.editing{cursor:grab}
 #stage.editing.dragging{cursor:grabbing}
-.btn.on{background:var(--red);border-color:var(--red);color:#fff}
+.loading{position:absolute;inset:0;display:grid;place-items:center;
+  background:#000;color:var(--dim);font-size:13px;transition:opacity .4s}
+.loading.gone{opacity:0;pointer-events:none}
 
-.prow input[type=file]{font-size:11px;color:var(--dim);max-width:190px;font-family:inherit}
-.prow input[type=file]::file-selector-button{background:#171A22;color:var(--ink);
-  border:1px solid var(--line);border-radius:7px;padding:4px 9px;font-size:11px;
-  margin-inline-end:7px;cursor:pointer;font-family:inherit}
-.prow .txt{background:#07080B;color:var(--ink);border:1px solid var(--line);
-  border-radius:7px;padding:5px 9px;font-size:12px;font-family:inherit;width:120px}
-.prow .txt.wide{width:180px;direction:ltr}
+/* ── نوار پخش ────────────────────────────────────────────── */
+.transport{display:flex;align-items:center;gap:10px;padding:8px 14px;
+  background:var(--panel);border-top:1px solid var(--line);flex:0 0 auto}
+.transport.hide{display:none}
+.time{font-size:12px;min-width:70px;text-align:center;font-variant-numeric:tabular-nums}
+.time.dim{color:var(--dim)}
+.scrub{flex:1;-webkit-appearance:none;appearance:none;height:5px;background:#20242F;
+  border-radius:99px;outline:none;direction:ltr}
+.scrub::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;border-radius:50%;
+  background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
+.scrub::-moz-range-thumb{width:17px;height:17px;border-radius:50%;background:var(--red);
+  cursor:pointer;border:2px solid #0A0B0E}
+
+/* ── دکمه‌ها ─────────────────────────────────────────────── */
+.btn{background:#171A22;color:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:9px 15px;font-size:14px;cursor:pointer;font-family:inherit;transition:.15s;
+  white-space:nowrap}
+.btn:active{transform:scale(.97)}
+.btn:hover{background:#1E222C}
+.btn.primary{background:var(--red);border-color:var(--red);color:#fff}
+.btn.primary:hover{filter:brightness(1.12)}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:8px}
+.btn.ghost{background:transparent;color:var(--dim)}
+.btn.ghost:hover{color:var(--ink);background:#171A22}
+.btn.wide{width:100%;margin-top:4px}
+.btn.on{background:var(--red);border-color:var(--red);color:#fff}
+.hidden{display:none !important}
+
+/* ── پنل‌ها ──────────────────────────────────────────────── */
+.panes{flex:0 0 auto;max-height:46dvh;overflow-y:auto;background:var(--panel2);
+  border-top:1px solid var(--line);-webkit-overflow-scrolling:touch}
+.panes.tall{max-height:none;flex:1 1 auto}
+.pane{display:none;padding:12px 14px 16px}
+.pane.on{display:block}
+.phead{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);
+  margin:2px 0 10px;font-family:"IRANSansX Black"}
+.form{display:flex;flex-direction:column;gap:10px}
+.frow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.frow.btns{gap:7px}
+.frow.slider{flex-wrap:nowrap}
+.frow>label{font-size:12px;color:var(--dim);white-space:nowrap}
+.note{font-size:11.5px;color:var(--dim);line-height:1.8}
+.msg{font-size:12px;color:var(--dim);min-height:15px;line-height:1.7}
+.msg.err{color:#FF6B6B}.msg.ok{color:var(--ok)}.msg.warn{color:var(--warn)}
+
+input[type=number],.txt{background:#07080B;color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:7px 9px;font-size:13px;font-family:inherit}
+input[type=number]{width:76px;direction:ltr;text-align:center}
+.txt{flex:1;min-width:120px}
+.txt.ltr{direction:ltr}
+select{background:#07080B;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+  padding:7px 9px;font-size:12.5px;font-family:inherit}
+input[type=checkbox]{accent-color:var(--red);margin-inline-end:6px;width:16px;height:16px}
+input[type=color]{width:46px;height:30px;background:none;border:1px solid var(--line);
+  border-radius:8px;padding:2px;cursor:pointer}
+input[type=file]{font-size:11px;color:var(--dim);max-width:100%;font-family:inherit}
+input[type=file]::file-selector-button{background:#171A22;color:var(--ink);
+  border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:11.5px;
+  margin-inline-end:8px;cursor:pointer;font-family:inherit}
+.rng{flex:1;min-width:90px;-webkit-appearance:none;appearance:none;height:5px;
+  background:#20242F;border-radius:99px;outline:none;direction:ltr}
+.rng::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--red);cursor:pointer;border:2px solid #0A0B0E}
+.rng::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--red);
+  cursor:pointer;border:2px solid #0A0B0E}
+.bar2{height:6px;background:#1A1E27;border-radius:99px;overflow:hidden}
+.bar2 i{display:block;height:100%;width:0;background:var(--red);border-radius:99px;
+  transition:width .2s}
+
+/* ── کارت پروژه ──────────────────────────────────────────── */
+.cards{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.pcard{display:flex;align-items:center;gap:11px;padding:10px 12px;background:#12151C;
+  border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:.15s}
+.pcard:hover{border-color:#333B4A}
+.pcard.on{border-color:var(--red)}
+.pcard .pi{width:44px;height:44px;border-radius:9px;background:#07080B;display:grid;
+  place-items:center;font-family:"IRANSansX Black";font-size:15px;color:var(--red);flex:0 0 auto}
+.pcard .pm{flex:1;min-width:0}
+.pcard .pt{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pcard .ps{font-size:11px;color:var(--dim);margin-top:2px}
+.pcard .px{background:none;border:none;color:var(--dim);font-size:17px;cursor:pointer;
+  padding:4px 7px;border-radius:7px}
+.pcard .px:hover{color:#FF6B6B;background:#1A1016}
+
+/* ── فهرست بخش‌ها ────────────────────────────────────────── */
+.list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.srow{display:flex;align-items:center;gap:6px;padding:7px 9px;background:#12151C;
+  border:1px solid var(--line);border-radius:10px}
+.srow.on{border-color:var(--red)}
+.srow select{flex:1;min-width:96px;font-size:12px;padding:5px 7px}
+.srow input{width:66px;font-size:12px;padding:5px 6px}
+.srow .px{background:none;border:none;color:var(--dim);font-size:16px;cursor:pointer;padding:2px 6px}
+.srow .px:hover{color:#FF6B6B}
+.srow .jump{background:none;border:none;color:var(--dim);cursor:pointer;font-size:14px;padding:2px 6px}
+.srow .jump:hover{color:var(--ink)}
+
+/* ── نوار تصاویر بخش ─────────────────────────────────────── */
+.strip{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
+.card{flex:0 0 auto;width:118px;border:1px solid var(--line);border-radius:9px;
+  overflow:hidden;background:#0C0E13;cursor:pointer;transition:.15s}
+.card.on{border-color:var(--red)}
+.card canvas{display:block;width:100%;height:66px;background:#000}
+.card .lb{padding:4px 7px 6px;font-size:10.5px;color:var(--dim);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.card.on .lb{color:var(--ink)}
+
+/* ── ناوبری پایین ────────────────────────────────────────── */
+.nav{display:flex;flex:0 0 auto;background:var(--panel);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom)}
+.nav button{flex:1;background:none;border:none;color:var(--dim);cursor:pointer;
+  padding:8px 2px 9px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-family:inherit;transition:.15s;border-top:2px solid transparent}
+.nav button i{font-style:normal;font-size:17px;line-height:1}
+.nav button b{font-size:10.5px;font-weight:normal}
+.nav button.on{color:var(--red);border-top-color:var(--red)}
+.nav button:active{background:#171A22}
+
+@media (min-width:760px){
+  .panes{max-height:40dvh}
+  .card{width:132px}
+  .card canvas{height:74px}
+  .nav button b{font-size:11.5px}
+}

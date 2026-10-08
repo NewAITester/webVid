@@ -107,6 +107,7 @@ export async function exportVideo({
   song, from = 0, to = 10, audioUrl = null,
   width = W, height = H, fps = FPS,
   bitrate = 12_000_000, grain = 0.024, overrides = null,
+  sections = null, look = null,
   onProgress = () => {}, signal = null,
 } = {}) {
   const t0 = performance.now();
@@ -133,6 +134,14 @@ export async function exportVideo({
   // چیزی که در پیش‌نمایش چیده‌اید فرق می‌کند.
   R.overrides = overrides;
   R.editMode = false;        // کادرهای ویرایش هرگز در خروجی نمی‌آیند
+  // جدول بخش و تنظیمات ظاهر هم باید عیناً منتقل شوند، وگرنه ویدیو با
+  // چیزی که در پیش‌نمایش چیده‌اید فرق می‌کند.
+  if (sections) R.sections = sections;
+  if (look) {
+    R.bloom = look.bloom ?? R.bloom;
+    R.chroma = look.chroma ?? R.chroma;
+    R.showFurniture = look.furniture ?? R.showFurniture;
+  }
 
   const target = new ArrayBufferTarget();
   const vc = await pickVideo(bitrate, width, height);

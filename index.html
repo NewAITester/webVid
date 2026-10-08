@@ -2,7 +2,8 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0A0B0E">
 <title>لیریک استودیو</title>
 <link rel="stylesheet" href="./src/style.css">
 </head>
@@ -11,19 +12,11 @@
 <!--
   فیلترهای گرید نهایی.
   color-interpolation-filters="sRGB" حیاتی است: پیش‌فرض SVG فضای
-  linearRGB است، ولی پایتون روی بایت‌های خام کار می‌کرد. بدون این
-  خط، منحنی تُن نتیجهٔ کاملاً متفاوتی می‌دهد.
+  linearRGB است، ولی پایتون روی بایت‌های خام کار می‌کرد.
 -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <!-- پاس نهایی: اول انحراف رنگی، بعد منحنی تن.
-         هر دو در یک فیلترند تا فقط یک بار کل تصویر کپی شود.
-
-         انحراف رنگی = معادل np.roll روی کانال قرمز و آبی در پایتون:
-         قرمز یک پیکسل به راست، آبی یک پیکسل به چپ. dx از جاوااسکریپت
-         تنظیم می شود تا در رزولوشن بالاتر هم نسبت درست بماند. -->
-    <filter id="tone" x="0" y="0" width="100%" height="100%"
-            color-interpolation-filters="sRGB">
+    <filter id="tone" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
       <feOffset id="chromaR" in="SourceGraphic" dx="1" dy="0" result="sr"/>
       <feOffset id="chromaB" in="SourceGraphic" dx="-1" dy="0" result="sb"/>
       <feColorMatrix in="sr" type="matrix" result="cR"
@@ -41,9 +34,7 @@
       </feComponentTransfer>
     </filter>
 
-    <!-- آستانهٔ بلوم: (x - 0.60) / 0.40 ، یعنی فقط روشنایی‌های بالای ۶۰٪ -->
-    <filter id="bloomThresh" x="0" y="0" width="100%" height="100%"
-            color-interpolation-filters="sRGB">
+    <filter id="bloomThresh" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
       <feComponentTransfer>
         <feFuncR type="linear" slope="2.5" intercept="-1.5"/>
         <feFuncG type="linear" slope="2.5" intercept="-1.5"/>
@@ -51,112 +42,191 @@
       </feComponentTransfer>
     </filter>
 
-    <!-- فرسایش با هستهٔ مربعی — معادل دقیق minimum_filter(size=2w+1) پایتون.
-         شعاع قبل از هر استفاده از جاوااسکریپت تنظیم می‌شود. -->
-    <filter id="erode" x="-25%" y="-25%" width="150%" height="150%"
-            color-interpolation-filters="sRGB">
+    <!-- فرسایش با هستهٔ مربعی — معادل دقیق minimum_filter پایتون -->
+    <filter id="erode" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
       <feMorphology id="erodeOp" operator="erode" radius="5"/>
     </filter>
   </defs>
 </svg>
 
 <div id="app">
+
   <header class="bar">
     <div class="brand">لیریک<span>استودیو</span></div>
+    <div class="now" id="nowName">نقاب</div>
     <div class="spacer"></div>
     <div id="fps" class="pill">—</div>
-    <button id="songBtn" class="btn sm">آهنگ</button>
-    <button id="editBtn" class="btn sm">جابه‌جایی کلمات</button>
-    <button id="exportBtn" class="btn sm">خروجی</button>
   </header>
 
-  <div id="exPanel" class="panel hidden">
-    <div class="prow">
-      <label>از</label><input id="exFrom" type="number" value="0" min="0" step="1">
-      <label>تا</label><input id="exTo" type="number" value="10" min="1" step="1">
-      <span class="dim">ثانیه</span>
-      <div class="spacer"></div>
-      <button class="btn sm ghost" data-range="0,10">۱۰ ثانیه</button>
-      <button class="btn sm ghost" data-range="66,78">کرس</button>
-      <button class="btn sm ghost" data-range="0,228.6">کل آهنگ</button>
-    </div>
-    <div class="prow">
-      <label>رزولوشن</label>
-      <select id="exRes"></select>
-      <label>فریم</label>
-      <select id="exFps">
-        <option value="60" selected>۶۰</option>
-        <option value="30">۳۰</option>
-        <option value="24">۲۴</option>
-      </select>
-      <label><input id="exGrain" type="checkbox" checked> دانهٔ فیلم</label>
-    </div>
-    <div class="prow">
-      <label>بیت‌ریت</label>
-      <input id="exBr" type="range" min="1" max="60" step="1" value="12" class="rng">
-      <span id="exBrV" class="pill">۱۲ مگابیت</span>
-      <button class="btn sm ghost" id="exBrAuto">خودکار</button>
-      <div class="spacer"></div>
-      <button id="exGo" class="btn primary sm">شروع</button>
-      <button id="exCancel" class="btn sm hidden">لغو</button>
-      <button id="exShare" class="btn sm hidden">اشتراک‌گذاری</button>
-    </div>
-    <div id="exBar" class="bar2 hidden"><i></i></div>
-    <div id="exEst" class="msg"></div>
-    <div id="exMsg" class="msg"></div>
-  </div>
-
-  <div id="songPanel" class="panel hidden">
-    <div class="prow">
-      <label>فایل صوتی</label>
-      <input id="inAudio" type="file" accept="audio/*">
-      <label>شعر</label>
-      <input id="inLrc" type="file" accept=".lrc,.txt,text/plain">
-      <div class="spacer"></div>
-      <button id="songGo" class="btn primary sm">ساخت پروژه</button>
-    </div>
-    <div class="prow">
-      <label>عنوان</label><input id="inTitle" type="text" placeholder="نقاب" class="txt">
-      <label>هنرمند</label><input id="inArtist" type="text" placeholder="زروان اکو" class="txt">
-      <label>تلگرام</label><input id="inTg" type="text" placeholder="Telegram: @ZurvanEcho" class="txt wide">
-      <button id="metaApply" class="btn sm ghost">اعمال</button>
-    </div>
-    <div class="prow">
-      <span class="dim">اگر شعر تایم‌بندی نداشته باشد، خودکار روی طول آهنگ پخش می‌شود.</span>
-      <div class="spacer"></div>
-      <select id="songList"></select>
-      <button id="songLoad" class="btn sm ghost">باز کردن</button>
-      <button id="songDel" class="btn sm ghost">حذف</button>
-    </div>
-    <div id="songBar" class="bar2 hidden"><i></i></div>
-    <div id="songMsg" class="msg"></div>
-  </div>
-
-  <div id="edPanel" class="panel hidden">
-    <div class="prow">
-      <span class="dim" id="edHint">روی یک کلمه بکشید تا جابه‌جا شود</span>
-      <div class="spacer"></div>
-      <span class="pill" id="edCount">۰ تغییر</span>
-      <button class="btn sm ghost" id="edSmaller">کوچک‌تر</button>
-      <button class="btn sm ghost" id="edBigger">بزرگ‌تر</button>
-      <button class="btn sm ghost" id="edReset">بازگردانی این کلمه</button>
-      <button class="btn sm ghost" id="edResetAll">بازگردانی همه</button>
-    </div>
-  </div>
-
-  <main class="stagewrap">
+  <!-- ─── صحنه ─────────────────────────────────────────────── -->
+  <main class="stagewrap" id="stagewrap">
     <canvas id="stage"></canvas>
     <div id="loading" class="loading">در حال آماده‌سازی…</div>
   </main>
 
-  <section class="transport">
+  <!-- ─── نوار پخش ─────────────────────────────────────────── -->
+  <section class="transport" id="transport">
     <button id="play" class="btn primary" title="پخش / توقف">▶</button>
     <div class="time" id="tc">۰۰:۰۰٫۰۰</div>
     <input id="scrub" class="scrub" type="range" min="0" max="228.6" step="0.01" value="0">
     <div class="time dim" id="tdur">—</div>
   </section>
 
-  <section class="strip" id="strip"></section>
+  <!-- ─── پنل‌ها ───────────────────────────────────────────── -->
+  <div class="panes" id="panes">
+
+    <!-- خانه -->
+    <section class="pane" data-pane="home">
+      <div class="phead">پروژه‌ها</div>
+      <div id="projList" class="cards"></div>
+
+      <div class="phead">پروژهٔ تازه</div>
+      <div class="form">
+        <div class="frow">
+          <label>فایل صوتی</label>
+          <input id="inAudio" type="file" accept="audio/*">
+        </div>
+        <div class="frow">
+          <label>شعر <span class="dim">(lrc یا txt)</span></label>
+          <input id="inLrc" type="file" accept=".lrc,.txt,text/plain">
+        </div>
+        <div class="frow">
+          <label>عنوان</label><input id="inTitle" type="text" class="txt" placeholder="نام آهنگ">
+        </div>
+        <div class="frow">
+          <label>هنرمند</label><input id="inArtist" type="text" class="txt" placeholder="نام شما">
+        </div>
+        <div class="frow">
+          <label>تلگرام</label><input id="inTg" type="text" class="txt ltr" placeholder="Telegram: @channel">
+        </div>
+        <button id="songGo" class="btn primary wide">ساخت پروژه</button>
+        <div id="songBar" class="bar2 hidden"><i></i></div>
+        <div id="songMsg" class="msg"></div>
+        <p class="note">اگر شعر تایم‌بندی نداشته باشد، خودکار روی طول آهنگ پخش می‌شود.
+           بخش‌ها هم از روی شکاف‌های بی‌کلام ساخته می‌شوند.</p>
+      </div>
+    </section>
+
+    <!-- بخش‌ها -->
+    <section class="pane" data-pane="sections">
+      <div class="phead">
+        بخش‌ها
+        <div class="spacer"></div>
+        <button id="secAdd" class="btn sm ghost">افزودن</button>
+        <button id="secAuto" class="btn sm ghost">ساخت خودکار</button>
+      </div>
+      <div id="secList" class="list"></div>
+      <div class="strip" id="strip"></div>
+    </section>
+
+    <!-- کلمات -->
+    <section class="pane" data-pane="words">
+      <div class="phead">
+        جابه‌جایی کلمات
+        <div class="spacer"></div>
+        <span class="pill" id="edCount">۰ تغییر</span>
+      </div>
+      <div class="form">
+        <p class="note" id="edHint">روی یک کلمه بکشید تا جابه‌جا شود.
+          کادرهای نقطه‌چین راهنما هستند و در خروجی نمی‌آیند.</p>
+        <div class="frow btns">
+          <button class="btn sm" id="edBigger">بزرگ‌تر</button>
+          <button class="btn sm" id="edSmaller">کوچک‌تر</button>
+          <button class="btn sm ghost" id="edReset">بازگردانی این کلمه</button>
+          <button class="btn sm ghost" id="edResetAll">بازگردانی همه</button>
+        </div>
+        <div class="frow btns">
+          <button class="btn sm ghost nudge" data-n="-1,0">←</button>
+          <button class="btn sm ghost nudge" data-n="1,0">→</button>
+          <button class="btn sm ghost nudge" data-n="0,-1">↑</button>
+          <button class="btn sm ghost nudge" data-n="0,1">↓</button>
+          <span class="dim">تنظیم پیکسلی</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ظاهر -->
+    <section class="pane" data-pane="look">
+      <div class="phead">ظاهر</div>
+      <div class="form">
+        <div class="frow">
+          <label>رنگ تأکید این بخش</label>
+          <input id="lkAccent" type="color" value="#E4142A">
+          <button id="lkAccentAll" class="btn sm ghost">روی همه</button>
+        </div>
+        <div class="frow slider">
+          <label>دانهٔ فیلم</label>
+          <input id="lkGrain" type="range" min="0" max="60" value="24" class="rng">
+          <span class="pill" id="lkGrainV">۰٫۰۲۴</span>
+        </div>
+        <div class="frow slider">
+          <label>درخشش</label>
+          <input id="lkBloom" type="range" min="0" max="120" value="55" class="rng">
+          <span class="pill" id="lkBloomV">۰٫۵۵</span>
+        </div>
+        <div class="frow slider">
+          <label>انحراف رنگی</label>
+          <input id="lkChroma" type="range" min="0" max="40" value="10" class="rng">
+          <span class="pill" id="lkChromaV">۱٫۰</span>
+        </div>
+        <div class="frow">
+          <label><input id="lkFurn" type="checkbox" checked> اثاثیهٔ قاب (نام، تایم‌کد، نوار پیشرفت)</label>
+        </div>
+        <button id="lkReset" class="btn sm ghost">بازگردانی به پیش‌فرض</button>
+      </div>
+    </section>
+
+    <!-- خروجی -->
+    <section class="pane" data-pane="export">
+      <div class="phead">خروجی ویدیو</div>
+      <div class="form">
+        <div class="frow">
+          <label>از</label><input id="exFrom" type="number" value="0" min="0" step="1">
+          <label>تا</label><input id="exTo" type="number" value="10" min="1" step="1">
+          <span class="dim">ثانیه</span>
+        </div>
+        <div class="frow btns">
+          <button class="btn sm ghost" data-range="0,10">۱۰ ثانیه</button>
+          <button class="btn sm ghost" data-range="0,30">۳۰ ثانیه</button>
+          <button class="btn sm ghost" id="exAll">کل آهنگ</button>
+        </div>
+        <div class="frow">
+          <label>رزولوشن</label><select id="exRes"></select>
+          <label>فریم</label>
+          <select id="exFps">
+            <option value="60" selected>۶۰</option>
+            <option value="30">۳۰</option>
+            <option value="24">۲۴</option>
+          </select>
+        </div>
+        <div class="frow slider">
+          <label>بیت‌ریت</label>
+          <input id="exBr" type="range" min="1" max="60" step="1" value="12" class="rng">
+          <span class="pill" id="exBrV">۱۲ مگابیت</span>
+          <button class="btn sm ghost" id="exBrAuto">خودکار</button>
+        </div>
+        <div class="frow btns">
+          <button id="exGo" class="btn primary">شروع خروجی</button>
+          <button id="exCancel" class="btn sm hidden">لغو</button>
+          <button id="exShare" class="btn sm hidden">اشتراک‌گذاری</button>
+        </div>
+        <div id="exBar" class="bar2 hidden"><i></i></div>
+        <div id="exEst" class="msg"></div>
+        <div id="exMsg" class="msg"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ─── ناوبری پایین ─────────────────────────────────────── -->
+  <nav class="nav" id="nav">
+    <button data-go="home"     class="on"><i>⌂</i><b>خانه</b></button>
+    <button data-go="sections"><i>▦</i><b>بخش‌ها</b></button>
+    <button data-go="words"><i>✥</i><b>کلمات</b></button>
+    <button data-go="look"><i>◐</i><b>ظاهر</b></button>
+    <button data-go="export"><i>↓</i><b>خروجی</b></button>
+  </nav>
+
 </div>
 <script type="module" src="./src/main.js"></script>
 </body>

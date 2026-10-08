@@ -3,57 +3,81 @@ import { Renderer } from './engine/renderer.js';
 import { Analysis } from './engine/analysis.js';
 import { parseLRC } from './engine/lyrics.js';
 import { loadFonts, faTime } from './engine/text.js';
-import { Song, SECT, SECTION_NAMES, DUR } from './engine/song.js';
-let DURATION = DUR;
-let currentAudioUrl = null;
+import { Song, SECT, SECTION_NAMES, DUR, C } from './engine/song.js';
 import { DESIGN_W, DESIGN_H } from './engine/core.js';
+import { clearLayoutCache } from './engine/layout.js';
+import { clearGlyphCache } from './engine/glyphs.js';
 import { exportVideo, canExport, RESOLUTIONS } from './engine/export.js';
 import { saveFile, shareFile } from './engine/save.js';
 import { Overrides } from './engine/overrides.js';
 import { analyzeBuffer, decodeAudioFile } from './engine/analyze.js';
 import { Library, autoSections, plainToLines } from './engine/library.js';
-import { clearLayoutCache } from './engine/layout.js';
-import { clearGlyphCache } from './engine/glyphs.js';
-import { Analysis as Anal } from './engine/analysis.js';
 
 const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
 const BASE = import.meta.env.BASE_URL;
+const faN = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
 
 const canvas = $('#stage');
-const stage  = new Stage(canvas);
-const R      = new Renderer(stage);
+const stage = new Stage(canvas);
+const R = new Renderer(stage);
 
-let song = null;
+/* ── حالت برنامه ─────────────────────────────────────────── */
+const app = {
+  song: null,
+  audio: null,
+  audioUrl: null,
+  duration: DUR,
+  projectId: '__demo',
+  t: 0,
+  playing: false,
+  raf: 0,
+  pane: 'home',
+};
+
 const OV = Overrides.load();
 R.overrides = OV;
-let audio = null;
-let playing = false;
-let t = 0;
-let raf = 0;
 
-/* ── اندازهٔ بوم ─────────────────────────────────────────────── */
-function fit() {
-  const wrap = canvas.parentElement;
-  const s = Math.min((wrap.clientWidth - 16) / DESIGN_W, (wrap.clientHeight - 16) / DESIGN_H);
-  const cssW = Math.max(160, DESIGN_W * s);
-  const cssH = Math.max(90, DESIGN_H * s);
-  canvas.style.width = cssW + 'px';
-  canvas.style.height = cssH + 'px';
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  stage.resize(cssW * dpr, cssH * dpr);
-  if (!playing) draw();
+const LOOK_KEY = 'lyricstudio.look.v1';
+const look = Object.assign(
+  { grain: 0.024, bloom: 0.55, chroma: 1.0, furniture: true, accents: {} },
+  JSON.parse(localStorage.getItem(LOOK_KEY) || '{}')
+);
+const saveLook = () => localStorage.setItem(LOOK_KEY, JSON.stringify(look));
+
+function applyLook() {
+  R.grain = look.grain;
+  R.bloom = look.bloom;
+  R.chroma = look.chroma;
+  R.showFurniture = look.furniture;
+  const tbl = R.sections || SECT;
+  for (const [i, col] of Object.entries(look.accents)) if (tbl[i]) tbl[i][3] = col;
 }
 
-/* ── حلقهٔ رندر ──────────────────────────────────────────────── */
+/* ── اندازهٔ بوم ─────────────────────────────────────────── */
+function fit() {
+  const wrap = canvas.parentElement;
+  if (!wrap.clientWidth) return;
+  const s = Math.min((wrap.clientWidth - 12) / DESIGN_W, (wrap.clientHeight - 12) / DESIGN_H);
+  const cw = Math.max(160, DESIGN_W * s), ch = Math.max(90, DESIGN_H * s);
+  canvas.style.width = cw + 'px';
+  canvas.style.height = ch + 'px';
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  stage.resize(cw * dpr, ch * dpr);
+  if (!app.playing) draw();
+}
+
+/* ── حلقهٔ رندر ──────────────────────────────────────────── */
 let frames = 0, lastFpsAt = performance.now();
 
 function draw() {
-  R.renderFrame(t);
-  $('#tc').textContent = faTime(t);
+  if (!app.song) return;
+  R.renderFrame(app.t);
+  $('#tc').textContent = faTime(app.t);
   const sc = $('#scrub');
-  if (document.activeElement !== sc) sc.value = String(t);
-  markActiveCard();
-  if (playing) {
+  if (document.activeElement !== sc) sc.value = String(app.t);
+  markActive();
+  if (app.playing) {
     frames++;
     const now = performance.now();
     if (now - lastFpsAt > 500) {
@@ -64,59 +88,74 @@ function draw() {
 }
 
 function loop() {
-  if (!playing) return;
-  t = audio ? audio.currentTime : t + 1 / 60;
-  if (t >= DURATION) { pause(); t = DURATION; }
+  if (!app.playing) return;
+  app.t = app.audio ? app.audio.currentTime : app.t + 1 / 60;
+  if (app.t >= app.duration) { pause(); app.t = app.duration; }
   draw();
-  raf = requestAnimationFrame(loop);
+  app.raf = requestAnimationFrame(loop);
 }
-
 function play() {
-  if (playing) return;
-  playing = true;
+  if (app.playing || !app.song) return;
+  app.playing = true;
   $('#play').textContent = '❚❚';
-  if (audio) { audio.currentTime = t; audio.play().catch(() => {}); }
+  if (app.audio) { app.audio.currentTime = app.t; app.audio.play().catch(() => {}); }
   lastFpsAt = performance.now(); frames = 0;
-  raf = requestAnimationFrame(loop);
+  app.raf = requestAnimationFrame(loop);
 }
 function pause() {
-  playing = false;
+  app.playing = false;
   $('#play').textContent = '▶';
   $('#fps').textContent = '—';
-  audio?.pause();
-  cancelAnimationFrame(raf);
+  app.audio?.pause();
+  cancelAnimationFrame(app.raf);
 }
-const toggle = () => (playing ? pause() : play());
-
+const toggle = () => (app.playing ? pause() : play());
 function seek(v) {
-  t = Math.max(0, Math.min(DURATION, v));
-  if (audio) audio.currentTime = t;
+  app.t = Math.max(0, Math.min(app.duration, v));
+  if (app.audio) app.audio.currentTime = app.t;
   draw();
 }
 
-/* ── نوار بخش‌ها ─────────────────────────────────────────────── */
-let cards = [];
+/* ── ناوبری پایین ────────────────────────────────────────── */
+function go(name) {
+  app.pane = name;
+  $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
+  $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
+  const home = name === 'home';
+  $('#stagewrap').classList.toggle('hide', home);
+  $('#transport').classList.toggle('hide', home);
+  $('#panes').classList.toggle('tall', home);
+  // «کلمات» تنها جایی است که کادرها و درگ فعال‌اند
+  R.editMode = name === 'words';
+  canvas.classList.toggle('editing', name === 'words');
+  if (home) pause(); else { fit(); draw(); }
+  if (name === 'sections') buildSecList();
+  if (name === 'look') syncLook();
+  if (name === 'words') refreshCount();
+}
+$$('#nav button').forEach(b => { b.onclick = () => go(b.dataset.go); });
 
-/** لحظهٔ نماینده: جایی که محتوا واقعاً روی صفحه است */
+/* ── نوار تصاویر بخش ─────────────────────────────────────── */
+let cards = [];
 function thumbTime(sec) {
   const [t0, t1, style] = sec;
   const mid = t0 + (t1 - t0) * 0.4;
   if (!['verse', 'chorus', 'pre', 'cold', 'mirror'].includes(style)) return mid;
-  const L = song.lines.find(l => l.words[0].t >= t0 && l.words[0].t < t1 - 0.4);
+  const L = app.song.lines.find(l => l.words[0].t >= t0 && l.words[0].t < t1 - 0.4);
   if (!L) return mid;
-  const span = Math.max(0.8, song.lineOut(L.i) - song.lineStart(L.i));
-  return Math.min(song.lineStart(L.i) + span * 0.5, t1 - 0.2);
+  const span = Math.max(0.8, app.song.lineOut(L.i) - app.song.lineStart(L.i));
+  return Math.min(app.song.lineStart(L.i) + span * 0.5, t1 - 0.2);
 }
-
 function buildStrip() {
   const strip = $('#strip');
+  if (!strip || !app.song) return;
   strip.innerHTML = '';
   cards = [];
-  (R.sections || SECT).forEach((sec, i) => {
+  (R.sections || SECT).forEach(sec => {
     const el = document.createElement('div');
     el.className = 'card';
     const c = document.createElement('canvas');
-    c.width = 264; c.height = 148;
+    c.width = 236; c.height = 132;
     const lb = document.createElement('div');
     lb.className = 'lb';
     lb.textContent = SECTION_NAMES[sec[2]] || sec[2];
@@ -124,99 +163,236 @@ function buildStrip() {
     el.onclick = () => seek(sec[0] + 0.3);
     strip.append(el);
     cards.push({ el, sec });
-
-    const st = new Stage(c);
-    st.resize(264, 148);
+    const st = new Stage(c); st.resize(236, 132);
     const r2 = new Renderer(st);
-    r2.setSong(song);
-    r2.showFurniture = false;
-    r2.grain = 0;
-    r2.bloom = 0.4;
+    r2.setSong(app.song);
+    r2.sections = R.sections;
+    r2.showFurniture = false; r2.grain = 0; r2.bloom = look.bloom; r2.chroma = 0;
     r2.soloStyle = sec;
     try { r2.renderFrame(thumbTime(sec)); } catch (e) { console.warn('thumb', sec[2], e); }
   });
 }
-
-function markActiveCard() {
+function markActive() {
   for (const c of cards) {
-    const on = t >= c.sec[0] && t < c.sec[1];
+    const on = app.t >= c.sec[0] && app.t < c.sec[1];
     if (on !== c.el.classList.contains('on')) c.el.classList.toggle('on', on);
   }
 }
 
-/* ── راه‌اندازی ──────────────────────────────────────────────── */
-async function boot() {
-  await loadFonts();
-  const [lrcText, analysis] = await Promise.all([
-    fetch(`${BASE}data/lyrics.lrc`).then(r => r.text()),
-    Analysis.load(`${BASE}data/analysis.json`),
-  ]);
+/* ── ویرایش بخش‌ها ───────────────────────────────────────── */
+const STYLES = ['intro', 'cold', 'inst_a', 'verse', 'pre', 'chorus', 'inst_b', 'inst_c', 'mirror', 'end'];
 
-  song = new Song(parseLRC(lrcText), analysis);
-  R.setSong(song);
+function sections() { return R.sections || (R.sections = SECT.map(s => s.slice())); }
 
-  audio = new Audio(`${BASE}data/Neghab.mp3`);
-  audio.preload = 'auto';
-
-  $('#scrub').max = String(DURATION);
-  $('#tdur').textContent = faTime(DURATION);
-
-  fit();
-  buildStrip();
-  refreshCount();
-  draw();
-  $('#loading').classList.add('gone');
-
-  console.log(
-    `%c لیریک استودیو %c ${song.lines.length} خط · ${song.beats.length} ضرب · ${analysis.tempo.toFixed(1)} BPM · ${SECT.length} بخش`,
-    'background:#E4142A;color:#fff;padding:2px 6px;border-radius:3px', 'color:#9AA0AC');
-}
-
-$('#play').onclick = toggle;
-$('#scrub').oninput = e => { if (playing) pause(); seek(parseFloat(e.target.value)); };
-window.addEventListener('resize', fit);
-window.addEventListener('keydown', e => {
-  // در حالت ویرایش، کلیدهای جهت کلمهٔ انتخاب‌شده را پیکسلی جابه‌جا می‌کنند
-  if (editing && R.selected && e.code.startsWith('Arrow')) {
-    const s = e.shiftKey ? 10 : 1;
-    const d = { ArrowLeft: [-s, 0], ArrowRight: [s, 0], ArrowUp: [0, -s], ArrowDown: [0, s] }[e.code];
-    if (d) { e.preventDefault(); OV.nudge(R.selected, d[0], d[1]); OV.save(); draw(); return; }
-  }
-  if (e.code === 'Space') { e.preventDefault(); toggle(); }
-  if (e.code === 'ArrowRight') seek(t + (e.shiftKey ? 5 : 1 / 60));
-  if (e.code === 'ArrowLeft')  seek(t - (e.shiftKey ? 5 : 1 / 60));
-});
-
-/* ── وارد کردن آهنگ خودتان ───────────────────────────────────── */
-let customSections = null;   // اگر پروژهٔ وارد‌شده فعال باشد
-
-function songMsg(t, cls = '') { $('#songMsg').textContent = t; $('#songMsg').className = 'msg ' + cls; }
-
-$('#songBtn').onclick = () => {
-  $('#songPanel').classList.toggle('hidden');
-  if (!$('#songPanel').classList.contains('hidden')) refreshLibrary();
-};
-
-async function refreshLibrary() {
-  try {
-    const all = await Library.all();
-    const sel = $('#songList');
-    sel.innerHTML = '';
-    const def = document.createElement('option');
-    def.value = '__demo'; def.textContent = 'نقاب — زروان اکو (پیش‌فرض)';
-    sel.append(def);
-    for (const p of all) {
+function buildSecList() {
+  const host = $('#secList');
+  host.innerHTML = '';
+  sections().forEach((sec, i) => {
+    const row = document.createElement('div');
+    row.className = 'srow';
+    const sel = document.createElement('select');
+    for (const st of STYLES) {
       const o = document.createElement('option');
-      o.value = p.id; o.textContent = p.name;
+      o.value = st; o.textContent = SECTION_NAMES[st] || st;
+      if (st === sec[2]) o.selected = true;
       sel.append(o);
     }
+    sel.onchange = () => { sec[2] = sel.value; buildStrip(); draw(); };
+    const a = document.createElement('input');
+    a.type = 'number'; a.step = '0.1'; a.value = sec[0].toFixed(1);
+    const b = document.createElement('input');
+    b.type = 'number'; b.step = '0.1'; b.value = sec[1].toFixed(1);
+    const commit = () => {
+      sec[0] = Math.max(0, parseFloat(a.value) || 0);
+      sec[1] = Math.max(sec[0] + 0.5, parseFloat(b.value) || 0);
+      sections().sort((x, y) => x[0] - y[0]);
+      buildSecList(); buildStrip(); draw();
+    };
+    a.onchange = commit; b.onchange = commit;
+    const jump = document.createElement('button');
+    jump.className = 'jump'; jump.textContent = '▶'; jump.title = 'پرش';
+    jump.onclick = () => seek(sec[0] + 0.3);
+    const del = document.createElement('button');
+    del.className = 'px'; del.textContent = '×';
+    del.onclick = () => { sections().splice(i, 1); buildSecList(); buildStrip(); draw(); };
+    row.append(jump, sel, a, b, del);
+    host.append(row);
+  });
+}
+$('#secAdd').onclick = () => {
+  const t0 = +app.t.toFixed(1);
+  sections().push([t0, Math.min(app.duration, t0 + 10), 'verse', C.CRIMSON]);
+  sections().sort((x, y) => x[0] - y[0]);
+  buildSecList(); buildStrip(); draw();
+};
+$('#secAuto').onclick = () => {
+  R.sections = autoSections(app.song.lines, app.duration);
+  applyLook(); buildSecList(); buildStrip(); draw();
+};
+
+/* ── ظاهر ────────────────────────────────────────────────── */
+function curSecIndex() {
+  const tbl = sections();
+  for (let i = 0; i < tbl.length; i++) if (app.t >= tbl[i][0] && app.t < tbl[i][1]) return i;
+  return 0;
+}
+function syncLook() {
+  $('#lkGrain').value = Math.round(look.grain * 1000);
+  $('#lkBloom').value = Math.round(look.bloom * 100);
+  $('#lkChroma').value = Math.round(look.chroma * 10);
+  $('#lkFurn').checked = look.furniture;
+  $('#lkAccent').value = sections()[curSecIndex()]?.[3] || C.CRIMSON;
+  $('#lkGrainV').textContent = faN(look.grain.toFixed(3));
+  $('#lkBloomV').textContent = faN(look.bloom.toFixed(2));
+  $('#lkChromaV').textContent = faN(look.chroma.toFixed(1));
+}
+$('#lkGrain').oninput = e => { look.grain = +e.target.value / 1000; applyLook(); saveLook(); syncLook(); draw(); };
+$('#lkBloom').oninput = e => { look.bloom = +e.target.value / 100; applyLook(); saveLook(); syncLook(); draw(); };
+$('#lkChroma').oninput = e => { look.chroma = +e.target.value / 10; applyLook(); saveLook(); syncLook(); draw(); };
+$('#lkFurn').onchange = e => { look.furniture = e.target.checked; applyLook(); saveLook(); draw(); };
+$('#lkAccent').oninput = e => {
+  const i = curSecIndex();
+  look.accents[i] = e.target.value;
+  applyLook(); saveLook(); draw(); buildStrip();
+};
+$('#lkAccentAll').onclick = () => {
+  const col = $('#lkAccent').value;
+  sections().forEach((_, i) => { look.accents[i] = col; });
+  applyLook(); saveLook(); draw(); buildStrip();
+};
+$('#lkReset').onclick = () => {
+  Object.assign(look, { grain: 0.024, bloom: 0.55, chroma: 1.0, furniture: true, accents: {} });
+  R.sections = null; sections();
+  applyLook(); saveLook(); syncLook(); buildSecList(); buildStrip(); draw();
+};
+
+/* ── جابه‌جایی کلمات ─────────────────────────────────────── */
+let drag = null, lastPicked = null;
+function refreshCount() {
+  $('#edCount').textContent = faN(OV.count) + ' تغییر';
+  $('#edHint').textContent = lastPicked
+    ? `انتخاب‌شده: « ${lastPicked.word} » — بکشید یا از دکمه‌ها استفاده کنید`
+    : 'روی یک کلمه بکشید تا جابه‌جا شود. کادرهای نقطه‌چین در خروجی نمی‌آیند.';
+}
+const pos = e => stage.toDesign((e.touches?.[0] ?? e).clientX, (e.touches?.[0] ?? e).clientY);
+
+canvas.addEventListener('pointerdown', e => {
+  if (app.pane !== 'words') return;
+  const { x, y } = pos(e);
+  const it = R.pickWord(app.t, x, y);
+  if (!it) { R.selected = null; lastPicked = null; refreshCount(); draw(); return; }
+  R.selected = it.id; lastPicked = it;
+  drag = { id: it.id, x, y };
+  canvas.classList.add('dragging');
+  canvas.setPointerCapture?.(e.pointerId);
+  refreshCount(); draw(); e.preventDefault();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const { x, y } = pos(e);
+  OV.nudge(drag.id, x - drag.x, y - drag.y);
+  drag.x = x; drag.y = y;
+  draw(); e.preventDefault();
+});
+const endDrag = () => { if (!drag) return; drag = null; canvas.classList.remove('dragging'); OV.save(); refreshCount(); };
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+
+const scaleSel = k => {
+  if (!R.selected) return;
+  OV.setScale(R.selected, (OV.get(R.selected)?.scale ?? 1) * k);
+  OV.save(); draw();
+};
+$('#edBigger').onclick = () => scaleSel(1.08);
+$('#edSmaller').onclick = () => scaleSel(1 / 1.08);
+$('#edReset').onclick = () => { if (R.selected) { OV.clear(R.selected); OV.save(); refreshCount(); draw(); } };
+$('#edResetAll').onclick = () => {
+  if (!OV.count || !confirm('همهٔ جابه‌جایی‌ها پاک شوند؟')) return;
+  OV.clearAll(); OV.save(); R.selected = null; lastPicked = null; refreshCount(); draw();
+};
+$$('.nudge').forEach(b => {
+  b.onclick = () => {
+    if (!R.selected) return;
+    const [dx, dy] = b.dataset.n.split(',').map(Number);
+    OV.nudge(R.selected, dx, dy); OV.save(); draw();
+  };
+});
+
+/* ── کتابخانهٔ پروژه ─────────────────────────────────────── */
+function songMsg(t, cls = '') { $('#songMsg').textContent = t; $('#songMsg').className = 'msg ' + cls; }
+
+async function buildProjList() {
+  const host = $('#projList');
+  host.innerHTML = '';
+  const add = (id, title, sub, removable) => {
+    const el = document.createElement('div');
+    el.className = 'pcard' + (id === app.projectId ? ' on' : '');
+    el.innerHTML = `<div class="pi">${(title || '؟').trim().charAt(0)}</div>
+      <div class="pm"><div class="pt"></div><div class="ps"></div></div>`;
+    el.querySelector('.pt').textContent = title;
+    el.querySelector('.ps').textContent = sub;
+    el.onclick = () => openProject(id);
+    if (removable) {
+      const x = document.createElement('button');
+      x.className = 'px'; x.textContent = '×';
+      x.onclick = async ev => {
+        ev.stopPropagation();
+        if (!confirm('این پروژه حذف شود؟')) return;
+        await Library.remove(id);
+        if (app.projectId === id) await openProject('__demo');
+        buildProjList();
+      };
+      el.append(x);
+    }
+    host.append(el);
+  };
+  add('__demo', 'نقاب — زروان اکو', 'نمونهٔ همراه برنامه · ۳:۴۸', false);
+  try {
+    for (const p of await Library.all()) {
+      const m = Math.floor(p.duration / 60), s = Math.round(p.duration % 60);
+      add(p.id, p.title || p.name, `${faN(m)}:${faN(String(s).padStart(2, '0'))} · ${faN(p.analysis.tempo.toFixed(0))} ضرب`, true);
+    }
   } catch (e) { console.warn(e); }
+}
+
+async function openProject(id) {
+  pause();
+  clearLayoutCache(); clearGlyphCache();
+  if (id === '__demo') {
+    const [lrc, an] = await Promise.all([
+      fetch(`${BASE}data/lyrics.lrc`).then(r => r.text()),
+      Analysis.load(`${BASE}data/analysis.json`),
+    ]);
+    app.song = new Song(parseLRC(lrc), an, { duration: DUR });
+    app.duration = DUR;
+    app.audioUrl = `${BASE}data/Neghab.mp3`;
+    R.sections = SECT.map(s => s.slice());
+  } else {
+    const p = await Library.get(id);
+    if (!p) return;
+    app.song = new Song(parseLRC(p.lrc || ''), new Analysis(p.analysis), {
+      title: p.title || p.name, artist: p.artist || '', tg: p.tg || '', duration: p.duration,
+    });
+    app.duration = p.duration;
+    app.audioUrl = URL.createObjectURL(p.audio);
+    R.sections = p.sections ? p.sections.map(s => s.slice())
+                            : autoSections(app.song.lines, p.duration);
+  }
+  app.projectId = id;
+  R.setSong(app.song);
+  applyLook();
+  app.audio = new Audio(app.audioUrl);
+  app.audio.preload = 'auto';
+  app.t = 0;
+  $('#scrub').max = String(app.duration);
+  $('#tdur').textContent = faTime(app.duration);
+  $('#nowName').textContent = app.song.title || 'بدون نام';
+  buildStrip(); buildSecList(); buildProjList(); updateEstimate(); draw();
 }
 
 $('#songGo').onclick = async () => {
   const af = $('#inAudio').files?.[0];
   if (!af) { songMsg('اول یک فایل صوتی انتخاب کنید', 'err'); return; }
-  const lf = $('#inLrc').files?.[0];
   const bar = $('#songBar'); bar.classList.remove('hidden');
   const fill = bar.querySelector('i');
   try {
@@ -224,178 +400,33 @@ $('#songGo').onclick = async () => {
     const buf = await decodeAudioFile(af);
     const analysis = await analyzeBuffer(buf, (p, m) => {
       fill.style.width = (p * 100).toFixed(0) + '%';
-      songMsg(m + ' ' + Math.round(p * 100) + '٪');
+      songMsg(`${m} ${faN(Math.round(p * 100))}٪`);
     });
-    let lrc = lf ? await lf.text() : '';
+    let lrc = $('#inLrc').files?.[0] ? await $('#inLrc').files[0].text() : '';
     if (lrc && !/\[\d+:\d/.test(lrc)) lrc = plainToLines(lrc, buf.duration);
     const nm = af.name.replace(/\.[^.]+$/, '');
+    const lines = parseLRC(lrc);
     const proj = {
-      id: 'p' + Date.now(),
-      name: nm,
-      audio: af, lrc, analysis,
+      id: 'p' + Date.now(), name: nm, audio: af, lrc, analysis,
       duration: buf.duration,
       title: ($('#inTitle').value || nm).trim(),
       artist: ($('#inArtist').value || '').trim(),
       tg: ($('#inTg').value || '').trim(),
+      sections: autoSections(lines, buf.duration),
       createdAt: Date.now(),
     };
     await Library.put(proj);
-    await refreshLibrary();
-    $('#songList').value = proj.id;
-    await loadProject(proj);
-    songMsg(`آماده شد — ${analysis.tempo.toFixed(1)} ضرب در دقیقه · `
-          + `${analysis.beats.length} ضرب · ${song.lines.length} خط شعر`, 'ok');
+    await openProject(proj.id);
+    songMsg(`آماده شد — ${faN(analysis.tempo.toFixed(1))} ضرب در دقیقه · `
+          + `${faN(analysis.beats.length)} ضرب · ${faN(lines.length)} خط`, 'ok');
+    go('sections');
   } catch (e) {
     console.error(e);
     songMsg('خطا: ' + e.message, 'err');
   } finally { bar.classList.add('hidden'); }
 };
 
-$('#songLoad').onclick = async () => {
-  const id = $('#songList').value;
-  if (id === '__demo') { location.reload(); return; }
-  const p = await Library.get(id);
-  if (p) { await loadProject(p); songMsg('باز شد: ' + p.name, 'ok'); }
-};
-$('#songDel').onclick = async () => {
-  const id = $('#songList').value;
-  if (id === '__demo') return;
-  await Library.remove(id); await refreshLibrary(); songMsg('حذف شد');
-};
-
-/** یک پروژهٔ وارد‌شده را فعال می‌کند */
-async function loadProject(p) {
-  pause();
-  // کش‌های چیدمان و ابر نقطه به آهنگ قبلی گره خورده‌اند
-  clearLayoutCache();
-  clearGlyphCache();
-  const lines = parseLRC(p.lrc || '');
-  song = new Song(lines, new Anal(p.analysis), {
-    title: p.title || p.name, artist: p.artist || '', tg: p.tg || '',
-    duration: p.duration,
-  });
-  customSections = autoSections(lines, p.duration);
-  R.setSong(song);
-  R.sections = customSections;
-  DURATION = p.duration;
-  audio = new Audio(URL.createObjectURL(p.audio));
-  audio.preload = 'auto';
-  currentAudioUrl = audio.src;
-  $('#scrub').max = String(DURATION);
-  $('#tdur').textContent = faTime(DURATION);
-  t = 0;
-  buildStrip();
-  updateEstimate();
-  draw();
-}
-
-$('#metaApply').onclick = async () => {
-  const id = $('#songList').value;
-  if (id === '__demo' || !song) { songMsg('اول یک پروژهٔ وارد‌شده را باز کنید', 'err'); return; }
-  const p = await Library.get(id);
-  if (!p) return;
-  p.title = ($('#inTitle').value || p.name).trim();
-  p.artist = ($('#inArtist').value || '').trim();
-  p.tg = ($('#inTg').value || '').trim();
-  await Library.put(p);
-  song.title = p.title; song.artist = p.artist; song.tg = p.tg;
-  buildStrip(); draw();
-  songMsg('اعمال شد', 'ok');
-};
-
-/* ── جابه‌جایی دستی کلمات ────────────────────────────────────── */
-const faN = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-let editing = false, drag = null;
-
-function setEdit(on) {
-  editing = on;
-  R.editMode = on;
-  $('#editBtn').classList.toggle('on', on);
-  $('#edPanel').classList.toggle('hidden', !on);
-  canvas.classList.toggle('editing', on);
-  if (!on) { R.selected = null; drag = null; }
-  draw();
-}
-$('#editBtn').onclick = () => setEdit(!editing);
-
-function refreshCount() {
-  $('#edCount').textContent = faN(OV.count) + ' تغییر';
-  const it = R.selected;
-  $('#edHint').textContent = it
-    ? 'انتخاب‌شده: « ' + (lastPicked?.word || '') + ' » — بکشید یا از دکمه‌ها استفاده کنید'
-    : 'روی یک کلمه بکشید تا جابه‌جا شود';
-}
-
-let lastPicked = null;
-
-function pointerPos(e) {
-  const p = e.touches?.[0] ?? e;
-  return stage.toDesign(p.clientX, p.clientY);
-}
-
-canvas.addEventListener('pointerdown', e => {
-  if (!editing) return;
-  const { x, y } = pointerPos(e);
-  const it = R.pickWord(t, x, y);
-  if (!it) { R.selected = null; lastPicked = null; refreshCount(); draw(); return; }
-  R.selected = it.id; lastPicked = it;
-  drag = { id: it.id, x, y };
-  canvas.classList.add('dragging');
-  canvas.setPointerCapture?.(e.pointerId);
-  refreshCount(); draw();
-  e.preventDefault();
-});
-
-canvas.addEventListener('pointermove', e => {
-  if (!editing || !drag) return;
-  const { x, y } = pointerPos(e);
-  OV.nudge(drag.id, x - drag.x, y - drag.y);
-  drag.x = x; drag.y = y;
-  draw();
-  e.preventDefault();
-});
-
-function endDrag(e) {
-  if (!drag) return;
-  drag = null;
-  canvas.classList.remove('dragging');
-  OV.save();
-  refreshCount();
-}
-canvas.addEventListener('pointerup', endDrag);
-canvas.addEventListener('pointercancel', endDrag);
-
-function scaleSel(k) {
-  if (!R.selected) return;
-  const cur = OV.get(R.selected)?.scale ?? 1;
-  OV.setScale(R.selected, cur * k);
-  OV.save(); refreshCount(); draw();
-}
-$('#edBigger').onclick = () => scaleSel(1.08);
-$('#edSmaller').onclick = () => scaleSel(1 / 1.08);
-$('#edReset').onclick = () => { if (R.selected) { OV.clear(R.selected); OV.save(); refreshCount(); draw(); } };
-$('#edResetAll').onclick = () => {
-  if (!OV.count || !confirm('همهٔ جابه‌جایی‌ها پاک شوند؟')) return;
-  OV.clearAll(); OV.save(); R.selected = null; refreshCount(); draw();
-};
-
-/* ── خروجی گرفتن ─────────────────────────────────────────────── */
-const exPanel = $('#exPanel'), exMsg = $('#exMsg'), exBar = $('#exBar');
-let exAbort = null;
-
-function setMsg(text, cls = '') { exMsg.textContent = text; exMsg.className = 'msg ' + cls; }
-
-$('#exportBtn').onclick = async () => {
-  exPanel.classList.toggle('hidden');
-  if (!exPanel.classList.contains('hidden') && !exMsg.textContent) {
-    const c = await canExport();
-    setMsg(c.ok
-      ? `آماده — تصویر ${c.video}${c.audio ? ' · صدا ' + c.audio : ' · بدون صدا'}`
-      : 'این مرورگر نمی‌تواند خروجی بگیرد: ' + c.why, c.ok ? '' : 'err');
-  }
-};
-
-// پر کردن فهرست رزولوشن‌ها
+/* ── خروجی ───────────────────────────────────────────────── */
 const resSel = $('#exRes');
 RESOLUTIONS.forEach(r => {
   const o = document.createElement('option');
@@ -405,120 +436,132 @@ RESOLUTIONS.forEach(r => {
 });
 const curRes = () => RESOLUTIONS.find(r => r.id === resSel.value) || RESOLUTIONS[2];
 
-const faNum = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-
-/** بیت‌ریت پیشنهادی بر اساس رزولوشن و نرخ فریم */
 function autoBitrate() {
-  const r = curRes();
   const fps = parseInt($('#exFps').value, 10);
-  const mbit = Math.round((r.rec / 1e6) * (fps >= 60 ? 1 : fps >= 30 ? 0.72 : 0.62));
+  const mbit = Math.round((curRes().rec / 1e6) * (fps >= 60 ? 1 : fps >= 30 ? 0.72 : 0.62));
   $('#exBr').value = String(Math.min(60, Math.max(1, mbit)));
   updateEstimate();
 }
-
-/** برآورد حجم فایل قبل از شروع — تا غافلگیر نشوید */
 function updateEstimate() {
   const from = Math.max(0, parseFloat($('#exFrom').value) || 0);
-  const to = Math.min(DURATION, parseFloat($('#exTo').value) || 0);
+  const to = Math.min(app.duration, parseFloat($('#exTo').value) || 0);
   const br = parseInt($('#exBr').value, 10) * 1e6;
-  const r = curRes();
-  const fps = parseInt($('#exFps').value, 10);
-  const brv = $('#exBrV'); if (brv) brv.textContent = faNum(br / 1e6) + ' مگابیت';
+  $('#exBrV').textContent = faN(br / 1e6) + ' مگابیت';
   const secs = Math.max(0, to - from);
   const el = $('#exEst');
-  if (!el) return;
   if (secs <= 0) { el.textContent = ''; return; }
-  const mb = (secs * (br + 224000) / 8 / 1048576);
-  el.textContent = `${r.w}×${r.h} · ${faNum(fps)} فریم · حدود ${faNum(mb.toFixed(0))} مگابایت`;
-  // کل فایل در حافظه ساخته می‌شود، پس بالای ~۴۰۰ مگابایت روی گوشی خطرناک است
+  const mb = secs * (br + 224000) / 8 / 1048576;
+  const r = curRes();
+  el.textContent = `${r.w}×${r.h} · ${faN(parseInt($('#exFps').value, 10))} فریم · حدود ${faN(mb.toFixed(0))} مگابایت`;
   el.className = mb > 400 ? 'msg err' : mb > 180 ? 'msg warn' : 'msg';
-  if (mb > 400) el.textContent += ' — ممکن است حافظهٔ گوشی کم بیاورد، تکه‌تکه بگیرید';
+  if (mb > 400) el.textContent += ' — ممکن است حافظه کم بیاورد، تکه‌تکه بگیرید';
 }
-['#exFrom', '#exTo', '#exBr'].forEach(id => {
-  const e = $(id); if (e) { e.oninput = updateEstimate; e.onchange = updateEstimate; }
-});
-['#exRes', '#exFps'].forEach(id => { const e = $(id); if (e) e.onchange = autoBitrate; });
+['#exFrom', '#exTo', '#exBr'].forEach(id => { $(id).oninput = updateEstimate; });
+['#exRes', '#exFps'].forEach(id => { $(id).onchange = autoBitrate; });
 $('#exBrAuto').onclick = autoBitrate;
-autoBitrate();
-
-document.querySelectorAll('[data-range]').forEach(b => {
+$$('[data-range]').forEach(b => {
   b.onclick = () => {
     const [a, z] = b.dataset.range.split(',').map(Number);
-    $('#exFrom').value = a; $('#exTo').value = z;
-    updateEstimate();
+    $('#exFrom').value = a; $('#exTo').value = z; updateEstimate();
   };
 });
+$('#exAll').onclick = () => {
+  $('#exFrom').value = 0; $('#exTo').value = Math.ceil(app.duration); updateEstimate();
+};
 
-$('#exCancel').onclick = () => { exAbort?.abort(); };
+let exAbort = null;
+const setMsg = (t, cls = '') => { $('#exMsg').textContent = t; $('#exMsg').className = 'msg ' + cls; };
 
 $('#exGo').onclick = async () => {
   const from = Math.max(0, parseFloat($('#exFrom').value) || 0);
-  const to = Math.min(DURATION, parseFloat($('#exTo').value) || 0);
+  const to = Math.min(app.duration, parseFloat($('#exTo').value) || 0);
   if (to <= from) { setMsg('بازهٔ زمانی نامعتبر است', 'err'); return; }
+  const cap = await canExport();
+  if (!cap.ok) { setMsg('این دستگاه نمی‌تواند خروجی بگیرد: ' + cap.why, 'err'); return; }
 
   pause();
   $('#exShare')?.classList.add('hidden');
   exAbort = new AbortController();
-  $('#exGo')?.classList.add('hidden');
-  $('#exCancel')?.classList.remove('hidden');
-  exBar.classList.remove('hidden');
-  const fill = exBar.querySelector('i');
-
+  $('#exGo').classList.add('hidden');
+  $('#exCancel').classList.remove('hidden');
+  $('#exBar').classList.remove('hidden');
+  const fill = $('#exBar').querySelector('i');
   try {
     const blob = await exportVideo({
-      song,
-      from, to,
-      audioUrl: currentAudioUrl || `${BASE}data/Neghab.mp3`,
+      song: app.song, from, to,
+      audioUrl: app.audioUrl,
       width: curRes().w, height: curRes().h,
       fps: parseInt($('#exFps').value, 10),
       bitrate: parseInt($('#exBr').value, 10) * 1e6,
-      grain: $('#exGrain').checked ? 0.024 : 0,
-      overrides: OV,
+      grain: look.grain, overrides: OV, sections: R.sections,
+      look,
       signal: exAbort.signal,
       onProgress: p => {
         fill.style.width = (p.pct * 100).toFixed(1) + '%';
         if (p.phase === 'video') {
-          setMsg(`فریم ${p.done} از ${p.total} · ${p.fps.toFixed(1)} فریم بر ثانیه · ` +
-                 `حدود ${Math.ceil(p.eta)} ثانیه مانده`);
+          setMsg(`فریم ${faN(p.done)} از ${faN(p.total)} · ${faN(p.fps.toFixed(1))} فریم بر ثانیه · `
+               + `حدود ${faN(Math.ceil(p.eta))} ثانیه مانده`);
         } else if (p.phase === 'audio') setMsg('در حال افزودن صدا…');
       },
     });
-
     const mb = (blob.size / 1048576).toFixed(1);
-    const name = `neghab_${from.toFixed(0)}-${to.toFixed(0)}_${curRes().id}p.mp4`;
-    setMsg(`در حال ذخیره… (${mb} مگابایت)`);
-    const res = await saveFile(blob, name, p => {
-      fill.style.width = (p * 100).toFixed(0) + '%';
-    });
-
-    if (res.where === 'browser') {
-      setMsg(`آماده شد — ${mb} مگابایت. در پوشهٔ Downloads ذخیره شد.`, 'ok');
-    } else if (res.where === 'downloads') {
-      setMsg(`✓ ذخیره شد در ${res.path} — ${mb} مگابایت`, 'ok');
-    } else {
-      setMsg(`${mb} مگابایت ساخته شد ولی در Downloads ذخیره نشد `
-             + `(${res.warn || 'دلیل نامشخص'}). از دکمهٔ اشتراک‌گذاری استفاده کنید.`, 'warn');
-    }
+    const name = `${(app.song.title || 'clip').replace(/\s+/g, '_')}_${from | 0}-${to | 0}_${curRes().id}p.mp4`;
+    setMsg(`در حال ذخیره… (${faN(mb)} مگابایت)`);
+    const res = await saveFile(blob, name, p => { fill.style.width = (p * 100).toFixed(0) + '%'; });
+    if (res.where === 'browser') setMsg(`آماده شد — ${faN(mb)} مگابایت، در پوشهٔ Downloads`, 'ok');
+    else if (res.where === 'downloads') setMsg(`✓ ذخیره شد در ${res.path} — ${faN(mb)} مگابایت`, 'ok');
+    else setMsg(`${faN(mb)} مگابایت ساخته شد ولی در Downloads ذخیره نشد. از اشتراک‌گذاری استفاده کنید.`, 'warn');
     if (res.canShare && res.uri) {
       const sh = $('#exShare');
-      if (sh) { sh.classList.remove('hidden'); sh.onclick = () => shareFile(res.uri); }
+      sh.classList.remove('hidden');
+      sh.onclick = () => shareFile(res.uri);
     }
   } catch (e) {
     console.error(e);
     setMsg('خطا: ' + e.message, 'err');
   } finally {
-    $('#exGo')?.classList.remove('hidden');
-    $('#exCancel')?.classList.add('hidden');
+    $('#exGo').classList.remove('hidden');
+    $('#exCancel').classList.add('hidden');
     exAbort = null;
   }
 };
+$('#exCancel').onclick = () => exAbort?.abort();
+
+/* ── رویدادهای عمومی ─────────────────────────────────────── */
+$('#play').onclick = toggle;
+$('#scrub').oninput = e => { if (app.playing) pause(); seek(parseFloat(e.target.value)); };
+window.addEventListener('resize', fit);
+window.addEventListener('keydown', e => {
+  if (app.pane === 'words' && R.selected && e.code.startsWith('Arrow')) {
+    const s = e.shiftKey ? 10 : 1;
+    const d = { ArrowLeft: [-s, 0], ArrowRight: [s, 0], ArrowUp: [0, -s], ArrowDown: [0, s] }[e.code];
+    if (d) { e.preventDefault(); OV.nudge(R.selected, d[0], d[1]); OV.save(); draw(); return; }
+  }
+  if (e.code === 'Space') { e.preventDefault(); toggle(); }
+  if (e.code === 'ArrowRight') seek(app.t + (e.shiftKey ? 5 : 1 / 60));
+  if (e.code === 'ArrowLeft') seek(app.t - (e.shiftKey ? 5 : 1 / 60));
+});
+
+/* ── راه‌اندازی ──────────────────────────────────────────── */
+async function boot() {
+  await loadFonts();
+  applyLook();
+  await openProject('__demo');
+  autoBitrate();
+  $('#loading').classList.add('gone');
+  go('home');
+  console.log('%c لیریک استودیو %c آماده',
+    'background:#E4142A;color:#fff;padding:2px 6px;border-radius:3px', 'color:#9AA0AC');
+}
 
 window.__studio = {
-  seek, play, pause, draw, setEdit,
-  get overrides() { return OV; },
-  get time() { return t; },
-  get song() { return song; },
+  seek, play, pause, draw, go, openProject,
+  get app() { return app; },
+  get song() { return app.song; },
+  get time() { return app.t; },
   get renderer() { return R; },
+  get overrides() { return OV; },
+  get look() { return look; },
   exportVideo, canExport,
 };
 window.addEventListener('seek-test', e => seek(e.detail));
