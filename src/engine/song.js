@@ -79,7 +79,10 @@ export const SECTION_NAMES = {
   pre: 'پیش‌کرس', chorus: 'کرس', inst_b: 'شکست ۲۹ ثانیه', inst_c: 'فرود',
   mirror: 'آینه', end: 'کارت پایان',
   type: 'تایپ', karaoke: 'کاریوکی', wave: 'موج',
-  punch: 'پرش', split: 'دوپاره', stack: 'ستونی', custom: 'سفارشی',
+  punch: 'پرش', split: 'دوپاره', stack: 'ستونی',
+  neon: 'نئون', sh3d: 'سایهٔ سه‌بعدی', slide: 'سُر خوردن', drop: 'افتادن',
+  shake: 'لرزش', wipe: 'پردهٔ عمودی', focus: 'تمرکز', breath: 'نفس',
+  flip: 'چرخش', underline: 'خط‌کشی', spot: 'سایه‌روشن',
 };
 
 export const outQuint = t => 1 - Math.pow(1 - t, 5);

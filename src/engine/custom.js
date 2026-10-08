@@ -61,8 +61,49 @@ for (const w of e.words) {
 }
 `;
 
+/**
+ * مجموعهٔ افکت‌های سفارشی
+ *
+ * هرکدام نام و کد خودش را دارد و به‌صورت سبک «cf:0»، «cf:1» … در
+ * جدول بخش‌ها قابل انتخاب است. این‌طور می‌شود کدی که کسی به شما
+ * داده را به‌عنوان یک افکت تازه اضافه کرد، بدون اینکه افکت قبلی
+ * را از دست بدهید.
+ */
+export class CustomSet {
+  constructor(list = null) {
+    this.list = [];
+    this.load(list);
+  }
+
+  load(list) {
+    this.list = [];
+    const src = (Array.isArray(list) && list.length)
+      ? list : [{ name: 'افکت من', code: DEFAULT_CODE }];
+    for (const it of src) this.add(it.name, it.code, false);
+    return this;
+  }
+
+  add(name = 'افکت تازه', code = DEFAULT_CODE, trim = true) {
+    const fx = new CustomFx();
+    fx.name = name;
+    fx.compile(code);
+    this.list.push(fx);
+    if (trim && this.list.length > 12) this.list.shift();
+    return this.list.length - 1;
+  }
+
+  remove(i) { if (this.list.length > 1) this.list.splice(i, 1); }
+  get(i) { return this.list[i] || null; }
+  get count() { return this.list.length; }
+  toJSON() { return this.list.map(f => ({ name: f.name, code: f.code })); }
+
+  /** سبک‌هایی که این مجموعه فراهم می‌کند */
+  styles() { return this.list.map((f, i) => ({ id: `cf:${i}`, label: f.name })); }
+}
+
 export class CustomFx {
   constructor() {
+    this.name = 'افکت من';
     this.code = DEFAULT_CODE;
     this.fn = null;
     this.error = null;

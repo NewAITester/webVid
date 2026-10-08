@@ -12,8 +12,10 @@ import { saveFile, shareFile } from './engine/save.js';
 import { Overrides } from './engine/overrides.js';
 import { analyzeBuffer, decodeAudioFile } from './engine/analyze.js';
 import { Library, autoSections, plainToLines } from './engine/library.js';
-import { CustomFx, DEFAULT_CODE, SNIPPETS } from './engine/custom.js';
+import { CustomSet, DEFAULT_CODE, SNIPPETS } from './engine/custom.js';
 import { LESSONS, CATEGORIES } from './engine/learn.js';
+import { TEXT_FX } from './engine/textfx.js';
+import { TEXT_FX2 } from './engine/textfx2.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -53,8 +55,9 @@ let look = DEFAULT_LOOK();
 const OV = new Overrides({});
 R.overrides = OV;
 
-const CFX = new CustomFx();
-R.customFx = CFX;
+const CSET = new CustomSet();
+R.customSet = CSET;
+let cfIdx = 0;                 // افکت سفارشی در حال ویرایش
 
 /** حالت پروژهٔ نمونه جدا ذخیره می‌شود تا تغییراتتان بماند ولی سرایت نکند */
 const DEMO_KEY = 'lyricstudio.demo.state.v2';
@@ -70,7 +73,7 @@ let saveTimer = 0;
 function saveState() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
-    const payload = { look, overrides: OV.map, sections: R.sections, code: CFX.code };
+    const payload = { look, overrides: OV.map, sections: R.sections, custom: CSET.toJSON() };
     if (app.projectId === '__demo') {
       try { localStorage.setItem(DEMO_KEY, JSON.stringify(payload)); } catch {}
       return;
@@ -116,6 +119,7 @@ function draw() {
   const sc = $('#scrub');
   if (document.activeElement !== sc) sc.value = String(app.t);
   markActive();
+  if (app.pane === 'fx' && !app.playing) fxDirty = true;
   if (app.playing) {
     frames++;
     const now = performance.now();
@@ -181,6 +185,8 @@ function go(name) {
   if (name === 'look') syncLook();
   if (name === 'words') refreshCount();
   if (name === 'code') syncCode();
+  if (name === 'lyrics') syncLyricsPane();
+  if (name === 'fx') { buildFxCats(); buildFxGrid(); buildCfList(); }
 }
 $$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go); });
 
@@ -194,6 +200,9 @@ $('#gearBtn').onclick = () => { syncProject(); $('#pjSheet').classList.remove('h
 $('#pjX').onclick = () => $('#pjSheet').classList.add('hidden');
 $('#pjSheet').onclick = e => { if (e.target.id === 'pjSheet') $('#pjSheet').classList.add('hidden'); };
 $('#addAudioBtn').onclick = () => { syncProject(); $('#pjSheet').classList.remove('hidden'); };
+
+let fxDirty = false;
+setInterval(() => { if (fxDirty && app.pane === 'fx') { fxDirty = false; buildFxGrid(); } }, 420);
 
 /* ── نوار تصاویر بخش ─────────────────────────────────────── */
 let cards = [];
@@ -220,7 +229,7 @@ function buildStrip() {
     c.width = tw; c.height = Math.round(tw * dh / dw);
     const lb = document.createElement('div');
     lb.className = 'lb';
-    lb.textContent = SECTION_NAMES[sec[2]] || sec[2];
+    lb.textContent = styleLabel(sec[2]);
     el.append(c, lb);
     el.onclick = () => seek(sec[0] + 0.3);
     strip.append(el);
@@ -242,11 +251,15 @@ function markActive() {
 }
 
 /* ── ویرایش بخش‌ها ───────────────────────────────────────── */
-const STYLES = [
-  'intro', 'cold', 'verse', 'pre', 'chorus', 'mirror', 'end',
-  'type', 'karaoke', 'wave', 'punch', 'split', 'stack', 'custom',
-  'inst_a', 'inst_b', 'inst_c',
-];
+const FX_CATS = {
+  'پایه':    ['verse', 'chorus', 'pre', 'cold'],
+  'حرکتی':   ['type', 'karaoke', 'wave', 'punch', 'split', 'stack'],
+  'نمایشی':  ['neon', 'sh3d', 'slide', 'drop', 'shake', 'wipe', 'focus', 'breath', 'flip', 'underline', 'spot'],
+  'بی‌کلام': ['intro', 'inst_a', 'inst_b', 'inst_c', 'mirror', 'end'],
+};
+const STYLES = Object.values(FX_CATS).flat();
+const styleLabel = id => String(id).startsWith('cf:')
+  ? (CSET.get(+id.slice(3))?.name || 'سفارشی') : (SECTION_NAMES[id] || id);
 
 function sections() { return R.sections || (R.sections = SECT.map(s => s.slice())); }
 
@@ -257,9 +270,9 @@ function buildSecList() {
     const row = document.createElement('div');
     row.className = 'srow';
     const sel = document.createElement('select');
-    for (const st of STYLES) {
+    for (const st of STYLES.concat(CSET.styles().map(x => x.id))) {
       const o = document.createElement('option');
-      o.value = st; o.textContent = SECTION_NAMES[st] || st;
+      o.value = st; o.textContent = styleLabel(st);
       if (st === sec[2]) o.selected = true;
       sel.append(o);
     }
@@ -476,8 +489,8 @@ async function openProject(id) {
     look = Object.assign(DEFAULT_LOOK(), st.look || {});
     OV.setMap(JSON.parse(JSON.stringify(st.overrides || {})), saveState);
     if (st.sections?.length) R.sections = st.sections.map(x => x.slice());
-    CFX.compile(st.code || DEFAULT_CODE);
-    const ta = $('#cdText'); if (ta) ta.value = CFX.code;
+    CSET.load(st.custom || (st.code ? [{ name: 'افکت من', code: st.code }] : null));
+    cfIdx = 0;
   }
   R.selected = null; lastPicked = null;
   R.setSong(app.song);
@@ -533,7 +546,7 @@ $('#nwGo').onclick = async () => {
     tg: ($('#nwTg').value || '').trim(),
     aspect: newAspect,
     audio: null, lrc: '', analysis: null, duration: 0, sections: null,
-    look: DEFAULT_LOOK(), overrides: {}, code: DEFAULT_CODE,
+    look: DEFAULT_LOOK(), overrides: {}, custom: null,
     createdAt: Date.now(),
   };
   await Library.put(proj);
@@ -711,7 +724,7 @@ $('#exGo').onclick = async () => {
       width: outW(), height: outH(),
       fps: parseInt($('#exFps').value, 10),
       bitrate: parseInt($('#exBr').value, 10) * 1e6,
-      grain: look.grain, overrides: OV, sections: R.sections, customFx: CFX,
+      grain: look.grain, overrides: OV, sections: R.sections, customSet: CSET,
       look,
       signal: exAbort.signal,
       onProgress: p => {
@@ -745,47 +758,278 @@ $('#exGo').onclick = async () => {
 };
 $('#exCancel').onclick = () => exAbort?.abort();
 
+/* ── ویرایشگر شعر ────────────────────────────────────────── */
+let syncTimes = [];     // زمان شروع هر خط در حالت هم‌زمان‌سازی
+
+function lyricsText() {
+  return (app.song?.lines || []).map(l => l.text).join('\n');
+}
+function syncMode(on) {
+  $('#lyWritePane').classList.toggle('hidden', on);
+  $('#lySyncPane').classList.toggle('hidden', !on);
+  $('#lyWrite').classList.toggle('on', !on);
+  $('#lySync').classList.toggle('on', on);
+  if (on) { syncTimes = []; renderSync(); }
+}
+$('#lyWrite').onclick = () => syncMode(false);
+$('#lySync').onclick = () => syncMode(true);
+
+function syncLyricsPane() {
+  const ta = $('#lyText');
+  if (document.activeElement !== ta) ta.value = lyricsText();
+  $('#syncTotal').textContent = faN(linesForSync().length);
+  renderSync();
+}
+const linesForSync = () =>
+  $('#lyText').value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+
+/**
+ * متن ساده + زمان خطوط ← LRC با زمان کلمه‌ای
+ * زمان هر کلمه به نسبت طولش بین شروع این خط و خط بعد پخش می‌شود.
+ */
+function buildLrc(lines, times, duration) {
+  const fmt = t => {
+    const m = Math.floor(t / 60), s = t - m * 60;
+    return `${String(m).padStart(2, '0')}:${s.toFixed(2).padStart(5, '0')}`;
+  };
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t0 = times[i];
+    if (t0 == null) continue;
+    const t1 = times[i + 1] ?? Math.min(duration, t0 + 4);
+    const ws = lines[i].split(/\s+/).filter(Boolean);
+    const span = Math.max(0.4, (t1 - t0) * 0.88);
+    const tot = ws.reduce((p, w) => p + w.length + 1, 0);
+    let acc2 = 0;
+    const parts = ws.map(w => {
+      const tt = t0 + (acc2 / tot) * span;
+      acc2 += w.length + 1;
+      return `<${fmt(tt)}>${w}`;
+    });
+    out.push(`[${fmt(t0)}]${parts.join(' ')}`);
+  }
+  return out.join('\n');
+}
+
+async function applyLyrics(lrc) {
+  if (app.projectId === '__demo') {
+    $('#lyMsg').textContent = 'نمونه قابل ویرایش نیست — یک پروژهٔ جدید بسازید';
+    $('#lyMsg').className = 'msg err'; return;
+  }
+  const p = await Library.get(app.projectId);
+  if (!p) return;
+  p.lrc = lrc;
+  p.sections = null;
+  await Library.put(p);
+  await openProject(p.id);
+  go('lyrics');
+  $('#lyMsg').textContent = `${faN(app.song?.lines.length || 0)} خط اعمال شد`;
+  $('#lyMsg').className = 'msg ok';
+}
+
+$('#lyApply').onclick = () => {
+  const ls = linesForSync();
+  if (!ls.length) return;
+  // بدون زمان‌بندی: یکنواخت روی طول آهنگ پخش می‌شود
+  applyLyrics(plainToLines(ls.join('\n'), app.duration || 60));
+};
+$('#lyFromFile').onclick = () => $('#lyFile').click();
+$('#lyFile').onchange = async e => {
+  const f = e.target.files?.[0]; if (!f) return;
+  const txt = await f.text();
+  if (/\[\d+:\d/.test(txt)) { applyLyrics(txt); }
+  else { $('#lyText').value = txt; $('#lyMsg').textContent = 'متن بارگذاری شد — «اعمال» را بزنید'; }
+};
+
+function renderSync() {
+  const ls = linesForSync();
+  $('#syncCount').textContent = faN(syncTimes.length);
+  $('#syncTotal').textContent = faN(ls.length);
+  $('#syncNow').textContent = syncTimes.length < ls.length
+    ? ls[syncTimes.length] : '✓ تمام شد — «اعمال» را بزنید';
+  const host = $('#syncList');
+  host.innerHTML = '';
+  for (let i = syncTimes.length - 1; i >= 0 && i > syncTimes.length - 7; i--) {
+    const r = document.createElement('div');
+    r.className = 'syncrow';
+    r.innerHTML = `<span class="tt"></span><span class="tx"></span>`;
+    r.querySelector('.tt').textContent = faTime(syncTimes[i]);
+    r.querySelector('.tx').textContent = ls[i] || '';
+    host.append(r);
+  }
+}
+$('#syncTap').onclick = () => {
+  const ls = linesForSync();
+  if (syncTimes.length >= ls.length) {
+    applyLyrics(buildLrc(ls, syncTimes, app.duration));
+    return;
+  }
+  syncTimes.push(+app.t.toFixed(2));
+  renderSync();
+  if (syncTimes.length === ls.length) $('#syncTap').textContent = 'اعمال زمان‌بندی';
+};
+$('#syncUndo').onclick = () => { syncTimes.pop(); $('#syncTap').textContent = 'ثبت این خط'; renderSync(); };
+$('#syncRestart').onclick = () => { syncTimes = []; $('#syncTap').textContent = 'ثبت این خط'; seek(0); renderSync(); };
+
+/* ── گالری افکت با پیش‌نمایش زنده ────────────────────────── */
+let fxCat = 'حرکتی';
+function buildFxCats() {
+  const host = $('#fxCats');
+  host.innerHTML = '';
+  for (const c of Object.keys(FX_CATS)) {
+    const b = document.createElement('button');
+    b.className = 'chip' + (c === fxCat ? ' on' : '');
+    b.textContent = c;
+    b.onclick = () => { fxCat = c; buildFxCats(); buildFxGrid(); };
+    host.append(b);
+  }
+}
+/** لحظه‌ای که پیش‌نمایش افکت واقعاً چیزی نشان می‌دهد.
+    اگر همین الان خطی فعال نیست، به نزدیک‌ترین خط می‌پریم — وگرنه
+    همهٔ کارت‌ها سیاه درمی‌آیند و مقایسه ممکن نیست. */
+function fxPreviewTime() {
+  const sg = app.song;
+  if (!sg || !sg.lines.length) return app.t;
+  if (sg.activeLine(app.t) >= 0) return app.t;
+  let best = sg.lines[0], bd = Infinity;
+  for (const L of sg.lines) {
+    const d = Math.abs(L.words[0].t - app.t);
+    if (d < bd) { bd = d; best = L; }
+  }
+  const span = Math.max(0.8, sg.lineOut(best.i) - sg.lineStart(best.i));
+  return sg.lineStart(best.i) + span * 0.55;
+}
+
+function buildFxGrid() {
+  const host = $('#fxGrid');
+  host.innerHTML = '';
+  if (!app.song) return;
+  const i = curSecIndex();
+  const sec = sections()[i];
+  $('#fxFor').textContent = sec ? `بخش ${faN(i + 1)}` : '—';
+  const list = FX_CATS[fxCat] || [];
+  const pvT = fxPreviewTime();
+  const { W: dw, H: dh } = stageDims();
+  const tw = dh > dw ? 78 : 150;
+  for (const id of list) {
+    const el = document.createElement('div');
+    el.className = 'fxcard' + (sec && sec[2] === id ? ' on' : '');
+    const c = document.createElement('canvas');
+    c.width = tw; c.height = Math.round(tw * dh / dw);
+    const lb = document.createElement('div');
+    lb.className = 'fl'; lb.textContent = styleLabel(id);
+    el.append(c, lb);
+    el.onclick = () => {
+      if (!sec) return;
+      sec[2] = id; saveState(); buildSecList(); buildStrip(); buildFxGrid(); draw();
+    };
+    host.append(el);
+    // پیش‌نمایش: همین لحظهٔ آهنگ، با همین افکت
+    const st = new Stage(c); st.resize(c.width, c.height);
+    const r2 = new Renderer(st);
+    r2.setSong(app.song);
+    r2.sections = [[0, app.duration, id, sec ? sec[3] : C.CRIMSON]];
+    r2.customSet = CSET;
+    r2.showFurniture = false; r2.grain = 0; r2.bloom = 0.4; r2.chroma = 0;
+    try { r2.renderFrame(pvT); } catch (err) { /* افکت خراب، کارت خالی */ }
+  }
+}
+function buildCfList() {
+  const host = $('#cfList');
+  host.innerHTML = '';
+  const sec = sections()[curSecIndex()];
+  CSET.list.forEach((f, i) => {
+    const id = `cf:${i}`;
+    const row = document.createElement('div');
+    row.className = 'srow';
+    const nm = document.createElement('div');
+    nm.style.cssText = 'flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis';
+    nm.textContent = f.name + (f.error ? ' ⚠' : '');
+    const use = document.createElement('button');
+    use.className = 'btn sm' + (sec && sec[2] === id ? ' primary' : ' ghost');
+    use.textContent = sec && sec[2] === id ? 'فعال' : 'استفاده';
+    use.onclick = () => { if (sec) { sec[2] = id; saveState(); buildSecList(); buildStrip(); buildCfList(); draw(); } };
+    const ed = document.createElement('button');
+    ed.className = 'btn sm ghost'; ed.textContent = 'ویرایش';
+    ed.onclick = () => { cfIdx = i; go('code'); };
+    row.append(nm, use, ed);
+    host.append(row);
+  });
+}
+$('#cfAdd').onclick = () => {
+  cfIdx = CSET.add('افکت ' + faN(CSET.count + 1), DEFAULT_CODE);
+  saveState(); buildCfList(); buildSecList(); go('code');
+};
+
 /* ── ادیتور کد ───────────────────────────────────────────── */
+function curCf() { return CSET.get(cfIdx) || CSET.get(0); }
 function syncCode() {
-  const ta = $('#cdText');
-  if (ta.value !== CFX.code) ta.value = CFX.code;
-  const sel = $('#cdSnip');
-  if (sel.options.length <= 1) {
+  const sel = $('#cdWhich');
+  sel.innerHTML = '';
+  CSET.list.forEach((f, i) => {
+    const o = document.createElement('option');
+    o.value = String(i); o.textContent = f.name;
+    if (i === cfIdx) o.selected = true;
+    sel.append(o);
+  });
+  const sn = $('#cdSnip');
+  if (sn.options.length <= 1) {
     for (const k of Object.keys(SNIPPETS)) {
       const o = document.createElement('option');
       o.value = k; o.textContent = k;
-      sel.append(o);
+      sn.append(o);
     }
   }
+  const f = curCf();
+  $('#cdName').value = f.name;
+  const ta = $('#cdText');
+  if (ta.value !== f.code) ta.value = f.code;
   showCodeMsg();
 }
 function showCodeMsg() {
-  const el = $('#cdMsg');
-  const ta = $('#cdText');
-  if (CFX.error) { el.textContent = CFX.error; el.className = 'msg err'; ta.classList.add('bad'); return; }
+  const el = $('#cdMsg'), ta = $('#cdText'), f = curCf();
+  if (f.error) { el.textContent = f.error; el.className = 'msg err'; ta.classList.add('bad'); return; }
   ta.classList.remove('bad');
-  if (CFX.runtimeError) { el.textContent = 'خطای اجرا: ' + CFX.runtimeError; el.className = 'msg warn'; return; }
-  const used = (R.sections || []).some(x => x[2] === 'custom');
-  el.textContent = used ? 'سالم — روی بخش «سفارشی» اجرا می‌شود'
-    : 'سالم — ولی هنوز هیچ بخشی سبک «سفارشی» ندارد';
+  if (f.runtimeError) { el.textContent = 'خطای اجرا: ' + f.runtimeError; el.className = 'msg warn'; return; }
+  const used = (R.sections || []).some(x => x[2] === `cf:${cfIdx}`);
+  el.textContent = used ? 'سالم — روی بخش فعال اجرا می‌شود'
+    : 'سالم — از تب «افکت» روی یک بخش بگذاریدش';
   el.className = 'msg ' + (used ? 'ok' : '');
 }
+$('#cdWhich').onchange = e => { cfIdx = +e.target.value; syncCode(); };
+$('#cdName').oninput = e => { curCf().name = e.target.value || 'بی‌نام'; saveState(); buildSecList(); };
 let codeTimer = 0;
 $('#cdText').addEventListener('input', e => {
   clearTimeout(codeTimer);
   codeTimer = setTimeout(() => {
-    CFX.compile(e.target.value);
+    curCf().compile(e.target.value);
     saveState(); draw(); showCodeMsg(); buildStrip();
   }, 350);
 });
-$('#cdReset').onclick = () => { CFX.compile(DEFAULT_CODE); $('#cdText').value = DEFAULT_CODE; saveState(); draw(); showCodeMsg(); };
+$('#cdReset').onclick = () => { curCf().compile(DEFAULT_CODE); $('#cdText').value = DEFAULT_CODE; saveState(); draw(); showCodeMsg(); };
+$('#cdDel').onclick = () => {
+  if (CSET.count <= 1) return;
+  CSET.remove(cfIdx); cfIdx = 0; saveState(); syncCode(); buildSecList(); draw();
+};
+$('#cdCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('#cdText').value); setCdMsg('کپی شد', 'ok'); }
+  catch { setCdMsg('مرورگر اجازهٔ کپی نداد', 'err'); }
+};
+$('#cdPaste').onclick = async () => {
+  try {
+    const txt = await navigator.clipboard.readText();
+    if (!txt) return;
+    $('#cdText').value = txt;
+    curCf().compile(txt); saveState(); draw(); showCodeMsg();
+  } catch { setCdMsg('مرورگر اجازهٔ خواندن حافظه نداد — دستی جای‌گذاری کنید', 'warn'); }
+};
+const setCdMsg = (t, c) => { $('#cdMsg').textContent = t; $('#cdMsg').className = 'msg ' + c; };
 $('#cdSnip').onchange = e => {
-  const k = e.target.value;
-  if (!k) return;
+  const k = e.target.value; if (!k) return;
   const ta = $('#cdText');
-  ta.value = (ta.value.trimEnd() + '\n\n' + SNIPPETS[k] + '\n');
+  ta.value = ta.value.trimEnd() + '\n\n' + SNIPPETS[k] + '\n';
   e.target.value = '';
-  CFX.compile(ta.value); saveState(); draw(); showCodeMsg();
+  curCf().compile(ta.value); saveState(); draw(); showCodeMsg();
 };
 
 /* ── آموزش ───────────────────────────────────────────────── */

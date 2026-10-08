@@ -239,3 +239,34 @@ textarea.code.bad{border-color:#FF6B6B}
   .scroll{padding:22px 20px}
   .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
 }
+
+/* ── ویرایشگر شعر ────────────────────────────────────────── */
+textarea.lyr{width:100%;min-height:190px;background:#07080B;color:var(--ink);
+  border:1px solid var(--line);border-radius:11px;padding:11px 12px;
+  font-family:inherit;font-size:13.5px;line-height:2.1;resize:vertical;outline:none;
+  margin-bottom:10px}
+textarea.lyr:focus{border-color:#333B4A}
+.syncnow{background:#07080B;border:1px solid var(--line);border-radius:11px;
+  padding:16px 12px;text-align:center;font-size:17px;margin-bottom:11px;
+  min-height:58px;display:grid;place-items:center;line-height:1.6}
+.btn.tap{flex:1;padding:16px;font-size:15px}
+.syncprog{font-size:11.5px;color:var(--dim);margin:9px 0}
+.synclist{display:flex;flex-direction:column;gap:4px;max-height:140px;overflow-y:auto}
+.syncrow{display:flex;gap:9px;align-items:center;font-size:12px;padding:5px 9px;
+  background:var(--surf);border:1px solid var(--line);border-radius:8px}
+.syncrow .tt{color:var(--red);direction:ltr;font-variant-numeric:tabular-nums;flex:0 0 auto}
+.syncrow .tx{color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── گالری افکت ──────────────────────────────────────────── */
+.fxgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+.fxcard{border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  background:#0C0E13;cursor:pointer;transition:.15s}
+.fxcard:hover{border-color:#333B4A}
+.fxcard.on{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset}
+.fxcard canvas{display:block;width:100%;height:auto;background:#000}
+.fxcard .fl{padding:5px 7px 6px;font-size:10.5px;color:var(--dim);text-align:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fxcard.on .fl{color:var(--ink)}
+.chip{padding:5px 11px;font-size:11.5px;border-radius:999px;background:transparent;
+  border:1px solid var(--line);color:var(--dim);cursor:pointer;font-family:inherit}
+.chip.on{background:var(--red);border-color:var(--red);color:#fff}

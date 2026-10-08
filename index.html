@@ -98,6 +98,53 @@
       <div id="secList" class="list"></div>
     </section>
 
+    <!-- شعر -->
+    <section class="pane" data-pane="lyrics">
+      <div class="phead">شعر<div class="spacer"></div>
+        <button id="lyWrite" class="btn sm ghost on">نوشتن</button>
+        <button id="lySync" class="btn sm ghost">هم‌زمان‌سازی</button></div>
+
+      <div id="lyWritePane">
+        <p class="note">هر خط شعر را در یک سطر بنویسید. بعد برای زمان‌بندی
+          به «هم‌زمان‌سازی» بروید.</p>
+        <textarea id="lyText" class="lyr" spellcheck="false"
+          placeholder="خط اول شعر&#10;خط دوم شعر&#10;…"></textarea>
+        <div class="frow btns">
+          <button id="lyApply" class="btn primary sm">اعمال</button>
+          <button id="lyFromFile" class="btn sm ghost">از فایل</button>
+          <input id="lyFile" type="file" accept=".lrc,.txt,text/plain" class="hidden">
+          <span id="lyMsg" class="msg"></span>
+        </div>
+      </div>
+
+      <div id="lySyncPane" class="hidden">
+        <p class="note">پخش را بزنید و هر جا خط تازه شروع شد، دکمهٔ بزرگ را
+          بزنید. زمان کلمات خودکار پخش می‌شود.</p>
+        <div class="syncnow" id="syncNow">—</div>
+        <div class="frow btns">
+          <button id="syncTap" class="btn primary big tap">ثبت این خط</button>
+          <button id="syncUndo" class="btn sm ghost">یکی عقب</button>
+          <button id="syncRestart" class="btn sm ghost">از اول</button>
+        </div>
+        <div class="syncprog"><span id="syncCount">۰</span> از <span id="syncTotal">۰</span></div>
+        <div id="syncList" class="synclist"></div>
+      </div>
+    </section>
+
+    <!-- گالری افکت -->
+    <section class="pane" data-pane="fx">
+      <div class="phead">افکت‌ها<div class="spacer"></div>
+        <span class="pill" id="fxFor">—</span></div>
+      <p class="note">افکت روی بخشی که الان در آن هستید اعمال می‌شود.
+        پیش‌نمایش‌ها همین لحظهٔ آهنگ را نشان می‌دهند.</p>
+      <div class="frow btns" id="fxCats"></div>
+      <div id="fxGrid" class="fxgrid"></div>
+      <div class="phead" style="margin-top:14px">افکت سفارشی
+        <div class="spacer"></div>
+        <button id="cfAdd" class="btn sm ghost">+ افزودن کد</button></div>
+      <div id="cfList" class="list"></div>
+    </section>
+
     <section class="pane" data-pane="words">
       <div class="phead">جابه‌جایی کلمات<div class="spacer"></div>
         <span class="pill" id="edCount">۰</span></div>
@@ -138,10 +185,16 @@
     </section>
 
     <section class="pane" data-pane="code">
-      <div class="phead">افکت سفارشی<div class="spacer"></div>
-        <select id="cdSnip"><option value="">نمونه‌ها…</option></select>
-        <button id="cdReset" class="btn sm ghost">پیش‌فرض</button></div>
-      <p class="note">بخشی را به سبک «سفارشی» بگذارید تا اجرا شود.</p>
+      <div class="phead">ویرایش کد<div class="spacer"></div>
+        <select id="cdWhich"></select>
+        <select id="cdSnip"><option value="">نمونه‌ها…</option></select></div>
+      <div class="frow btns">
+        <input id="cdName" type="text" class="txt" placeholder="نام افکت">
+        <button id="cdPaste" class="btn sm ghost">جای‌گذاری</button>
+        <button id="cdCopy" class="btn sm ghost">کپی</button>
+        <button id="cdReset" class="btn sm ghost">پیش‌فرض</button>
+        <button id="cdDel" class="btn sm ghost">حذف</button>
+      </div>
       <textarea id="cdText" class="code" spellcheck="false"></textarea>
       <div id="cdMsg" class="msg"></div>
     </section>
@@ -177,9 +230,10 @@
 
   <nav class="nav" id="nav">
     <button data-go="sections" class="on"><i>▦</i><b>بخش‌ها</b></button>
+    <button data-go="lyrics"><i>✎</i><b>شعر</b></button>
+    <button data-go="fx"><i>✦</i><b>افکت</b></button>
     <button data-go="words"><i>✥</i><b>کلمات</b></button>
     <button data-go="look"><i>◐</i><b>ظاهر</b></button>
-    <button data-go="code"><i>{}</i><b>کد</b></button>
     <button data-go="export"><i>↓</i><b>خروجی</b></button>
   </nav>
 </section>

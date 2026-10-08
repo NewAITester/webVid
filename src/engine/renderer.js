@@ -5,6 +5,9 @@ import { particles, furniture, bgText, beatGrid } from './field.js';
 import { drawLyrics } from './lyricbody.js';
 import { STYLE_FN, sMirror } from './styles.js';
 import { TEXT_FX } from './textfx.js';
+import { TEXT_FX2 } from './textfx2.js';
+
+const ALLFX = { ...TEXT_FX, ...TEXT_FX2 };
 import { applyOverrides, hitWord } from './overrides.js';
 import { place, modeFor } from './layout.js';
 
@@ -48,7 +51,7 @@ export class Renderer {
     this.editMode = false;      // روکش ویرایش (هرگز در خروجی)
     this.selected = null;       // شناسهٔ کلمهٔ انتخاب‌شده
     this.sections = null;       // جدول بخش سفارشی (برای آهنگ وارد‌شده)
-    this.customFx = null;       // افکتی که کاربر نوشته
+    this.customSet = null;      // مجموعهٔ افکت‌های سفارشی
     this._bloomCanvas = null;
     this._grainTile = null;
   }
@@ -107,15 +110,15 @@ export class Renderer {
       }
       if (this.showFurniture) furniture(ctx, song, t, acc, invert);
       drawLyrics(ctx, song, t, style, acc, invert, this.overrides);
-    } else if (style === 'custom') {
+    } else if (String(style).startsWith('cf:')) {
       beatGrid(ctx, song, t, kick, 10);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
-      this.customFx?.draw(ctx, song, t, acc, kick, this.overrides);
-    } else if (TEXT_FX[style]) {
+      this.customSet?.get(+style.slice(3))?.draw(ctx, song, t, acc, kick, this.overrides);
+    } else if (ALLFX[style]) {
       // سبک‌های متنی تازه: پس‌زمینهٔ ساده‌تر، بدون متن لغزان
       beatGrid(ctx, song, t, kick, 10);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
-      TEXT_FX[style](ctx, song, t, acc, kick, this.overrides);
+      ALLFX[style](ctx, song, t, acc, kick, this.overrides);
     } else {
       beatGrid(ctx, song, t, kick, 8);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
@@ -305,7 +308,7 @@ export class Renderer {
       beatGrid(ctx, song, t, kick, 10);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
       this.customFx?.draw(ctx, song, t, acc, kick, this.overrides);
-    } else if (TEXT_FX[style] || style === 'custom') {
+    } else if (ALLFX[style] || String(style).startsWith('cf:')) {
       const cur = song.activeLine(t);
       if (cur < 0) return [];
       const line = song.lines[cur];
