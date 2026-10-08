@@ -6,7 +6,7 @@ import { loadFonts, faTime } from './engine/text.js';
 import { Song, SECT, SECTION_NAMES, DUR } from './engine/song.js';
 import { DESIGN_W, DESIGN_H } from './engine/core.js';
 import { exportVideo, canExport } from './engine/export.js';
-import { saveFile, shareFile, prettyPath } from './engine/save.js';
+import { saveFile, shareFile } from './engine/save.js';
 
 const $ = s => document.querySelector(s);
 const BASE = import.meta.env.BASE_URL;
@@ -252,12 +252,17 @@ $('#exGo').onclick = async () => {
       fill.style.width = (p * 100).toFixed(0) + '%';
     });
 
-    if (res.where === 'native') {
-      setMsg(`ذخیره شد در ${prettyPath(res.path)} — ${mb} مگابایت`, 'ok');
-      const sh = $('#exShare');
-      if (sh) { sh.classList.remove('hidden'); sh.onclick = () => shareFile(res.path); }
-    } else {
+    if (res.where === 'browser') {
       setMsg(`آماده شد — ${mb} مگابایت. در پوشهٔ Downloads ذخیره شد.`, 'ok');
+    } else if (res.where === 'downloads') {
+      setMsg(`✓ ذخیره شد در ${res.path} — ${mb} مگابایت`, 'ok');
+    } else {
+      setMsg(`${mb} مگابایت ساخته شد ولی در Downloads ذخیره نشد `
+             + `(${res.warn || 'دلیل نامشخص'}). از دکمهٔ اشتراک‌گذاری استفاده کنید.`, 'warn');
+    }
+    if (res.canShare && res.uri) {
+      const sh = $('#exShare');
+      if (sh) { sh.classList.remove('hidden'); sh.onclick = () => shareFile(res.uri); }
     }
   } catch (e) {
     console.error(e);

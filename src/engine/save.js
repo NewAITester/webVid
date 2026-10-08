@@ -1,29 +1,35 @@
 /**
  * ذخیرهٔ فایل خروجی
  *
- * مرورگر و اپ نیتیو دو مسیر کاملاً متفاوت دارند:
+ * سه محیط، سه رفتار متفاوت:
  *
- *   مرورگر → یک لینک <a download> می‌سازیم، مرورگر در Downloads
- *            می‌گذاردش.
+ *   مرورگر        → لینک <a download>، می‌رود در Downloads.
  *
- *   APK    → این روش کار نمی‌کند. WebView اندروید DownloadListener
- *            ندارد، پس کلیک روی لینک blob بی‌صدا نادیده گرفته
- *            می‌شود — فایل جایی ذخیره نمی‌شود و هیچ خطایی هم
- *            نمی‌دهد. باید با افزونهٔ Filesystem مستقیم روی دیسک
- *            نوشت.
+ *   APK قدیمی‌تر  → همان لینک کار نمی‌کند: WebView اندروید
+ *                   DownloadListener ندارد و کلیک روی blob بی‌صدا
+ *                   نادیده گرفته می‌شود.
  *
- * نکتهٔ حافظه: Filesystem فقط base64 می‌گیرد. تبدیل یکجای یک فایل
- * ۳۰۰ مگابایتی به base64 رشته‌ای ۴۰۰ مگابایتی می‌سازد و اپ را
- * می‌کشد. پس تکه‌تکه می‌نویسیم.
+ *   APK           → از اندروید ۱۰ (Scoped Storage) نوشتن مستقیم در
+ *                   پوشه‌های عمومی ممنوع شد. تنها راه رسمی ثبت فایل
+ *                   از طریق MediaStore است، که افزونهٔ آمادهٔ
+ *                   Filesystem ندارد — برای همین افزونهٔ نیتیو
+ *                   MediaSaver را نوشتیم.
+ *
+ * مسیر نهایی در اپ:
+ *   ۱) فایل تکه‌تکه در حافظهٔ موقت خصوصی اپ نوشته می‌شود (همیشه مجاز)
+ *   ۲) افزونهٔ نیتیو آن را جریانی به Downloads کپی می‌کند
+ *   ۳) فایل موقت پاک می‌شود
+ *
+ * این‌طور نه مجوزی لازم است، نه کل فایل در حافظهٔ رم تکرار می‌شود.
  */
 
-const CHUNK = 3 * 1024 * 1024;   // ۳ مگابایت در هر نوبت
+const CHUNK = 3 * 1024 * 1024;   // ۳ مگابایت در هر نوبت نوشتن
 
 function isNative() {
   return !!(window.Capacitor?.isNativePlatform?.());
 }
 
-/** تبدیل یک برش از ArrayBuffer به base64 بدون ساختن رشتهٔ غول‌پیکر */
+/** تبدیل یک برش کوچک به base64 بدون ساختن رشتهٔ غول‌پیکر */
 function toB64(u8) {
   let s = '';
   const STEP = 0x8000;
@@ -33,64 +39,72 @@ function toB64(u8) {
   return btoa(s);
 }
 
+function browserSave(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return { where: 'browser', path: 'Downloads/' + filename };
+}
+
 /**
- * @returns {Promise<{where:string, path?:string, canShare?:boolean}>}
+ * @returns {Promise<{where:string, path:string, uri?:string, canShare?:boolean}>}
  */
 export async function saveFile(blob, filename, onProgress = () => {}) {
-  if (!isNative()) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    return { where: 'browser' };
-  }
+  if (!isNative()) return browserSave(blob, filename);
 
   const { Filesystem, Directory } = await import('@capacitor/filesystem');
+  const { registerPlugin } = await import('@capacitor/core');
+  const MediaSaver = registerPlugin('MediaSaver');
+
+  const tmp = 'export_tmp_' + filename;
   const buf = new Uint8Array(await blob.arrayBuffer());
 
-  // اول فایل را خالی بساز، بعد تکه‌تکه اضافه کن
+  // ۱) نوشتن تکه‌تکه در حافظهٔ موقت خصوصی
   await Filesystem.writeFile({
-    path: filename,
-    data: '',
-    directory: Directory.Documents,
-    recursive: true,
+    path: tmp, data: '', directory: Directory.Cache, recursive: true,
   });
-
   for (let off = 0; off < buf.length; off += CHUNK) {
     await Filesystem.appendFile({
-      path: filename,
+      path: tmp,
       data: toB64(buf.subarray(off, Math.min(off + CHUNK, buf.length))),
-      directory: Directory.Documents,
+      directory: Directory.Cache,
     });
     onProgress(Math.min(1, (off + CHUNK) / buf.length));
   }
 
-  const { uri } = await Filesystem.getUri({
-    path: filename,
-    directory: Directory.Documents,
+  const { uri: srcUri } = await Filesystem.getUri({
+    path: tmp, directory: Directory.Cache,
   });
-  return { where: 'native', path: uri, canShare: true };
+
+  // ۲) انتقال به پوشهٔ عمومی Downloads
+  try {
+    const res = await MediaSaver.saveToDownloads({
+      sourcePath: srcUri, filename, mimeType: 'video/mp4',
+    });
+    return { where: 'downloads', path: res.path, uri: res.uri, canShare: true };
+  } catch (e) {
+    // اگر به هر دلیل نشد، دست‌کم فایل را از دست ندهیم
+    console.warn('MediaSaver ناموفق:', e);
+    return {
+      where: 'cache', path: 'حافظهٔ موقت اپ', uri: srcUri, canShare: true,
+      warn: e?.message || String(e),
+    };
+  }
 }
 
-/** باز کردن منوی اشتراک‌گذاری اندروید برای فایل ذخیره‌شده */
+/** باز کردن منوی اشتراک‌گذاری اندروید */
 export async function shareFile(uri, title = 'ویدیوی نقاب') {
   try {
     const { Share } = await import('@capacitor/share');
     await Share.share({ title, url: uri, dialogTitle: 'اشتراک‌گذاری ویدیو' });
     return true;
-  } catch {
+  } catch (e) {
+    console.warn('اشتراک‌گذاری ناموفق:', e);
     return false;
   }
-}
-
-/** متن خوانا برای نشان دادن محل ذخیره */
-export function prettyPath(uri) {
-  if (!uri) return '';
-  const m = uri.replace(/^file:\/\//, '');
-  const i = m.indexOf('/Documents/');
-  return i >= 0 ? 'Documents/' + m.slice(i + 11) : m;
 }

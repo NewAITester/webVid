@@ -38,4 +38,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- فقط برای اندروید ۹ و پایین‌تر؛ از اندروید ۱۰ به بعد MediaStore
+         استفاده می‌شود که اصلاً مجوز نمی‌خواهد. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 </manifest>
