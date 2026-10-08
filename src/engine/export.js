@@ -107,7 +107,7 @@ export async function exportVideo({
   song, from = 0, to = 10, audioUrl = null,
   width = W, height = H, fps = FPS,
   bitrate = 12_000_000, grain = 0.024, overrides = null,
-  sections = null, look = null,
+  sections = null, look = null, customFx = null,
   onProgress = () => {}, signal = null,
 } = {}) {
   const t0 = performance.now();
@@ -137,6 +137,7 @@ export async function exportVideo({
   // جدول بخش و تنظیمات ظاهر هم باید عیناً منتقل شوند، وگرنه ویدیو با
   // چیزی که در پیش‌نمایش چیده‌اید فرق می‌کند.
   if (sections) R.sections = sections;
+  R.customFx = customFx;
   if (look) {
     R.bloom = look.bloom ?? R.bloom;
     R.chroma = look.chroma ?? R.chroma;

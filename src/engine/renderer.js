@@ -48,6 +48,7 @@ export class Renderer {
     this.editMode = false;      // روکش ویرایش (هرگز در خروجی)
     this.selected = null;       // شناسهٔ کلمهٔ انتخاب‌شده
     this.sections = null;       // جدول بخش سفارشی (برای آهنگ وارد‌شده)
+    this.customFx = null;       // افکتی که کاربر نوشته
     this._bloomCanvas = null;
     this._grainTile = null;
   }
@@ -106,6 +107,10 @@ export class Renderer {
       }
       if (this.showFurniture) furniture(ctx, song, t, acc, invert);
       drawLyrics(ctx, song, t, style, acc, invert, this.overrides);
+    } else if (style === 'custom') {
+      beatGrid(ctx, song, t, kick, 10);
+      if (this.showFurniture) furniture(ctx, song, t, acc, false);
+      this.customFx?.draw(ctx, song, t, acc, kick, this.overrides);
     } else if (TEXT_FX[style]) {
       // سبک‌های متنی تازه: پس‌زمینهٔ ساده‌تر، بدون متن لغزان
       beatGrid(ctx, song, t, kick, 10);
@@ -296,7 +301,11 @@ export class Renderer {
       const cur = song.activeLine(t);
       if (cur < 0) return [];
       out.push(...applyOverrides(place(ctx, song.lines[cur], 'giant'), this.overrides));
-    } else if (TEXT_FX[style]) {
+    } else if (style === 'custom') {
+      beatGrid(ctx, song, t, kick, 10);
+      if (this.showFurniture) furniture(ctx, song, t, acc, false);
+      this.customFx?.draw(ctx, song, t, acc, kick, this.overrides);
+    } else if (TEXT_FX[style] || style === 'custom') {
       const cur = song.activeLine(t);
       if (cur < 0) return [];
       const line = song.lines[cur];

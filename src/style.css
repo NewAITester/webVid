@@ -191,3 +191,39 @@ input[type=file]::file-selector-button{background:#171A22;color:var(--ink);
 #app.portrait .panes{max-height:32dvh}
 #app.portrait .card{width:72px}
 @media (min-width:760px){ #app.portrait .panes{max-height:30dvh} }
+
+/* ── ادیتور کد ───────────────────────────────────────────── */
+textarea.code{width:100%;min-height:230px;background:#07080B;color:#D7DCE6;
+  border:1px solid var(--line);border-radius:10px;padding:11px 12px;
+  font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;
+  line-height:1.75;direction:ltr;text-align:left;resize:vertical;outline:none;
+  tab-size:2;white-space:pre}
+textarea.code:focus{border-color:#333B4A}
+textarea.code.bad{border-color:#FF6B6B}
+
+/* ── آموزش ───────────────────────────────────────────────── */
+.lessons{display:flex;flex-direction:column;gap:14px}
+.lcat{font-size:11px;color:var(--dim);margin:2px 0 -6px}
+.lgrid{display:flex;flex-direction:column;gap:6px}
+.litem{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#12151C;
+  border:1px solid var(--line);border-radius:10px;cursor:pointer;transition:.15s}
+.litem:hover{border-color:#333B4A}
+.litem .n{width:22px;height:22px;border-radius:6px;background:#07080B;color:var(--red);
+  display:grid;place-items:center;font-size:11px;flex:0 0 auto}
+.litem .lt{font-size:13px}
+.litem .lo{font-size:11px;color:var(--dim);margin-top:2px;line-height:1.6}
+
+.lesson{line-height:1.95;font-size:13px}
+.lesson h3{font-family:"IRANSansX Black";font-size:16px;margin-bottom:4px}
+.lesson .lvl{margin:14px 0 4px;font-size:11px;color:var(--red);
+  display:flex;align-items:center;gap:7px}
+.lesson .lvl::after{content:'';flex:1;height:1px;background:var(--line)}
+.lesson p{color:#C9CFDA}
+.lesson .big{font-size:15px;color:var(--ink);line-height:1.9}
+.lesson pre{background:#07080B;border:1px solid var(--line);border-radius:10px;
+  padding:11px 12px;overflow-x:auto;direction:ltr;text-align:left;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.8;
+  color:#D7DCE6;margin-top:6px}
+.lesson .nb{background:#15181F;border-inline-start:3px solid var(--red);
+  border-radius:0 9px 9px 0;padding:9px 12px;margin-top:12px;font-size:12px;color:#B9C0CC}
+.dg{width:100%;max-width:340px;margin:8px auto;display:block}

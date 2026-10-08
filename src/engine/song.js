@@ -79,7 +79,7 @@ export const SECTION_NAMES = {
   pre: 'پیش‌کرس', chorus: 'کرس', inst_b: 'شکست ۲۹ ثانیه', inst_c: 'فرود',
   mirror: 'آینه', end: 'کارت پایان',
   type: 'تایپ', karaoke: 'کاریوکی', wave: 'موج',
-  punch: 'پرش', split: 'دوپاره', stack: 'ستونی',
+  punch: 'پرش', split: 'دوپاره', stack: 'ستونی', custom: 'سفارشی',
 };
 
 export const outQuint = t => 1 - Math.pow(1 - t, 5);

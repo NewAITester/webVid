@@ -221,6 +221,29 @@
       </div>
     </section>
 
+    <!-- کد سفارشی -->
+    <section class="pane" data-pane="code">
+      <div class="phead">افکت سفارشی
+        <div class="spacer"></div>
+        <select id="cdSnip"><option value="">نمونه‌ها…</option></select>
+        <button id="cdReset" class="btn sm ghost">پیش‌فرض</button>
+      </div>
+      <p class="note">بخشی را به سبک «سفارشی» بگذارید تا این کد اجرا شود.
+        هر تغییری بلافاصله در پیش‌نمایش دیده می‌شود.</p>
+      <textarea id="cdText" class="code" spellcheck="false"></textarea>
+      <div id="cdMsg" class="msg"></div>
+    </section>
+
+    <!-- آموزش -->
+    <section class="pane" data-pane="learn">
+      <div class="phead" id="lnHead">آموزش
+        <div class="spacer"></div>
+        <button id="lnBack" class="btn sm ghost hidden">بازگشت</button>
+      </div>
+      <div id="lnList" class="lessons"></div>
+      <article id="lnBody" class="lesson hidden"></article>
+    </section>
+
   </div>
 
   <!-- ─── شیت ساخت پروژه ───────────────────────────────────── -->
@@ -242,14 +265,28 @@
     </div>
   </div>
 
+  <div id="moreSheet" class="sheet hidden">
+    <div class="sheetbox">
+      <div class="phead">بیشتر<div class="spacer"></div><button id="moreX" class="px">×</button></div>
+      <div class="cards">
+        <div class="pcard" data-more="look"><div class="pi">◐</div>
+          <div class="pm"><div class="pt">ظاهر</div><div class="ps">رنگ، دانه، درخشش</div></div></div>
+        <div class="pcard" data-more="code"><div class="pi">{ }</div>
+          <div class="pm"><div class="pt">افکت سفارشی</div><div class="ps">کد خودتان را بنویسید</div></div></div>
+        <div class="pcard" data-more="learn"><div class="pi">؟</div>
+          <div class="pm"><div class="pt">آموزش</div><div class="ps">همه‌چیز از پایه</div></div></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ─── ناوبری پایین ─────────────────────────────────────── -->
   <nav class="nav" id="nav">
     <button data-go="home"     class="on"><i>⌂</i><b>خانه</b></button>
     <button data-go="project"><i>♪</i><b>پروژه</b></button>
     <button data-go="sections"><i>▦</i><b>بخش‌ها</b></button>
     <button data-go="words"><i>✥</i><b>کلمات</b></button>
-    <button data-go="look"><i>◐</i><b>ظاهر</b></button>
     <button data-go="export"><i>↓</i><b>خروجی</b></button>
+    <button id="moreBtn"><i>⋯</i><b>بیشتر</b></button>
   </nav>
 
 </div>

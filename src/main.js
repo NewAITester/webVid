@@ -12,6 +12,8 @@ import { saveFile, shareFile } from './engine/save.js';
 import { Overrides } from './engine/overrides.js';
 import { analyzeBuffer, decodeAudioFile } from './engine/analyze.js';
 import { Library, autoSections, plainToLines } from './engine/library.js';
+import { CustomFx, DEFAULT_CODE, SNIPPETS } from './engine/custom.js';
+import { LESSONS, CATEGORIES } from './engine/learn.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -51,6 +53,9 @@ let look = DEFAULT_LOOK();
 const OV = new Overrides({});
 R.overrides = OV;
 
+const CFX = new CustomFx();
+R.customFx = CFX;
+
 /** حالت پروژهٔ نمونه جدا ذخیره می‌شود تا تغییراتتان بماند ولی سرایت نکند */
 const DEMO_KEY = 'lyricstudio.demo.state.v2';
 
@@ -65,7 +70,7 @@ let saveTimer = 0;
 function saveState() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
-    const payload = { look, overrides: OV.map, sections: R.sections };
+    const payload = { look, overrides: OV.map, sections: R.sections, code: CFX.code };
     if (app.projectId === '__demo') {
       try { localStorage.setItem(DEMO_KEY, JSON.stringify(payload)); } catch {}
       return;
@@ -154,7 +159,8 @@ function seek(v) {
 function go(name) {
   app.pane = name;
   $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
-  $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
+  $$('#nav button').forEach(b => b.classList.toggle('on',
+    b.dataset.go === name || (b.id === 'moreBtn' && MORE.includes(name))));
   const home = name === 'home';
   if (name === 'project') syncProject();
   $('#stagewrap').classList.toggle('hide', home);
@@ -167,8 +173,18 @@ function go(name) {
   if (name === 'sections') buildSecList();
   if (name === 'look') syncLook();
   if (name === 'words') refreshCount();
+  if (name === 'code') syncCode();
+  if (name === 'learn') buildLessons();
 }
-$$('#nav button').forEach(b => { b.onclick = () => go(b.dataset.go); });
+$$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go); });
+
+const MORE = ['look', 'code', 'learn'];
+$('#moreBtn').onclick = () => $('#moreSheet').classList.remove('hidden');
+$('#moreX').onclick = () => $('#moreSheet').classList.add('hidden');
+$('#moreSheet').onclick = e => { if (e.target.id === 'moreSheet') $('#moreSheet').classList.add('hidden'); };
+$$('[data-more]').forEach(el => {
+  el.onclick = () => { $('#moreSheet').classList.add('hidden'); go(el.dataset.more); };
+});
 
 /* ── نوار تصاویر بخش ─────────────────────────────────────── */
 let cards = [];
@@ -219,7 +235,7 @@ function markActive() {
 /* ── ویرایش بخش‌ها ───────────────────────────────────────── */
 const STYLES = [
   'intro', 'cold', 'verse', 'pre', 'chorus', 'mirror', 'end',
-  'type', 'karaoke', 'wave', 'punch', 'split', 'stack',
+  'type', 'karaoke', 'wave', 'punch', 'split', 'stack', 'custom',
   'inst_a', 'inst_b', 'inst_c',
 ];
 
@@ -451,6 +467,8 @@ async function openProject(id) {
     look = Object.assign(DEFAULT_LOOK(), st.look || {});
     OV.setMap(JSON.parse(JSON.stringify(st.overrides || {})), saveState);
     if (st.sections?.length) R.sections = st.sections.map(x => x.slice());
+    CFX.compile(st.code || DEFAULT_CODE);
+    const ta = $('#cdText'); if (ta) ta.value = CFX.code;
   }
   R.selected = null; lastPicked = null;
   R.setSong(app.song);
@@ -505,7 +523,7 @@ $('#nwGo').onclick = async () => {
     tg: ($('#nwTg').value || '').trim(),
     aspect: newAspect,
     audio: null, lrc: '', analysis: null, duration: 0, sections: null,
-    look: DEFAULT_LOOK(), overrides: {},
+    look: DEFAULT_LOOK(), overrides: {}, code: DEFAULT_CODE,
     createdAt: Date.now(),
   };
   await Library.put(proj);
@@ -682,7 +700,7 @@ $('#exGo').onclick = async () => {
       width: outW(), height: outH(),
       fps: parseInt($('#exFps').value, 10),
       bitrate: parseInt($('#exBr').value, 10) * 1e6,
-      grain: look.grain, overrides: OV, sections: R.sections,
+      grain: look.grain, overrides: OV, sections: R.sections, customFx: CFX,
       look,
       signal: exAbort.signal,
       onProgress: p => {
@@ -715,6 +733,97 @@ $('#exGo').onclick = async () => {
   }
 };
 $('#exCancel').onclick = () => exAbort?.abort();
+
+/* ── ادیتور کد ───────────────────────────────────────────── */
+function syncCode() {
+  const ta = $('#cdText');
+  if (ta.value !== CFX.code) ta.value = CFX.code;
+  const sel = $('#cdSnip');
+  if (sel.options.length <= 1) {
+    for (const k of Object.keys(SNIPPETS)) {
+      const o = document.createElement('option');
+      o.value = k; o.textContent = k;
+      sel.append(o);
+    }
+  }
+  showCodeMsg();
+}
+function showCodeMsg() {
+  const el = $('#cdMsg');
+  const ta = $('#cdText');
+  if (CFX.error) { el.textContent = CFX.error; el.className = 'msg err'; ta.classList.add('bad'); return; }
+  ta.classList.remove('bad');
+  if (CFX.runtimeError) { el.textContent = 'خطای اجرا: ' + CFX.runtimeError; el.className = 'msg warn'; return; }
+  const used = (R.sections || []).some(x => x[2] === 'custom');
+  el.textContent = used ? 'سالم — روی بخش «سفارشی» اجرا می‌شود'
+    : 'سالم — ولی هنوز هیچ بخشی سبک «سفارشی» ندارد';
+  el.className = 'msg ' + (used ? 'ok' : '');
+}
+let codeTimer = 0;
+$('#cdText').addEventListener('input', e => {
+  clearTimeout(codeTimer);
+  codeTimer = setTimeout(() => {
+    CFX.compile(e.target.value);
+    saveState(); draw(); showCodeMsg(); buildStrip();
+  }, 350);
+});
+$('#cdReset').onclick = () => { CFX.compile(DEFAULT_CODE); $('#cdText').value = DEFAULT_CODE; saveState(); draw(); showCodeMsg(); };
+$('#cdSnip').onchange = e => {
+  const k = e.target.value;
+  if (!k) return;
+  const ta = $('#cdText');
+  ta.value = (ta.value.trimEnd() + '\n\n' + SNIPPETS[k] + '\n');
+  e.target.value = '';
+  CFX.compile(ta.value); saveState(); draw(); showCodeMsg();
+};
+
+/* ── آموزش ───────────────────────────────────────────────── */
+function buildLessons() {
+  $('#lnBody').classList.add('hidden');
+  $('#lnList').classList.remove('hidden');
+  $('#lnBack').classList.add('hidden');
+  $('#lnHead').firstChild.textContent = 'آموزش';
+  const host = $('#lnList');
+  if (host.childElementCount) return;
+  for (const cat of CATEGORIES) {
+    const items = LESSONS.filter(l => l.cat === cat);
+    if (!items.length) continue;
+    const h = document.createElement('div');
+    h.className = 'lcat'; h.textContent = cat;
+    const g = document.createElement('div');
+    g.className = 'lgrid';
+    for (const L of items) {
+      const i = LESSONS.indexOf(L) + 1;
+      const el = document.createElement('div');
+      el.className = 'litem';
+      el.innerHTML = `<div class="n"></div><div><div class="lt"></div><div class="lo"></div></div>`;
+      el.querySelector('.n').textContent = faN(i);
+      el.querySelector('.lt').textContent = L.title;
+      el.querySelector('.lo').textContent = L.one;
+      el.onclick = () => openLesson(L);
+      g.append(el);
+    }
+    host.append(h, g);
+  }
+}
+function openLesson(L) {
+  const b = $('#lnBody');
+  const esc = t => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  let html = `<h3>${esc(L.title)}</h3>`;
+  html += `<div class="lvl">۱ · شهود</div><p class="big">${esc(L.one)}</p>`;
+  html += `<div class="lvl">۲ · تشبیه</div><p>${esc(L.like)}</p>`;
+  if (L.svg) html += L.svg;
+  html += `<div class="lvl">۳ · ساز و کار</div><p>${esc(L.how)}</p>`;
+  if (L.code) html += `<div class="lvl">۴ · کد</div><pre>${esc(L.code)}</pre>`;
+  if (L.note) html += `<div class="nb">${esc(L.note)}</div>`;
+  b.innerHTML = html;
+  b.classList.remove('hidden');
+  $('#lnList').classList.add('hidden');
+  $('#lnBack').classList.remove('hidden');
+  $('#lnHead').firstChild.textContent = 'درس';
+  $('#panes').scrollTop = 0;
+}
+$('#lnBack').onclick = buildLessons;
 
 /* ── رویدادهای عمومی ─────────────────────────────────────── */
 $('#play').onclick = toggle;
