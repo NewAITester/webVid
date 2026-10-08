@@ -11,10 +11,11 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: web-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # ── بیلد: همیشه اجرا می‌شود و خروجی قابل دانلود می‌سازد ──────────
   build:
     runs-on: ubuntu-latest
     steps:
@@ -34,17 +35,49 @@ jobs:
       - name: بیلد
         run: npm run build
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - name: گزارش حجم خروجی
+        run: |
+          echo "### خروجی بیلد" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          du -sh dist >> $GITHUB_STEP_SUMMARY
+          find dist -type f | sort >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      # این همیشه کار می‌کند — چه ریپو خصوصی باشد چه عمومی
+      - name: آپلود خروجی به‌عنوان artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyricstudio-web
+          path: dist
+          retention-days: 30
+
+      # این فقط وقتی ریپو عمومی باشد و Pages فعال باشد کار می‌کند
+      - name: آماده‌سازی Pages
+        id: pages
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: آپلود برای Pages
+        if: steps.pages.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
+    outputs:
+      pages_ready: ${{ steps.pages.outcome }}
+
+  # ── انتشار روی Pages: اگر در دسترس نبود، کل بیلد را قرمز نمی‌کند ──
   deploy:
     needs: build
+    if: needs.build.outputs.pages_ready == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v4
