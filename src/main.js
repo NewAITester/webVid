@@ -180,13 +180,18 @@ function screen(name) {
   if (name === 'library') buildProjList();
 }
 
-function go(name) {
+function go(name, toggle = false) {
+  // زدن دوبارهٔ همان تب = بستن پنل
+  if (toggle && app.pane === name && $('#panes').classList.contains('open')) {
+    closePane(); return;
+  }
   app.pane = name;
   $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
   $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
+  $('#panes').classList.add('open');
   R.editMode = name === 'words';
   canvas.classList.toggle('editing', name === 'words');
-  fit(); draw();
+  draw();
 
   if (name === 'look') syncLook();
   if (name === 'words') refreshCount();
@@ -195,7 +200,17 @@ function go(name) {
   if (name === 'lyrics') syncLyricsPane();
   if (name === 'fx') { buildFxCats(); buildFxGrid(); buildCfList(); }
 }
-$$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go); });
+$$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go, true); });
+
+function closePane() {
+  $('#panes').classList.remove('open');
+  $$('#nav button').forEach(b => b.classList.remove('on'));
+  app.pane = null;
+  R.editMode = false;
+  canvas.classList.remove('editing');
+  draw();
+}
+$('#paneGrab').onclick = closePane;
 
 $('#backBtn').onclick = () => screen('library');
 $('#learnBtn').onclick = () => screen('learn');
@@ -305,7 +320,7 @@ function pickedText() {
 function showClipBar(p) {
   const bar = $('#clipBar');
   R.selText = p?.kind === 'text' ? p.id : null;
-  if (!p) { bar.classList.add('hidden'); if (app.pane === 'clip') go('lyrics'); draw(); return; }
+  if (!p) { bar.classList.add('hidden'); if (app.pane === 'clip') closePane(); draw(); return; }
   bar.classList.remove('hidden');
 
   let name = '', time = '';
@@ -688,7 +703,7 @@ async function buildProjList() {
     el.querySelector('.pi').textContent = badge;
     el.querySelector('.pt').textContent = title;
     el.querySelector('.ps').textContent = sub;
-    el.onclick = async () => { await openProject(id); screen('editor'); go('lyrics'); };
+    el.onclick = async () => { await openProject(id); screen('editor'); closePane(); };
     if (removable) {
       const x = document.createElement('button');
       x.className = 'px'; x.textContent = '×';
@@ -832,7 +847,7 @@ $('#nwGo').onclick = async () => {
   await Library.put(proj);
   $('#sheet').classList.add('hidden');
   await openProject(proj.id);
-  screen('editor'); go('lyrics');
+  screen('editor'); closePane();
   syncProject();
   $('#pjSheet').classList.remove('hidden');   // بلافاصله برای افزودن آهنگ
 };
@@ -1363,6 +1378,14 @@ function openLesson(L) {
 $('#play').onclick = toggle;
 
 window.addEventListener('resize', fit);
+/* اندازهٔ صحنه ممکن است بدون رویداد resize عوض شود (چرخش، نوار
+   مرورگر، باز شدن صفحه‌کلید). اندازه‌گیری فوری بعد از تغییر کلاس
+   هم مقدار قدیمی می‌داد چون مرورگر هنوز چیدمان را دوباره نچیده
+   بود. ناظر اندازه این هر دو را حل می‌کند. */
+if (window.ResizeObserver) {
+  new ResizeObserver(() => fit()).observe(document.getElementById('stagewrap'));
+  new ResizeObserver(() => TL.resize()).observe(document.querySelector('.tlwrap'));
+}
 window.addEventListener('keydown', e => {
   if (app.pane === 'words' && R.selected && e.code.startsWith('Arrow')) {
     const s = e.shiftKey ? 10 : 1;
@@ -1382,7 +1405,7 @@ async function boot() {
   await openProject('__demo');
   autoBitrate();
   $('#loading').classList.add('gone');
-  go('lyrics');
+  closePane();
   screen('library');
   console.log('%c لیریک استودیو %c آماده',
     'background:#E4142A;color:#fff;padding:2px 6px;border-radius:3px', 'color:#9AA0AC');
