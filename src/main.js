@@ -13,6 +13,7 @@ import { Overrides } from './engine/overrides.js';
 import { analyzeBuffer, decodeAudioFile } from './engine/analyze.js';
 import { Library, autoSections, plainToLines } from './engine/library.js';
 import { Timeline } from './ui/timeline.js';
+import { PreviewPool } from './ui/previews.js';
 import { newText, TEXT_ANIM, layerBox } from './engine/textlayers.js';
 import { CustomSet, DEFAULT_CODE, SNIPPETS } from './engine/custom.js';
 import { LESSONS, CATEGORIES } from './engine/learn.js';
@@ -125,7 +126,7 @@ function draw() {
   R.renderFrame(app.t);
   $('#tc').textContent = faTime(app.t);
   TL.draw();
-  if (app.pane === 'fx' && !app.playing) fxDirty = true;
+
   if (app.playing) {
     frames++;
     const now = performance.now();
@@ -145,6 +146,7 @@ function loop() {
 }
 function play() {
   if (app.playing || !app.song) return;
+  POOL.stop(); POOL2.stop();
   app.playing = true;
   $('#play').textContent = '❚❚';
   if (app.audio) { app.audio.currentTime = app.t; app.audio.play().catch(() => {}); }
@@ -153,6 +155,8 @@ function play() {
 }
 function pause() {
   app.playing = false;
+  if (app.pane === 'fx') POOL.start(fxPreviewTime());
+  if (app.pane === 'clip') POOL2.start(app.t);
   $('#play').textContent = '▶';
   $('#fps').textContent = '—';
   app.audio?.pause();
@@ -185,9 +189,12 @@ function go(name, toggle = false) {
   if (toggle && app.pane === name && $('#panes').classList.contains('open')) {
     closePane(); return;
   }
+  if (name !== 'fx') POOL.stop();
+  if (name !== 'clip') POOL2.stop();
   app.pane = name;
   $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
   $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
+  sizePane();
   $('#panes').classList.add('open');
   R.editMode = name === 'words';
   canvas.classList.toggle('editing', name === 'words');
@@ -203,6 +210,7 @@ function go(name, toggle = false) {
 $$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go, true); });
 
 function closePane() {
+  POOL.stop(); POOL2.stop();
   $('#panes').classList.remove('open');
   $$('#nav button').forEach(b => b.classList.remove('on'));
   app.pane = null;
@@ -223,8 +231,7 @@ $('#pjX').onclick = () => $('#pjSheet').classList.add('hidden');
 $('#pjSheet').onclick = e => { if (e.target.id === 'pjSheet') $('#pjSheet').classList.add('hidden'); };
 $('#addAudioBtn').onclick = () => { syncProject(); $('#pjSheet').classList.remove('hidden'); };
 
-let fxDirty = false;
-setInterval(() => { if (fxDirty && app.pane === 'fx') { fxDirty = false; buildFxGrid(); } }, 420);
+
 
 /* ── نوار تصاویر بخش ─────────────────────────────────────── */
 let cards = [];
@@ -322,6 +329,7 @@ function showClipBar(p) {
   R.selText = p?.kind === 'text' ? p.id : null;
   if (!p) { bar.classList.add('hidden'); if (app.pane === 'clip') closePane(); draw(); return; }
   bar.classList.remove('hidden');
+  sizePane();
 
   let name = '', time = '';
   if (p.kind === 'section') {
@@ -434,20 +442,19 @@ function buildClipPanel() {
     const fx = lineFx[p.i] || (lineFx[p.i] = {});
     const upd = () => { saveState(); TL.draw(); draw(); };
 
-    // گالری افکت کوچک، مخصوص همین خط
+    // گالری افکت کوچک، مخصوص همین خط — با پیش‌نمایش متحرک
+    POOL2.clear();
     const g = document.createElement('div');
     g.className = 'fxmini';
     const cur = fx.style || sections()[curSecIndex()]?.[2];
-    for (const id of Object.values(FX_CATS).flat().concat(CSET.styles().map(x => x.id))) {
-      const c = document.createElement('div');
-      c.className = 'fxcard' + (id === cur ? ' on' : '');
-      const lb = document.createElement('div');
-      lb.className = 'fl'; lb.textContent = styleLabel(id);
-      c.append(lb);
-      c.onclick = () => { fx.style = id; upd(); buildClipPanel(); };
-      g.append(c);
+    const acc = fx.accent || sections()[curSecIndex()]?.[3] || C.CRIMSON;
+    for (const id of allStyles()) {
+      g.append(fxCard(POOL2, id, cur, acc, pick => { fx.style = pick; upd(); buildClipPanel(); }));
     }
     host.append(g);
+    POOL2.observe($('#panes'));
+    const L = app.song?.lines[p.i];
+    POOL2.start(L ? L.words[0].t : app.t);
 
     const ac = document.createElement('input');
     ac.type = 'color'; ac.value = fx.accent || sections()[curSecIndex()]?.[3] || C.CRIMSON;
@@ -1196,40 +1203,47 @@ function fxPreviewTime() {
   return sg.lineStart(best.i) + span * 0.55;
 }
 
+const POOL = new PreviewPool();      // گالری تب افکت
+const POOL2 = new PreviewPool();     // گالری کوچک داخل تنظیمات خط
+
+/** همهٔ سبک‌های قابل انتخاب، شامل افکت‌های سفارشی */
+const allStyles = () => Object.values(FX_CATS).flat().concat(CSET.styles().map(x => x.id));
+
+/** یک کارت پیش‌نمایش می‌سازد و به استخر اضافه می‌کند */
+function fxCard(pool, id, active, accent, onPick) {
+  const { W: dw, H: dh } = stageDims();
+  const tw = dh > dw ? 72 : 132;
+  const el = document.createElement('div');
+  el.className = 'fxcard' + (id === active ? ' on' : '');
+  const c = document.createElement('canvas');
+  c.width = tw; c.height = Math.round(tw * dh / dw);
+  const lb = document.createElement('div');
+  lb.className = 'fl'; lb.textContent = styleLabel(id);
+  el.append(c, lb);
+  el.onclick = () => onPick(id);
+  pool.add({ canvas: c, style: id, song: app.song, accent, customSet: CSET });
+  return el;
+}
+
 function buildFxGrid() {
   const host = $('#fxGrid');
+  POOL.clear();
   host.innerHTML = '';
   if (!app.song) return;
   const i = curSecIndex();
   const sec = sections()[i];
   $('#fxFor').textContent = sec ? `بخش ${faN(i + 1)}` : '—';
-  const list = FX_CATS[fxCat] || [];
-  const pvT = fxPreviewTime();
-  const { W: dw, H: dh } = stageDims();
-  const tw = dh > dw ? 78 : 150;
-  for (const id of list) {
-    const el = document.createElement('div');
-    el.className = 'fxcard' + (sec && sec[2] === id ? ' on' : '');
-    const c = document.createElement('canvas');
-    c.width = tw; c.height = Math.round(tw * dh / dw);
-    const lb = document.createElement('div');
-    lb.className = 'fl'; lb.textContent = styleLabel(id);
-    el.append(c, lb);
-    el.onclick = () => {
+  const acc = sec ? sec[3] : C.CRIMSON;
+  for (const id of (FX_CATS[fxCat] || [])) {
+    host.append(fxCard(POOL, id, sec?.[2], acc, pick => {
       if (!sec) return;
-      sec[2] = id; saveState(); buildSecList(); buildStrip(); buildFxGrid(); draw();
-    };
-    host.append(el);
-    // پیش‌نمایش: همین لحظهٔ آهنگ، با همین افکت
-    const st = new Stage(c); st.resize(c.width, c.height);
-    const r2 = new Renderer(st);
-    r2.setSong(app.song);
-    r2.sections = [[0, app.duration, id, sec ? sec[3] : C.CRIMSON]];
-    r2.customSet = CSET;
-    r2.showFurniture = false; r2.grain = 0; r2.bloom = 0.4; r2.chroma = 0;
-    try { r2.renderFrame(pvT); } catch (err) { /* افکت خراب، کارت خالی */ }
+      sec[2] = pick; saveState(); TL.draw(); buildStrip(); buildFxGrid(); draw();
+    }));
   }
+  POOL.observe($('#panes'));
+  POOL.start(fxPreviewTime());
 }
+
 function buildCfList() {
   const host = $('#cfList');
   host.innerHTML = '';
@@ -1382,9 +1396,23 @@ window.addEventListener('resize', fit);
    مرورگر، باز شدن صفحه‌کلید). اندازه‌گیری فوری بعد از تغییر کلاس
    هم مقدار قدیمی می‌داد چون مرورگر هنوز چیدمان را دوباره نچیده
    بود. ناظر اندازه این هر دو را حل می‌کند. */
+/** ارتفاع ثابت پنل: نه آن‌قدر کم که بی‌فایده شود، نه آن‌قدر زیاد
+    که صحنه له شود. چون ثابت است، عوض کردن تب چیدمان را تکان
+    نمی‌دهد — همان چیزی که قبلاً مشکل‌ساز بود. */
+function sizePane() {
+  const body = document.querySelector('.ebody');
+  if (!body) return;
+  const h = body.clientHeight;
+  const chrome = 60 + 153 + ($('#clipBar').classList.contains('hidden') ? 0 : 58);
+  const avail = Math.max(120, h - chrome - 110);   // ۱۱۰ = کمینهٔ صحنه
+  const paneH = Math.round(Math.min(avail, Math.max(180, h * 0.40)));
+  document.documentElement.style.setProperty('--paneH', paneH + 'px');
+}
+
 if (window.ResizeObserver) {
   new ResizeObserver(() => fit()).observe(document.getElementById('stagewrap'));
   new ResizeObserver(() => TL.resize()).observe(document.querySelector('.tlwrap'));
+  new ResizeObserver(() => { sizePane(); }).observe(document.querySelector('.ebody'));
 }
 window.addEventListener('keydown', e => {
   if (app.pane === 'words' && R.selected && e.code.startsWith('Arrow')) {
