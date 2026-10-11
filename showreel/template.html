@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Motion Reel — ۱۵ ثانیه موشن‌گرافی با کد</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@900&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#F6F3EC;font-family:Vazirmatn,Tahoma,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  canvas{width:min(100vw,calc((100vh - 80px)*16/9));aspect-ratio:16/9;background:#07070C;display:block}
+  .bar{display:flex;gap:10px;align-items:center;direction:ltr;width:min(100vw,calc((100vh - 80px)*16/9));padding:0 10px;box-sizing:border-box}
+  button{background:#E4142A;color:#fff;border:0;border-radius:999px;padding:9px 18px;font:inherit;cursor:pointer}
+  button.g{background:#222}
+  input[type=range]{flex:1;accent-color:#E4142A}
+  #tc{font:13px ui-monospace,monospace;min-width:64px;text-align:center}
+  body.cap .bar{display:none} body.cap{display:block} body.cap canvas{width:1920px;height:1080px}
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div class="bar">
+  <button id="play">▶ پخش با صدا</button>
+  <span id="tc">00.00</span>
+  <input id="scrub" type="range" min="0" max="15" step="0.01" value="0">
+  <button id="wav" class="g" title="ذخیرهٔ موسیقی">⬇ WAV</button>
+</div>
+<script>
+/* ── reelfx (همان فایل src/engine/reelfx.js برنامه) ── */
+/*REELFX*/
+/* ── صحنه‌ها و موسیقی ── */
+/*SCENES*/
+/* ── پخش‌کننده ── */
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let audio = null, src = null, t0 = 0, playing = false, buffer = null, cur = 0;
+const draw = t => { cur = t; ctx.setTransform(cv.width / 1920, 0, 0, cv.height / 1080, 0, 0); render(ctx, t); document.getElementById('tc').textContent = t.toFixed(2); document.getElementById('scrub').value = t; };
+const getBuf = async () => buffer || (buffer = await synthTrack());
+async function play() {
+  if (playing) { stop(); return; }
+  const b = await getBuf();
+  audio ||= new (window.AudioContext || window.webkitAudioContext)();
+  await audio.resume();
+  src = audio.createBufferSource(); src.buffer = b; src.connect(audio.destination);
+  const from = cur >= DURATION - 0.05 ? 0 : cur;
+  src.start(0, from); t0 = audio.currentTime - from; playing = true;
+  document.getElementById('play').textContent = '❚❚ توقف';
+  src.onended = () => { if (playing) stop(); };
+  (function loop() { if (!playing) return; const t = audio.currentTime - t0; draw(Math.min(t, DURATION - 0.001)); if (t < DURATION) requestAnimationFrame(loop); })();
+}
+function stop() { playing = false; try { src?.stop(); } catch (e) {} document.getElementById('play').textContent = '▶ پخش با صدا'; }
+document.getElementById('play').onclick = play;
+document.getElementById('scrub').oninput = e => { if (playing) stop(); draw(+e.target.value); };
+document.getElementById('wav').onclick = async () => {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([wavBytes(await getBuf())], { type: 'audio/wav' })); a.download = 'motion-reel.wav'; a.click();
+};
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); play(); } });
+// برای ضبط فریم‌به‌فریم: ?cap
+if (location.search.includes('cap')) document.body.classList.add('cap');
+window.renderAt = t => draw(t);
+window.getWav = async () => { const b = wavBytes(await getBuf()); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
+document.fonts.ready.then(() => { draw(0.3); window.ready = true; });
+</script>
+</body>
+</html>
