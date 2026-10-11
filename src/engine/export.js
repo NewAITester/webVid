@@ -44,11 +44,12 @@ const AUDIO_CODECS = [
   { codec: 'opus',      mux: 'opus', label: 'Opus' },
 ];
 
-async function pickVideo(bitrate = 12_000_000, width = W, height = H) {
+async function pickVideo(bitrate = 12_000_000, width = W, height = H, fps = FPS) {
   for (const c of VIDEO_CODECS) {
     try {
+      // نرخ فریم باید همانی باشد که واقعاً انکود می‌کنیم (قبلاً همیشه ۶۰ بود)
       const r = await VideoEncoder.isConfigSupported({
-        codec: c.codec, width, height, bitrate, framerate: FPS,
+        codec: c.codec, width, height, bitrate, framerate: fps,
       });
       if (r.supported) return c;
     } catch { /* کدک بعدی */ }
@@ -84,7 +85,7 @@ export async function canExport() {
 async function loadAudioSlice(url, from, to) {
   const buf = await (await fetch(url)).arrayBuffer();
   const actx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
-    2, 48000 * Math.max(0.1, to - from), 48000);
+    2, Math.ceil(48000 * Math.max(0.1, to - from)), 48000);   // طول باید عدد صحیح باشد
   const decoded = await actx.decodeAudioData(buf);
   const src = actx.createBufferSource();
   src.buffer = decoded;
@@ -108,6 +109,7 @@ export async function exportVideo({
   width = W, height = H, fps = FPS,
   bitrate = 12_000_000, grain = 0.024, overrides = null,
   sections = null, look = null, customSet = null, lineFx = null, texts = null,
+  layers = null, media = null,
   onProgress = () => {}, signal = null,
 } = {}) {
   const t0 = performance.now();
@@ -140,6 +142,11 @@ export async function exportVideo({
   R.customSet = customSet;
   R.lineFx = lineFx || {};
   R.texts = texts || [];
+  // لایه‌های موشن (تصویر، ویدیو، شکل، کد…)
+  R.layers = layers || [];
+  R.media = media;
+  R.exporting = true;          // دستگیره‌ها و راهنماها کشیده نمی‌شوند
+  R.frameDur = 1 / fps;        // تاری حرکت با نرخ فریم واقعی
   if (look) {
     R.bloom = look.bloom ?? R.bloom;
     R.chroma = look.chroma ?? R.chroma;
@@ -147,7 +154,7 @@ export async function exportVideo({
   }
 
   const target = new ArrayBufferTarget();
-  const vc = await pickVideo(bitrate, width, height);
+  const vc = await pickVideo(bitrate, width, height, fps);
   if (!vc) throw new Error('هیچ انکودر ویدیویی در دسترس نیست');
   const ac = audioUrl ? await pickAudio() : null;
 
@@ -176,7 +183,10 @@ export async function exportVideo({
     if (signal?.aborted) { venc.close(); throw new Error('لغو شد'); }
     if (encErr) throw encErr;
 
-    R.renderFrame(from + i / fps);
+    const t = from + i / fps;
+    // ویدیوهای داخل لایه‌ها باید دقیقاً روی همین لحظه باشند
+    if (media && R.layers.length) await media.prepare(R.layers, t);
+    R.renderFrame(t);
 
     const frame = new VideoFrame(canvas, {
       timestamp: Math.round(i * FRAME_US),
@@ -239,3 +249,4 @@ export async function exportVideo({
                seconds: (performance.now() - t0) / 1000 });
   return new Blob([target.buffer], { type: 'video/mp4' });
 }
+

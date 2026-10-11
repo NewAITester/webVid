@@ -1,0 +1,814 @@
+import { h, faN, nice, select, check } from './dom.js';
+import { BezierEditor, easeIcon } from './bezier.js';
+import {
+  LAYER_TYPES, TRANSFORM_PROPS, EFFECTS, SHAPE_KINDS, BLEND_MODES,
+  newLayer, newEffect, propDefs,
+} from '../motion/schema.js';
+import { sample, keyAt, hasKeys, toggleKey, setValue, setKey, prevKeyTime, nextKeyTime } from '../motion/tracks.js';
+import { compileExpr, exprErrors, EXPR_HELP, EXPR_EXAMPLES } from '../motion/expr.js';
+import { APPEAR, LOOPS } from '../motion/animate.js';
+import { EASE_INFO, easeLabel } from '../motion/easing.js';
+import { allKeyTimes, setEaseAt, deleteKeysAt, duplicate } from '../motion/ops.js';
+import { CODE_LAYER_DEFAULT, CODE_SNIPPETS } from '../motion/codeapi.js';
+import { FONT_CHOICES } from '../motion/render.js';
+import { frameEnv } from '../motion/evaluate.js';
+import * as M from '../motion/mat.js';
+
+/**
+ * پنل «لایه‌ها» — قلب ویرایش حرکتی
+ * ─────────────────────────────────────────────────────────────
+ * دو نما دارد:
+ *   فهرست    همهٔ لایه‌ها، بالاترین بالا؛ افزودن، پنهان، قفل، ترتیب
+ *   بازرس    تنظیمات لایهٔ انتخاب‌شده در هفت زبانه:
+ *            تبدیل · ظاهر · انیمیشن · افکت · منحنی · کد · بیشتر
+ *
+ * کنار هر ویژگی دو دکمه هست:
+ *   ◆  کی‌فریم در همین لحظه (پُر = هست، نیمه = جای دیگری کی‌فریم دارد)
+ *   ƒ  عبارت (فرمول) برای همین ویژگی
+ *
+ * host (از main.js) این‌ها را می‌دهد:
+ *   getLayers, getTime, seek, draw, save, select(id), selectedId,
+ *   renderer, stage, canvas, media, addMediaFile(file), play, W(), H()
+ */
+export class MotionPanel {
+  constructor(root, host) {
+    this.root = root;
+    this.host = host;
+    this.record = false;          // ⏺ حالت ضبط: هر تغییری کی‌فریم می‌سازد
+    this.tab = 'transform';
+    this.keySel = null;           // کی‌فریم انتخاب‌شده در زبانهٔ منحنی
+    this.openExpr = new Set();    // ویژگی‌هایی که جعبهٔ عبارتشان باز است
+    this._updaters = [];
+    this._bez = null;
+    this._file = h('input', { type: 'file', accept: 'image/*,video/*', class: 'hidden',
+      onchange: () => this._onFile() });
+    document.body.append(this._file);
+  }
+
+  /* ── کمک‌ها ─────────────────────────────────────────────── */
+  get layers() { return this.host.getLayers(); }
+  get sel() { const id = this.host.selectedId(); return this.layers.find(L => L.id === id) || null; }
+  lt(L) { return Math.max(0, Math.min(L.t1 - L.t0, this.host.getTime() - L.t0)); }
+  changed(rebuild = false) {
+    this.host.save();
+    this.host.draw();
+    if (rebuild) this.render(); else this.tick();
+  }
+
+  /** بعد از هر جابه‌جایی زمان صدا زده می‌شود: فقط مقدارها به‌روز می‌شوند */
+  tick() { for (const u of this._updaters) u(); }
+
+  render() {
+    this._updaters = [];
+    this._bez?.stop();
+    this.root.innerHTML = '';
+    const L = this.sel;
+    if (L) this._inspector(L); else this._list();
+  }
+
+  /* ── افزودن لایه ─────────────────────────────────────────── */
+  add(type, over = {}) {
+    const t = this.host.getTime();
+    const dur = Math.max(1, Math.min(5, (this.host.duration() || 5) - t)) || 5;
+    const L = newLayer(type, Math.max(0, Math.min(t, Math.max(0, (this.host.duration() || 5) - 1))), dur, over);
+    const n = this.layers.filter(x => x.type === type).length + 1;
+    L.name = `${LAYER_TYPES[type].label} ${faN(n)}`;
+    if (type === 'code' && !L.data.code) L.data.code = CODE_LAYER_DEFAULT;
+    if (type === 'adjust') L.effects.push(newEffect('color'));
+    if (type === 'spectrum') { L.props.y.v = Math.round(this.host.H() * 0.3); }
+    this.layers.push(L);
+    this.tab = type === 'code' ? 'code' : type === 'text' ? 'look' : 'transform';
+    this.host.select(L.id);
+    this.changed(true);
+    return L;
+  }
+
+  pickMedia() { this._file.value = ''; this._file.click(); }
+
+  async _onFile() {
+    const f = this._file.files?.[0];
+    if (!f) return;
+    const rec = await this.host.addMediaFile(f);      // در IndexedDB ذخیره و به استخر اضافه می‌شود
+    if (!rec) return;
+    const type = rec.type;
+    // «تعویض فایل»: همان لایه، فایل تازه
+    const rep = this._replaceFor;
+    this._replaceFor = null;
+    if (rep && rep.type === type) {
+      rep.data.media = rec.id;
+      this.changed(true);
+      return;
+    }
+    const L = this.add(type);
+    L.name = f.name.replace(/\.[^.]+$/, '').slice(0, 24) || L.name;
+    L.data.media = rec.id;
+    const it = this.host.media.get(rec.id);
+    const fitW = () => {
+      const W = this.host.W(), H = this.host.H();
+      const ar = it.w / Math.max(1, it.h);
+      L.props.w.v = Math.round(type === 'video' ? Math.max(W, H * ar) : Math.min(W * 0.7, H * 0.7 * ar));
+      if (type === 'video' && it.dur) L.t1 = +(L.t0 + Math.min(it.dur, Math.max(1, (this.host.duration() || it.dur) - L.t0))).toFixed(2);
+      this.changed(true);
+    };
+    if (it?.ready) fitW();
+    else {
+      const el = it?.el;
+      el?.addEventListener(type === 'video' ? 'loadeddata' : 'load', () => setTimeout(fitW, 0), { once: true });
+    }
+  }
+
+  /* ── نمای فهرست ──────────────────────────────────────────── */
+  _list() {
+    const R = this.root;
+    R.append(h('div', { class: 'phead' }, 'لایه‌ها', h('div', { class: 'spacer' }),
+      h('span', { class: 'pill' }, faN(this.layers.length))));
+    const bar = h('div', { class: 'addbar' });
+    const add = (type, ic, label, fn) => bar.append(h('button', { class: 'addb', onclick: fn || (() => this.add(type)) },
+      h('i', {}, ic), h('b', {}, label)));
+    add('text', 'T', 'متن');
+    add('shape', '◆', 'شکل');
+    add('media', '▣', 'تصویر/ویدیو', () => this.pickMedia());
+    add('spectrum', '≋', 'موج صدا');
+    add('code', '{}', 'کد');
+    add('adjust', '◐', 'تنظیم رنگ');
+    add('null', '⊕', 'والد');
+    R.append(bar);
+
+    if (!this.layers.length) {
+      R.append(h('div', { class: 'empty' },
+        h('div', { class: 'bigicon' }, '◧'),
+        h('p', {}, 'هنوز لایه‌ای ندارید. یکی از دکمه‌های بالا را بزنید.'),
+        h('p', { class: 'note' }, 'هر لایه را می‌شود با انگشت روی تصویر کشید، بزرگ کرد و چرخاند. '
+          + 'با دکمهٔ ◆ کنار هر ویژگی «کی‌فریم» بگذارید تا حرکت کند.')));
+      return;
+    }
+    const list = h('div', { class: 'llist' });
+    const arr = this.layers;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const L = arr[i];
+      const on = this.host.getTime() >= L.t0 && this.host.getTime() < L.t1;
+      const row = h('div', { class: 'lrow' + (on ? ' live' : '') + (L.visible === false ? ' off' : ''),
+        onclick: () => { this.host.select(L.id); this.render(); } },
+        h('span', { class: 'lic' }, LAYER_TYPES[L.type].icon),
+        h('span', { class: 'lnm' }, L.name, L.behind ? h('em', {}, ' · پشت شعر') : null,
+          hasAnyKeys(L) ? h('em', { class: 'kf' }, ' ◆') : null),
+        h('span', { class: 'ltm' }, `${L.t0.toFixed(1)}–${L.t1.toFixed(1)}`),
+        iconBtn(L.visible === false ? '◌' : '👁', 'نمایش', () => { L.visible = L.visible === false; this.changed(true); }),
+        iconBtn(L.locked ? '🔒' : '🔓', 'قفل', () => { L.locked = !L.locked; this.changed(true); }),
+        iconBtn('↑', 'بالاتر', () => { if (i < arr.length - 1) { [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]]; this.changed(true); } }),
+        iconBtn('↓', 'پایین‌تر', () => { if (i > 0) { [arr[i], arr[i - 1]] = [arr[i - 1], arr[i]]; this.changed(true); } }),
+      );
+      list.append(row);
+    }
+    R.append(list);
+    R.append(h('p', { class: 'note' }, 'بالاترین ردیف روی همه کشیده می‌شود. روی هر ردیف بزنید تا تنظیماتش باز شود.'));
+  }
+
+  /* ── نمای بازرس ─────────────────────────────────────────── */
+  _inspector(L) {
+    const R = this.root;
+    const head = h('div', { class: 'ihead' },
+      h('button', { class: 'btn sm ghost', onclick: () => { this.host.select(null); this.render(); } }, '› لایه‌ها'),
+      h('input', { class: 'txt', value: L.name, oninput: e => { L.name = e.target.value; this.host.save(); } }),
+      iconBtn('⧉', 'تکثیر', () => {
+        const n = duplicate(L);
+        this.layers.splice(this.layers.indexOf(L) + 1, 0, n);
+        this.host.select(n.id); this.changed(true);
+      }),
+      iconBtn('🗑', 'حذف', () => {
+        if (!confirm('این لایه حذف شود؟')) return;
+        this.layers.splice(this.layers.indexOf(L), 1);
+        for (const x of this.layers) if (x.parent === L.id) x.parent = null;
+        this.host.select(null); this.changed(true);
+      }),
+    );
+    R.append(head);
+    R.append(this._keyNav(L));
+
+    const tabs = [['transform', 'تبدیل'], ['look', 'ظاهر'], ['anim', 'انیمیشن'], ['fx', 'افکت'],
+                  ['ease', 'منحنی'], ['code', 'کد'], ['more', 'بیشتر']];
+    const tb = h('div', { class: 'tabs' });
+    for (const [id, label] of tabs) {
+      tb.append(h('button', { class: 'chip' + (this.tab === id ? ' on' : ''),
+        onclick: () => { this.tab = id; this.render(); } }, label));
+    }
+    R.append(tb);
+    const body = h('div', { class: 'ibody' });
+    R.append(body);
+    ({
+      transform: () => this._tabTransform(L, body),
+      look: () => this._tabLook(L, body),
+      anim: () => this._tabAnim(L, body),
+      fx: () => this._tabFx(L, body),
+      ease: () => this._tabEase(L, body),
+      code: () => this._tabCode(L, body),
+      more: () => this._tabMore(L, body),
+    })[this.tab]?.();
+  }
+
+  /** نوار کی‌فریم: ◀ قبلی · ◆ کی‌فریم همه · بعدی ▶ · ⏺ ضبط */
+  _keyNav(L) {
+    const times = () => allKeyTimes(L);
+    const tl = h('span', { class: 'kft' });
+    const kAll = h('button', { class: 'kbtn big', title: 'کی‌فریم برای جا، اندازه، چرخش و شفافیت' }, '◆');
+    const rec = h('button', { class: 'recb' + (this.record ? ' on' : ''), title: 'ضبط خودکار کی‌فریم' }, '⏺ ضبط');
+    const jump = dir => {
+      const now = this.lt(L);
+      const ks = times();
+      const tgt = dir < 0 ? [...ks].reverse().find(k => k < now - 1 / 120) : ks.find(k => k > now + 1 / 120);
+      if (tgt !== undefined) this.host.seek(L.t0 + tgt);
+    };
+    kAll.onclick = () => {
+      const lt = this.lt(L);
+      const keys = ['x', 'y', 'sc', 'rot', 'opacity'];
+      const anyHere = keys.some(k => keyAt(L.props[k], lt));
+      for (const k of keys) {
+        const tr = L.props[k];
+        if (anyHere) { if (keyAt(tr, lt)) toggleKey(tr, lt); }
+        else setKey(tr, lt, sample(tr, lt));
+      }
+      this.changed(true);
+    };
+    rec.onclick = () => { this.record = !this.record; rec.classList.toggle('on', this.record); };
+    this._updaters.push(() => {
+      const lt = this.lt(L);
+      tl.textContent = `${faN(lt.toFixed(2))} از ${faN((L.t1 - L.t0).toFixed(1))} ث`;
+      const here = times().some(k => Math.abs(k - lt) <= 1 / 120);
+      kAll.classList.toggle('on', here);
+      kAll.classList.toggle('has', times().length > 0);
+    });
+    // زمان روی تایم‌لاین از چپ به راست جلو می‌رود، پس این سه دکمه چپ‌به‌راست‌اند
+    return h('div', { class: 'kfnav' },
+      h('span', { class: 'kgrp', dir: 'ltr' },
+        h('button', { class: 'btn sm ghost', onclick: () => jump(-1), title: 'کی‌فریم قبلی' }, '◀'),
+        kAll,
+        h('button', { class: 'btn sm ghost', onclick: () => jump(1), title: 'کی‌فریم بعدی' }, '▶')),
+      tl, h('div', { class: 'spacer' }), rec);
+  }
+
+  /* ── سطر یک ویژگی ─────────────────────────────────────────── */
+  _propRow(L, tr, def, tag) {
+    const row = h('div', { class: 'prow' });
+    const lab = h('label', {}, def.label);
+    const kb = h('button', { class: 'kbtn', title: 'کی‌فریم' }, '◆');
+    const fb = h('button', { class: 'fbtn' + (tr.x ? ' on' : ''), title: 'عبارت (فرمول)' }, 'ƒ');
+    let ctl, upd;
+
+    if (def.type === 'color') {
+      const hasA = def.def.length === 9;
+      const ci = h('input', { type: 'color' });
+      const ai = hasA ? h('input', { type: 'range', class: 'rng sm', min: 0, max: 255, step: 1 }) : null;
+      const write = () => {
+        let v = ci.value;
+        if (hasA) v += (+ai.value).toString(16).padStart(2, '0');
+        setValue(tr, this.lt(L), v, this.record);
+        this.host.draw(); this.host.save(); upd();
+      };
+      ci.oninput = write; if (ai) ai.oninput = write;
+      ctl = h('div', { class: 'pctl' }, ci, ai);
+      upd = () => {
+        const v = String(sample(tr, this.lt(L)) || def.def);
+        if (document.activeElement !== ci) ci.value = v.slice(0, 7);
+        if (ai && document.activeElement !== ai) ai.value = v.length === 9 ? parseInt(v.slice(7, 9), 16) : 255;
+      };
+    } else {
+      const rg = h('input', { type: 'range', class: 'rng', min: def.min, max: def.max, step: def.step });
+      const nb = h('input', { type: 'number', class: 'pnum', step: def.step });
+      const write = v => {
+        if (!Number.isFinite(v)) return;
+        setValue(tr, this.lt(L), v, this.record);
+        this.host.draw(); this.host.save(); upd(true);
+      };
+      rg.oninput = () => write(+rg.value);
+      nb.onchange = () => write(+nb.value);
+      ctl = h('div', { class: 'pctl' }, rg, nb);
+      upd = () => {
+        const v = sample(tr, this.lt(L));
+        if (document.activeElement !== rg) rg.value = v;
+        if (document.activeElement !== nb) nb.value = nice(v);
+      };
+    }
+    const updKeys = () => {
+      const lt = this.lt(L);
+      kb.classList.toggle('on', !!keyAt(tr, lt));
+      kb.classList.toggle('has', hasKeys(tr));
+      fb.classList.toggle('on', !!tr.x);
+      fb.classList.toggle('bad', !!(tr.x && (compileExpr(tr.x).error || exprErrors.get(tag))));
+    };
+    const full = () => { upd(); updKeys(); };
+    kb.onclick = () => { toggleKey(tr, this.lt(L)); this.host.draw(); this.host.save(); full(); };
+
+    const exprBox = h('div', { class: 'exprbox' + (this.openExpr.has(tag) ? '' : ' hidden') });
+    fb.onclick = () => {
+      if (this.openExpr.has(tag)) this.openExpr.delete(tag); else this.openExpr.add(tag);
+      exprBox.classList.toggle('hidden');
+      if (!exprBox.childElementCount) this._exprEditor(exprBox, tr, tag, updKeys);
+    };
+    if (this.openExpr.has(tag)) this._exprEditor(exprBox, tr, tag, updKeys);
+
+    row.append(lab, ctl, kb, fb);
+    this._updaters.push(full);
+    full();
+    return h('div', { class: 'pwrap' }, row, exprBox);
+  }
+
+  _exprEditor(box, tr, tag, onChange) {
+    const ta = h('textarea', { class: 'code sm', spellcheck: false, value: tr.x || '',
+      placeholder: 'مثلاً: value + sin(time * 3) * 40' });
+    const msg = h('div', { class: 'msg' });
+    const show = () => {
+      const err = tr.x ? (compileExpr(tr.x).error || exprErrors.get(tag)) : null;
+      msg.textContent = err || (tr.x ? 'فعال است ✓' : 'خالی = بدون عبارت');
+      msg.className = 'msg ' + (err ? 'err' : tr.x ? 'ok' : '');
+    };
+    let timer = 0;
+    ta.oninput = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        tr.x = ta.value.trim() || undefined;
+        if (!tr.x) delete tr.x;
+        this.host.draw(); this.host.save(); show(); onChange();
+        setTimeout(show, 60);   // خطای اجرایی بعد از کشیدن معلوم می‌شود
+      }, 300);
+    };
+    const ex = select([['', 'نمونه‌ها…'], ...EXPR_EXAMPLES.map(([a, b]) => [b, a])], '', v => {
+      if (!v) return;
+      ta.value = v; ta.oninput();
+    });
+    const help = h('details', { class: 'xhelp' }, h('summary', {}, 'چه چیزهایی در دسترس است؟'),
+      h('div', {}, ...EXPR_HELP.map(([k, d]) => h('div', { class: 'xh' }, h('code', {}, k), ' ', d))));
+    box.append(ta, h('div', { class: 'frow btns' }, ex,
+      h('button', { class: 'btn sm ghost', onclick: () => { ta.value = ''; ta.oninput(); } }, 'پاک کردن')), msg, help);
+    show();
+  }
+
+  _props(L, body, keys) {
+    for (const d of propDefs(L.type)) {
+      if (keys && !keys.includes(d.key)) continue;
+      body.append(this._propRow(L, L.props[d.key], d, `${L.id}.${d.key}`));
+    }
+  }
+
+  /* ── زبانه‌ها ───────────────────────────────────────────── */
+  _tabTransform(L, body) {
+    this._props(L, body, ['x', 'y', 'sc', 'rot', 'opacity']);
+    body.append(h('div', { class: 'frow btns' },
+      h('button', { class: 'btn sm ghost', onclick: () => {
+        const lt = this.lt(L);
+        setValue(L.props.x, lt, 0, this.record); setValue(L.props.y, lt, 0, this.record);
+        this.changed();
+      } }, '⊙ وسط قاب'),
+      h('button', { class: 'btn sm ghost', onclick: () => {
+        for (const k of ['x', 'y', 'rot', 'sc', 'opacity', 'sx', 'sy', 'skx', 'ax', 'ay']) {
+          const d = TRANSFORM_PROPS.find(p => p.key === k);
+          L.props[k] = { v: d.def };
+        }
+        this.changed(true);
+      } }, '↺ بازنشانی تبدیل')));
+    const more = h('details', { class: 'grp' }, h('summary', {}, 'کشش، کجی و نقطهٔ لنگر'));
+    this._props(L, more, ['sx', 'sy', 'skx', 'ax', 'ay']);
+    more.append(h('p', { class: 'note' }, 'نقطهٔ لنگر مرکز چرخش و بزرگ‌شدن است. مثلاً برای چرخیدن عقربه دور یک سرش، لنگر را به همان سر ببرید.'));
+    body.append(more);
+  }
+
+  _tabLook(L, body) {
+    const D = L.data;
+    if (L.type === 'text') {
+      const ta = h('textarea', { class: 'lyr sm', value: D.str, rows: 2,
+        oninput: () => { D.str = ta.value; this.host.draw(); this.host.save(); } });
+      body.append(ta);
+      body.append(h('div', { class: 'frow btns' },
+        select(FONT_CHOICES.map(f => [f[0], f[2]]), D.font, v => { D.font = v; this.changed(); }),
+        ...[['right', 'راست'], ['center', 'وسط'], ['left', 'چپ']].map(([v, lb]) =>
+          h('button', { class: 'chip' + (D.align === v ? ' on' : ''), onclick: () => { D.align = v; this.changed(true); } }, lb))));
+      this._props(L, body, ['size', 'fill', 'stroke', 'strokeW', 'spacing', 'lineH', 'reveal']);
+      const bg = h('details', { class: 'grp' }, h('summary', {}, 'پس‌زمینهٔ متن (برچسب)'));
+      this._props(L, bg, ['bg', 'bgPad', 'bgR']);
+      body.append(bg);
+      return;
+    }
+    if (L.type === 'shape') {
+      const kinds = h('div', { class: 'frow btns' });
+      for (const [k, lb] of SHAPE_KINDS) {
+        kinds.append(h('button', { class: 'chip' + (D.kind === k ? ' on' : ''),
+          onclick: () => { D.kind = k; this.changed(true); } }, lb));
+      }
+      body.append(kinds);
+      body.append(h('div', { class: 'frow' },
+        h('label', {}, 'پُر کردن'),
+        select([['none', 'یک‌رنگ'], ['linear', 'گرادیان خطی'], ['radial', 'گرادیان دایره‌ای']], D.grad,
+          v => { D.grad = v; this.changed(true); }),
+        check('توپر', D.fillOn !== false, v => { D.fillOn = v; this.changed(); })));
+      const keys = ['w', 'h', 'fill'];
+      if (D.grad !== 'none') keys.push('fill2', 'gradA');
+      keys.push('stroke', 'strokeW');
+      if (D.kind === 'rect') keys.push('radius');
+      if (D.kind === 'polygon' || D.kind === 'star') keys.push('sides');
+      if (D.kind === 'star') keys.push('inner');
+      keys.push('trimS', 'trimE');
+      this._props(L, body, keys);
+      body.append(h('p', { class: 'note' }, '«برش مسیر» فقط دورخط را می‌کشد — برای انیمیشن «کشیده شدن» خط، روی «برش مسیر تا» از ۰ تا ۱۰۰ کی‌فریم بگذارید.'));
+      return;
+    }
+    if (L.type === 'image' || L.type === 'video') {
+      const it = this.host.media.get(D.media);
+      body.append(h('div', { class: 'frow' },
+        h('span', { class: 'pill' }, it ? `${it.name || ''} · ${it.w}×${it.h}` : 'فایلی انتخاب نشده'),
+        h('button', { class: 'btn sm ghost', onclick: async () => {
+          this._replaceFor = L; this.pickMedia();
+        } }, 'تعویض فایل')));
+      this._props(L, body, ['w', 'radius']);
+      body.append(h('div', { class: 'frow btns' },
+        h('button', { class: 'btn sm ghost', onclick: () => {
+          if (!it?.ready) return;
+          const W = this.host.W(), H = this.host.H();
+          L.props.w = { v: Math.round(Math.max(W, H * it.w / it.h)) };
+          L.props.x = { v: 0 }; L.props.y = { v: 0 }; this.changed(true);
+        } }, 'پر کردن قاب'),
+        h('button', { class: 'btn sm ghost', onclick: () => {
+          if (!it?.ready) return;
+          const W = this.host.W(), H = this.host.H();
+          L.props.w = { v: Math.round(Math.min(W, H * it.w / it.h)) };
+          L.props.x = { v: 0 }; L.props.y = { v: 0 }; this.changed(true);
+        } }, 'جا شدن در قاب')));
+      if (L.type === 'video') {
+        body.append(this._staticNum('سرعت', D.speed, 0.25, 4, 0.05, v => { D.speed = v; }, '×'));
+        body.append(this._staticNum('شروع از ثانیهٔ', D.trimIn, 0, Math.max(1, it?.dur || 60), 0.05, v => { D.trimIn = v; }));
+        body.append(h('div', { class: 'frow btns' },
+          check('تکرار', D.loop !== false, v => { D.loop = v; this.changed(); }),
+          h('button', { class: 'btn sm ghost', onclick: () => {
+            if (!it?.dur) return;
+            L.t1 = +(L.t0 + (it.dur - (D.trimIn || 0)) / (D.speed || 1)).toFixed(2); this.changed(true);
+          } }, 'طول لایه = طول ویدیو')));
+        body.append(h('p', { class: 'note' }, 'صدای ویدیو پخش نمی‌شود — صدای پروژه همان آهنگ است. برای حذف پردهٔ سبز از زبانهٔ افکت «پردهٔ سبز» را بزنید.'));
+      }
+      return;
+    }
+    if (L.type === 'spectrum') {
+      body.append(h('div', { class: 'frow btns' },
+        select([['mirror', 'میله‌های وسط‌چین'], ['bars', 'میله‌های پایین'], ['circle', 'دایره‌ای'], ['wave', 'موج']],
+          D.mode, v => { D.mode = v; this.changed(); }),
+        select([['rms', 'بلندی کل'], ['low', 'بیس و کیک'], ['voc', 'صدای خواننده']], D.source,
+          v => { D.source = v; this.changed(); })));
+      body.append(this._staticNum('تعداد میله', D.bars, 4, 160, 1, v => { D.bars = v; }));
+      this._props(L, body, ['w', 'h', 'fill', 'fill2', 'gain', 'gap']);
+      return;
+    }
+    if (L.type === 'code') {
+      this._props(L, body, ['w', 'h', 'c1', 'c2', 'p1', 'p2', 'p3']);
+      body.append(h('p', { class: 'note' }, 'این مقدارها در کد به شکل e.c1، e.p1 و… در دسترس‌اند — و می‌شود رویشان کی‌فریم گذاشت. کد را در زبانهٔ «کد» بنویسید.'));
+      return;
+    }
+    if (L.type === 'adjust') {
+      body.append(h('p', { class: 'note' }, 'لایهٔ تنظیم روی هر چیزی که زیرش است اثر می‌گذارد. افکت‌هایش را از زبانهٔ «افکت» بچینید؛ با «شفافیت» در زبانهٔ تبدیل، شدتش را کم و زیاد کنید.'));
+      return;
+    }
+    body.append(h('p', { class: 'note' }, 'والد خالی دیده نمی‌شود. لایه‌های دیگر را از زبانهٔ «بیشتر» فرزند این کنید تا با جابه‌جا کردن این، همه با هم حرکت کنند.'));
+  }
+
+  _staticNum(label, val, min, max, step, set, unit = '') {
+    const v = h('span', { class: 'v' }, nice(val) + unit);
+    const r = h('input', { type: 'range', class: 'rng', min, max, step, value: val,
+      oninput: () => { set(+r.value); v.textContent = nice(+r.value) + unit; this.host.draw(); this.host.save(); } });
+    return h('div', { class: 'ctl' }, h('label', {}, label), r, v);
+  }
+
+  _tabAnim(L, body) {
+    const section = (title, which, table) => {
+      const a = L.anim[which];
+      body.append(h('div', { class: 'shead sm' }, title));
+      const g = h('div', { class: 'agrid' });
+      for (const [id, o] of Object.entries(table)) {
+        g.append(h('button', { class: 'achip' + (a.id === id ? ' on' : ''),
+          onclick: () => {
+            a.id = id; this.changed(true);
+            // پیش‌نمایش فوری: پرش به جایی که انیمیشن دیده شود
+            if (which === 'in') this.host.seek(L.t0 + 0.01);
+            if (which === 'out') this.host.seek(Math.max(L.t0, L.t1 - (a.d || 0.5) - 0.05));
+          } }, o.label));
+      }
+      body.append(g);
+      if (which !== 'loop') {
+        body.append(this._staticNum('مدت', a.d, 0.1, 3, 0.05, v => { a.d = v; }, ' ث'));
+      } else {
+        body.append(this._staticNum('سرعت', a.s ?? 1, 0.1, 5, 0.05, v => { a.s = v; }, '×'));
+        body.append(this._staticNum('شدت', a.a ?? 100, 0, 300, 1, v => { a.a = v; }, '٪'));
+      }
+    };
+    section('ورود', 'in', APPEAR);
+    section('خروج', 'out', APPEAR);
+    section('تکرار در طول لایه', 'loop', LOOPS);
+    body.append(h('div', { class: 'frow btns' },
+      h('button', { class: 'btn sm primary', onclick: () => this.host.playRange(L.t0, L.t1) }, '▶ پخش این لایه')));
+    body.append(h('p', { class: 'note' }, 'انیمیشن‌های آماده روی کی‌فریم‌ها «اضافه» می‌شوند؛ پس می‌شود هم کی‌فریم داشت و هم «جهش» ورود.'));
+  }
+
+  _tabFx(L, body) {
+    if (!L.effects.length) body.append(h('p', { class: 'note' }, 'افکتی ندارد. از فهرست پایین یکی اضافه کنید — ترتیب افکت‌ها مهم است: از بالا به پایین اعمال می‌شوند.'));
+    L.effects.forEach((fx, i) => {
+      const E = EFFECTS[fx.type];
+      const card = h('details', { class: 'fxbox', open: this._openFx === fx.id },
+        h('summary', {},
+          h('span', { class: 'fxn' + (fx.on ? '' : ' off') }, E.label),
+          h('span', { class: 'spacer' }),
+          iconBtn(fx.on ? '●' : '○', 'روشن/خاموش', ev => { ev.preventDefault(); fx.on = !fx.on; this.changed(true); }),
+          iconBtn('↑', 'بالاتر', ev => { ev.preventDefault(); if (i > 0) { [L.effects[i - 1], L.effects[i]] = [L.effects[i], L.effects[i - 1]]; this.changed(true); } }),
+          iconBtn('↓', 'پایین‌تر', ev => { ev.preventDefault(); if (i < L.effects.length - 1) { [L.effects[i + 1], L.effects[i]] = [L.effects[i], L.effects[i + 1]]; this.changed(true); } }),
+          iconBtn('✕', 'حذف', ev => { ev.preventDefault(); L.effects.splice(i, 1); this.changed(true); }),
+        ));
+      card.addEventListener('toggle', () => { if (card.open) this._openFx = fx.id; });
+      for (const d of E.params) card.append(this._propRow(L, fx.p[d.key], d, `${L.id}.${fx.id}.${d.key}`));
+      body.append(card);
+    });
+    body.append(h('div', { class: 'shead sm' }, 'افزودن افکت'));
+    const cats = {};
+    for (const [k, E] of Object.entries(EFFECTS)) (cats[E.cat] ||= []).push([k, E]);
+    for (const [cat, items] of Object.entries(cats)) {
+      body.append(h('div', { class: 'fxcat' }, cat));
+      body.append(h('div', { class: 'agrid' }, ...items.map(([k, E]) =>
+        h('button', { class: 'achip', onclick: () => {
+          const fx = newEffect(k); L.effects.push(fx); this._openFx = fx.id; this.changed(true);
+        } }, '+ ' + E.label))));
+    }
+  }
+
+  _tabEase(L, body) {
+    const times = allKeyTimes(L);
+    if (!times.length) {
+      body.append(h('div', { class: 'empty' },
+        h('p', {}, 'این لایه هنوز کی‌فریم ندارد.'),
+        h('p', { class: 'note' }, 'کی‌فریم یعنی «در این لحظه، این مقدار». دو کی‌فریم بگذارید تا لایه بینشان حرکت کند؛ منحنی تعیین می‌کند این حرکت چطور طی شود: یکنواخت، نرم، با پرش یا فنری.'),
+        h('button', { class: 'btn sm primary', onclick: () => {
+          // حرکت نمونه: از چپ بیاید و با فراتر رفتن بایستد
+          const x = L.props.x, v = sample(x, 0);
+          setKey(x, 0, v - 400, 'outBack'); setKey(x, Math.min(1, L.t1 - L.t0), v, 'outBack');
+          this.host.seek(L.t0); this.changed(true);
+        } }, 'یک حرکت نمونه بساز')));
+      return;
+    }
+    const now = this.lt(L);
+    if (this.keySel === null || !times.some(k => Math.abs(k - this.keySel) < 1e-3)) {
+      this.keySel = [...times].reverse().find(k => k <= now + 1 / 120) ?? times[0];
+    }
+    const kt = this.keySel;
+    const strip = h('div', { class: 'kstrip' });
+    times.forEach((k, i) => strip.append(h('button', {
+      class: 'kchip' + (Math.abs(k - kt) < 1e-3 ? ' on' : ''),
+      onclick: () => { this.keySel = k; this.host.seek(L.t0 + k); this.render(); },
+    }, '◆ ', faN(i + 1), h('small', {}, ` ${faN(k.toFixed(2))}ث`))));
+    body.append(strip);
+
+    const isLast = Math.abs(kt - times[times.length - 1]) < 1e-3;
+    // منحنی فعلی: از اولین ترکی که در این لحظه کی‌فریم دارد
+    let cur = 'linear';
+    outer: for (const tr of Object.values(L.props)) for (const q of tr.k || []) if (Math.abs(q.t - kt) < 1e-3) { cur = q.e || 'linear'; break outer; }
+    for (const fx of L.effects) for (const tr of Object.values(fx.p)) for (const q of tr.k || []) if (Math.abs(q.t - kt) < 1e-3 && cur === 'linear') cur = q.e || 'linear';
+
+    body.append(h('p', { class: 'note' }, isLast
+      ? 'این آخرین کی‌فریم است؛ منحنی‌اش فقط وقتی اثر دارد که بعدش کی‌فریم دیگری بگذارید.'
+      : `منحنی حرکت از کی‌فریم ${faN(times.indexOf(kt) + 1)} تا بعدی: «${easeLabel(cur)}»`));
+
+    const apply = e => { setEaseAt(L, kt, e); this.changed(); this._bez?.set(e); markOn(e); };
+    const grid = h('div', { class: 'egrid' });
+    const btns = [];
+    for (const [id, label] of EASE_INFO) {
+      const b = h('button', { class: 'ebtn' + (cur === id ? ' on' : ''), onclick: () => apply(id), title: label });
+      b.innerHTML = easeIcon(id);
+      b.append(h('span', {}, label));
+      b.dataset.id = id;
+      btns.push(b); grid.append(b);
+    }
+    const markOn = e => btns.forEach(b => b.classList.toggle('on', b.dataset.id === e));
+    body.append(grid);
+
+    body.append(h('div', { class: 'shead sm' }, 'منحنی دلخواه — دستگیره‌ها را بکشید'));
+    this._bez = new BezierEditor(bez => apply(bez));
+    this._bez.set(cur);
+    this._bez.start();
+    body.append(this._bez.cv);
+    body.append(h('div', { class: 'frow btns' },
+      h('button', { class: 'btn sm ghost', onclick: () => {
+        for (const k of times) setEaseAt(L, k, this._bez.spec ?? cur);
+        this.changed(true);
+      } }, 'همین منحنی روی همهٔ کی‌فریم‌ها'),
+      h('button', { class: 'btn sm ghost', onclick: () => { deleteKeysAt(L, kt); this.keySel = null; this.changed(true); } }, 'حذف این کی‌فریم')));
+  }
+
+  _tabCode(L, body) {
+    if (L.type === 'code') {
+      const D = L.data;
+      const ta = h('textarea', { class: 'code', spellcheck: false, value: D.code || '' });
+      const msg = h('div', { class: 'msg' });
+      const show = () => {
+        const err = this.host.renderer.motion.errors.get(L.id);
+        msg.textContent = err || 'سالم ✓ — تغییرات زنده روی تصویر دیده می‌شود';
+        msg.className = 'msg ' + (err ? 'err' : 'ok');
+        ta.classList.toggle('bad', !!err);
+      };
+      let timer = 0;
+      ta.oninput = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { D.code = ta.value; this.host.draw(); this.host.save(); setTimeout(show, 30); }, 300);
+      };
+      const sn = select([['', 'نمونه‌کدها…'], ...Object.keys(CODE_SNIPPETS).map(k => [k, k])], '', k => {
+        if (!k) return;
+        ta.value = CODE_SNIPPETS[k]; ta.oninput();
+      });
+      body.append(h('div', { class: 'frow btns' }, sn,
+        h('button', { class: 'btn sm ghost', onclick: () => { ta.value = CODE_LAYER_DEFAULT; ta.oninput(); } }, 'پیش‌فرض'),
+        h('button', { class: 'btn sm ghost', onclick: () => this.host.openLearn?.() }, '؟ آموزش کدنویسی')));
+      body.append(ta, msg);
+      body.append(h('details', { class: 'xhelp' }, h('summary', {}, 'فهرست ابزارهای e'),
+        h('div', {}, ...[
+          ['e.t / e.time', 'زمان لایه / زمان آهنگ'], ['e.p', 'پیشرفت لایه ۰..۱'],
+          ['e.kick / e.rms', 'ضربه و بلندی صدا ۰..۱'], ['e.w / e.h', 'اندازهٔ کادر لایه'],
+          ['e.c1 e.c2 e.p1 e.p2 e.p3', 'رنگ‌ها و پارامترهای قابل کی‌فریم'],
+          ['e.circle(x,y,r,رنگ)', 'دایره'], ['e.ring(x,y,r,رنگ,ضخامت)', 'حلقه'],
+          ['e.box(x,y,w,h,رنگ)', 'مستطیل وسط‌چین'], ['e.line(x1,y1,x2,y2,رنگ,ضخامت)', 'خط'],
+          ['e.text(متن,x,y,اندازه,رنگ)', 'متن فارسی'], ['e.star / e.poly', 'ستاره و چندضلعی'],
+          ['e.hsl(فام) / e.rgb(r,g,b)', 'ساخت رنگ'], ['e.sin e.cos e.lerp e.map e.noise e.random', 'ریاضی'],
+          ['e.lineText', 'خط شعر فعلی'], ['ctx', 'بوم خام Canvas برای کارهای پیشرفته'],
+        ].map(([k, d]) => h('div', { class: 'xh' }, h('code', {}, k), ' ', d)))));
+      setTimeout(show, 50);
+      return;
+    }
+    body.append(h('p', { class: 'note' }, 'هر ویژگی می‌تواند به‌جای کی‌فریم (یا کنارش) یک «عبارت» داشته باشد: یک خط کد که مقدار را می‌سازد. دکمهٔ ƒ کنار هر ویژگی را بزنید.'));
+    const withX = [];
+    for (const d of propDefs(L.type)) if (L.props[d.key]?.x) withX.push(d);
+    if (withX.length) {
+      body.append(h('div', { class: 'shead sm' }, 'ویژگی‌هایی که عبارت دارند'));
+      for (const d of withX) body.append(this._propRow(L, L.props[d.key], d, `${L.id}.${d.key}`));
+    }
+    body.append(h('div', { class: 'shead sm' }, 'افزودن سریع'));
+    const quick = [
+      ['تپش اندازه با ضرب', 'sc', 'value * (1 + kick * 0.35)'],
+      ['شناوری عمودی', 'y', 'value + sin(time * 2) * 30'],
+      ['لرزش جا', 'x', 'value + wiggle(4, 18)'],
+      ['چرخش پیوسته', 'rot', 'value + t * 60'],
+      ['چشمک شفافیت', 'opacity', 'every(0.25) ? value : value * 0.3'],
+    ];
+    body.append(h('div', { class: 'agrid' }, ...quick.map(([lb, key, x]) => h('button', { class: 'achip', onclick: () => {
+      L.props[key].x = x; this.openExpr.add(`${L.id}.${key}`); this.changed(true);
+    } }, lb))));
+    body.append(h('details', { class: 'xhelp', open: true }, h('summary', {}, 'راهنمای عبارت'),
+      h('div', {}, ...EXPR_HELP.map(([k, d]) => h('div', { class: 'xh' }, h('code', {}, k), ' ', d)))));
+  }
+
+  _tabMore(L, body) {
+    body.append(h('div', { class: 'frow' }, h('label', {}, 'حالت ترکیب'),
+      select(BLEND_MODES, L.blend, v => { L.blend = v; this.changed(); })));
+    // والد: نه خودش، نه نوادگانش (وگرنه حلقه می‌شود)
+    const desc = new Set([L.id]);
+    let grow = true;
+    while (grow) { grow = false; for (const x of this.layers) if (x.parent && desc.has(x.parent) && !desc.has(x.id)) { desc.add(x.id); grow = true; } }
+    body.append(h('div', { class: 'frow' }, h('label', {}, 'والد'),
+      select([['', '— بدون والد —'], ...this.layers.filter(x => !desc.has(x.id)).map(x => [x.id, x.name])],
+        L.parent || '', v => { L.parent = v || null; this.changed(); })));
+    body.append(h('div', { class: 'frow' }, h('label', {}, 'ماسک'),
+      select([['none', 'بدون ماسک'], ['below', 'فقط داخل لایهٔ زیرین'], ['belowInv', 'فقط بیرون لایهٔ زیرین']],
+        L.clip || 'none', v => { L.clip = v; this.changed(); })));
+    body.append(h('p', { class: 'note' }, 'ماسک: لایهٔ زیرینِ همین لایه (یک ردیف پایین‌تر در فهرست) دیگر کشیده نمی‌شود و فقط شکلش برای بریدن این لایه استفاده می‌شود. مثلاً متن داخل یک دایره.'));
+    body.append(this._staticNum('تاری حرکت', L.mblur || 0, 0, 100, 1, v => { L.mblur = v; }, '٪'));
+    body.append(h('div', { class: 'frow btns' },
+      check('پشت شعر', L.behind, v => { L.behind = v; this.changed(); }),
+      check('قفل', L.locked, v => { L.locked = v; this.changed(); }),
+      check('نمایش', L.visible !== false, v => { L.visible = v; this.changed(); })));
+    const num = (label, key) => {
+      const i = h('input', { type: 'number', step: 0.05, value: L[key], onchange: () => {
+        const v = +i.value; if (!Number.isFinite(v)) return;
+        if (key === 't0' && v < L.t1 - 0.05) L.t0 = Math.max(0, v);
+        if (key === 't1' && v > L.t0 + 0.05) L.t1 = v;
+        this.changed(true);
+      } });
+      return [h('label', {}, label), i];
+    };
+    body.append(h('div', { class: 'frow' }, ...num('شروع', 't0'), ...num('پایان', 't1'), h('span', { class: 'dim' }, 'ثانیه')));
+    body.append(h('div', { class: 'frow btns' },
+      h('button', { class: 'btn sm ghost', onclick: () => {
+        const len = L.t1 - L.t0; L.t0 = +this.host.getTime().toFixed(2); L.t1 = +(L.t0 + len).toFixed(2); this.changed(true);
+      } }, 'شروع از نشانگر')));
+  }
+
+  /* ── دستکاری روی بوم: کشیدن، بزرگ کردن، چرخاندن ─────────── */
+  attachGizmo() {
+    const { canvas, stage, renderer: R } = this.host;
+    const ptrs = new Map();
+    let g = null;              // حالت کشیدن فعلی
+
+    const design = e => stage.toDesign(e.clientX, e.clientY);
+    const env = () => {
+      const t = this.host.getTime();
+      return { ...frameEnv(R.song, t, this.host.W(), this.host.H()), song: R.song, fx: {}, playing: false };
+    };
+    const active = () => this.host.isPaneOpen() || !!this.sel;
+
+    const begin = (L, mode, p) => {
+      const t = this.host.getTime(), lt = this.lt(L);
+      const hd = R.motion.handles(stage.ctx, L, this.layers, t, env(), this.host.media);
+      const st = hd.st;
+      const parentLin = M.mul(st.world, M.invert(st.local) || M.I());
+      g = {
+        L, mode, lt, p0: p, anchor: hd.anchor,
+        x0: sample(L.props.x, lt), y0: sample(L.props.y, lt),
+        sc0: sample(L.props.sc, lt), rot0: sample(L.props.rot, lt),
+        invParent: M.invert(parentLin) || M.I(),
+      };
+    };
+
+    canvas.addEventListener('pointerdown', e => {
+      if (!active()) return;
+      const p = design(e);
+      ptrs.set(e.pointerId, p);
+      const t = this.host.getTime();
+      const L = this.sel;
+
+      if (ptrs.size === 2 && g && L) {
+        // دو انگشت: بزرگ‌نمایی و چرخش هم‌زمان
+        const [a, b] = [...ptrs.values()];
+        g.mode = 'pinch';
+        g.d0 = Math.hypot(b.x - a.x, b.y - a.y);
+        g.a0 = Math.atan2(b.y - a.y, b.x - a.x);
+        g.sc0 = sample(L.props.sc, g.lt); g.rot0 = sample(L.props.rot, g.lt);
+        e.stopImmediatePropagation(); e.preventDefault();
+        return;
+      }
+
+      if (L && !L.locked && t >= L.t0 && t < L.t1) {
+        const hd = R.motion.handles(stage.ctx, L, this.layers, t, env(), this.host.media);
+        const tol = 34 / Math.max(0.2, stage.scale * 2) + 14;
+        if (Math.hypot(p.x - hd.rot.x, p.y - hd.rot.y) < tol) { begin(L, 'rotate', p); }
+        else if (hd.corners.some(c => Math.hypot(p.x - c.x, p.y - c.y) < tol)) { begin(L, 'scale', p); }
+      }
+      if (!g) {
+        const hit = R.motion.hit(stage.ctx, this.layers, t, env(), p.x, p.y, this.host.media);
+        if (hit) {
+          if (hit.id !== this.host.selectedId()) { this.host.select(hit.id); this.render(); }
+          begin(hit, 'move', p);
+        } else if (this.host.isPaneOpen()) {
+          if (this.host.selectedId()) { this.host.select(null); this.render(); }
+          ptrs.delete(e.pointerId);
+          return;                     // اجازه بده بقیه (مثلاً متن ساده) رویداد را بگیرند
+        } else { ptrs.delete(e.pointerId); return; }
+      }
+      canvas.setPointerCapture?.(e.pointerId);
+      e.stopImmediatePropagation(); e.preventDefault();
+    }, { capture: true });
+
+    canvas.addEventListener('pointermove', e => {
+      if (!g || !ptrs.has(e.pointerId)) return;
+      const p = design(e);
+      ptrs.set(e.pointerId, p);
+      const { L, lt } = g;
+      const set = (k, v) => setValue(L.props[k], lt, v, this.record);
+      if (g.mode === 'move') {
+        const d = M.applyVec(g.invParent, p.x - g.p0.x, p.y - g.p0.y);
+        let nx = g.x0 + d.x, ny = g.y0 + d.y;
+        // چسبیدن به وسط قاب
+        const snap = 14 / Math.max(0.2, stage.scale);
+        if (!L.parent) { if (Math.abs(nx) < snap) nx = 0; if (Math.abs(ny) < snap) ny = 0; }
+        set('x', Math.round(nx)); set('y', Math.round(ny));
+      } else if (g.mode === 'scale') {
+        const d0 = Math.hypot(g.p0.x - g.anchor.x, g.p0.y - g.anchor.y) || 1;
+        const d1 = Math.hypot(p.x - g.anchor.x, p.y - g.anchor.y);
+        set('sc', Math.max(1, Math.round(g.sc0 * (d1 / d0))));
+      } else if (g.mode === 'rotate') {
+        const a0 = Math.atan2(g.p0.y - g.anchor.y, g.p0.x - g.anchor.x);
+        const a1 = Math.atan2(p.y - g.anchor.y, p.x - g.anchor.x);
+        let r = g.rot0 + ((a1 - a0) * 180) / Math.PI;
+        if (Math.abs(r % 45) < 3) r = Math.round(r / 45) * 45;   // چسبیدن به زاویه‌های ۴۵ درجه
+        set('rot', Math.round(r * 10) / 10);
+      } else if (g.mode === 'pinch' && ptrs.size >= 2) {
+        const [a, b] = [...ptrs.values()];
+        const d = Math.hypot(b.x - a.x, b.y - a.y), an = Math.atan2(b.y - a.y, b.x - a.x);
+        set('sc', Math.max(1, Math.round(g.sc0 * (d / (g.d0 || 1)))));
+        set('rot', Math.round((g.rot0 + ((an - g.a0) * 180) / Math.PI) * 10) / 10);
+      }
+      this.host.draw();
+      this.tick();
+      e.stopImmediatePropagation(); e.preventDefault();
+    }, { capture: true });
+
+    const end = e => {
+      if (!ptrs.has(e.pointerId)) return;
+      ptrs.delete(e.pointerId);
+      if (!g) return;
+      if (ptrs.size === 0) { g = null; this.host.save(); this.render(); }
+      else if (g.mode === 'pinch') {
+        // یک انگشت ماند: از همان‌جا جابه‌جایی ادامه پیدا کند
+        const L = g.L; const p = [...ptrs.values()][0];
+        g = null; begin(L, 'move', p);
+      }
+      e.stopImmediatePropagation();
+    };
+    canvas.addEventListener('pointerup', end, { capture: true });
+    canvas.addEventListener('pointercancel', end, { capture: true });
+  }
+}
+
+/* ── کمک‌تابع‌های کوچک ─────────────────────────────────────── */
+function iconBtn(ic, title, fn) {
+  return h('button', { class: 'ib', title, onclick: e => { e.stopPropagation(); fn(e); } }, ic);
+}
+function hasAnyKeys(L) { return allKeyTimes(L).length > 0; }
+
+export { prevKeyTime, nextKeyTime };

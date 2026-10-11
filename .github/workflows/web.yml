@@ -2,7 +2,7 @@ name: ساخت و انتشار وب
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**']
   workflow_dispatch:
 
 permissions:
@@ -27,12 +27,15 @@ jobs:
           cache: npm
 
       - name: نصب وابستگی‌ها
-        run: npm ci
+        # npm install (نه npm ci): وابستگی‌های FFmpeg تازه اضافه شده‌اند و
+        # قفل‌فایل را خود npm به‌روز می‌کند
+        run: npm install --no-audit --no-fund
 
       - name: تست موتور
         run: |
           node tests/engine.test.mjs
           node tests/song.test.mjs
+          node tests/motion.test.mjs
 
       - name: بیلد
         run: npm run build
@@ -74,7 +77,7 @@ jobs:
   # ── انتشار روی Pages: اگر در دسترس نبود، کل بیلد را قرمز نمی‌کند ──
   deploy:
     needs: build
-    if: needs.build.outputs.pages_ready == 'success'
+    if: needs.build.outputs.pages_ready == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -83,3 +86,4 @@ jobs:
       - id: deployment
         continue-on-error: true
         uses: actions/deploy-pages@v4
+

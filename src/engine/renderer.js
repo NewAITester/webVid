@@ -11,6 +11,9 @@ const ALLFX = { ...TEXT_FX, ...TEXT_FX2 };
 import { applyOverrides, hitWord } from './overrides.js';
 import { drawLayers, hitLayer, outlineLayer } from './textlayers.js';
 import { place, modeFor } from './layout.js';
+import { TOOLBOX } from './custom.js';
+import { MotionRenderer } from '../motion/render.js';
+import { frameEnv } from '../motion/evaluate.js';
 
 const TEXTUAL = new Set(['verse', 'chorus', 'pre', 'cold']);
 
@@ -58,6 +61,28 @@ export class Renderer {
     this.selText = null;        // شناسهٔ لایهٔ متن انتخاب‌شده
     this._bloomCanvas = null;
     this._grainTile = null;
+
+    /* لایه‌های حرکتی (سبک Alight Motion) */
+    this.layers = [];           // آرایهٔ لایه‌ها، اولی زیر همه
+    this.media = null;          // MediaPool مشترک
+    this.motion = new MotionRenderer();
+    this.selLayer = null;       // شناسهٔ لایهٔ انتخاب‌شده (برای دستگیره‌ها)
+    this.playing = false;       // برای هم‌زمانی ویدیوها
+    this.exporting = false;
+    this.frameDur = 1 / 60;     // برای تاری حرکت
+  }
+
+  /** محیط لحظه‌ای لایه‌های حرکتی — یک‌بار در هر فریم */
+  motionEnv(t, acc) {
+    const song = this.song;
+    const cur = song ? song.activeLine(t) : -1;
+    return {
+      ...frameEnv(song, t, W, H),
+      song, acc,
+      playing: this.playing, exporting: this.exporting, frameDur: this.frameDur,
+      fx: TOOLBOX,
+      lineText: cur >= 0 ? song.lines[cur].text : '',
+    };
   }
 
   setSong(s) { this.song = s; return this; }
@@ -104,6 +129,10 @@ export class Renderer {
       ctx.fillRect(0, 0, W, H);
     }
 
+    /* لایه‌های حرکتیِ «پشت شعر» — قبل از دوربین، پس با ضرب نمی‌لرزند */
+    const menv = this.layers?.length ? this.motionEnv(t, acc) : null;
+    if (menv) this.motion.draw(ctx, this.layers, t, menv, { behind: true, media: this.media });
+
     /* ۲) دوربین */
     const sx = Math.sin(t * 127) * 10 * S() * kick;
     const sy = Math.cos(t * 97) * 7 * S() * kick;
@@ -140,17 +169,18 @@ export class Renderer {
       beatGrid(ctx, song, t, kick, 10);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
       ALLFX[style](ctx, song, t, acc, kick, this.overrides);
-    } else {
+    } else if (style !== 'none') {
       beatGrid(ctx, song, t, kick, 8);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
       if (style === 'mirror') sMirror(ctx, song, t, acc, kick, this.overrides);
-      else STYLE_FN[style]?.(ctx, song, t, acc, kick);
+      else STYLE_FN[style]?.(ctx, song, t, acc, kick, sec);
     }
     ctx.restore();
 
     /* لایه‌های متن آزاد — بیرون از ترنسفرم دوربین، چون جایشان را
        خودتان تعیین کرده‌اید و نباید با لرزش ضرب تکان بخورند. */
     drawLayers(ctx, this.texts, t, acc);
+    if (menv) this.motion.draw(ctx, this.layers, t, menv, { behind: false, media: this.media });
     if (this.editMode) {
       ctx.save();
       ctx.translate(W / 2 + sx, H / 2 + sy); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
@@ -171,6 +201,15 @@ export class Renderer {
 
     /* ۵) گرید */
     this._grade(t);
+
+    /* دستگیره‌های لایهٔ انتخاب‌شده — بعد از گرید تا تار و رنگی نشوند */
+    if (this.selLayer && !this.exporting && menv) {
+      const L = this.layers.find(x => x.id === this.selLayer);
+      if (L) {
+        this.stage.applyDesign();
+        this.motion.drawGizmo(ctx, L, this.layers, t, menv, this.media, 1 / this.stage.scale);
+      }
+    }
     return sec;
   }
 
@@ -322,12 +361,15 @@ export class Renderer {
   wordsAt(t) {
     const song = this.song;
     if (!song) return [];
-    const [, , style] = this.soloStyle ?? this.sectionAt(t);
+    let [, , style] = this.soloStyle ?? this.sectionAt(t);
+    const cur = song.activeLine(t);
+    if (cur < 0) return [];
+    // همان قاعدهٔ renderFrame: تنظیم خط، سبک بخش را کنار می‌زند
+    const lf = this.lineFx?.[cur];
+    if (lf?.style) style = lf.style;
     const ctx = this.stage.ctx;
     const out = [];
     if (TEXTUAL.has(style)) {
-      const cur = song.activeLine(t);
-      if (cur < 0) return [];
       for (const li of [cur - 1, cur]) {
         if (li < 0) continue;
         if (t < song.lineStart(li) - 0.2 || t > song.lineOut(li) + 0.2) continue;
@@ -335,19 +377,22 @@ export class Renderer {
         out.push(...applyOverrides(place(ctx, line, modeFor(line, style)), this.overrides));
       }
     } else if (style === 'mirror') {
-      const cur = song.activeLine(t);
-      if (cur < 0) return [];
       out.push(...applyOverrides(place(ctx, song.lines[cur], 'giant'), this.overrides));
-    } else if (style === 'custom') {
-      beatGrid(ctx, song, t, kick, 10);
-      if (this.showFurniture) furniture(ctx, song, t, acc, false);
-      this.customFx?.draw(ctx, song, t, acc, kick, this.overrides);
     } else if (ALLFX[style] || String(style).startsWith('cf:')) {
-      const cur = song.activeLine(t);
-      if (cur < 0) return [];
       const line = song.lines[cur];
       const mode = style === 'punch' ? 'chorus' : 'pre';
       out.push(...applyOverrides(place(ctx, line, modeFor(line, mode)), this.overrides));
+    }
+    // ترنسفرم تنظیم خط (اندازه و جابه‌جایی) را روی کادرها هم اعمال کن،
+    // وگرنه کادر انتخاب با جای واقعی کلمه نمی‌خواند
+    if (lf && (lf.scale !== undefined || lf.dx || lf.dy)) {
+      const k = lf.scale ?? 1;
+      return out.map(it => ({
+        ...it,
+        cx: W / 2 + (lf.dx || 0) + (it.cx - W / 2) * k,
+        cy: H / 2 + (lf.dy || 0) + (it.cy - H / 2) * k,
+        size: it.size * k, w: it.w ? it.w * k : it.w,
+      }));
     }
     return out;
   }
@@ -404,3 +449,4 @@ function makeGrain(size) {
   g.putImageData(img, 0, 0);
   return c;
 }
+

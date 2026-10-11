@@ -20,9 +20,10 @@ import { FONTS, font } from './text.js';
  * غلط تایپی کنسول را پر می‌کند و برنامه کند می‌شود.
  */
 
-/** جعبه‌ابزاری که در اختیار کد کاربر است */
-function toolbox() {
-  return {
+/** جعبه‌ابزاری که در اختیار کد کاربر است.
+    یک‌بار ساخته می‌شود؛ قبلاً هر فریم یک شیء تازه با ۳۰ کلید ساخته
+    می‌شد که روی گوشی فشار بی‌دلیل به حافظه می‌آورد. */
+export const TOOLBOX = Object.freeze({
     // رسم
     textFa, textMono, outlineTextFa, wordDraw, line, rect, ring,
     fitFa, rowLayout, textPoints, particles, font, FONTS,
@@ -33,8 +34,7 @@ function toolbox() {
     rgba, mixHex, C,
     // مقیاس
     S, SF,
-  };
-}
+});
 
 export const DEFAULT_CODE = `// ctx: بوم  ·  e: حالت این لحظه
 // e.t زمان، e.kick ضربه (۰..۱)، e.words کلمات چیده‌شده،
@@ -87,18 +87,46 @@ export class CustomSet {
     const fx = new CustomFx();
     fx.name = name;
     fx.compile(code);
+    // قبلاً بعد از ۱۲ افکت، اولی با shift() حذف می‌شد و همهٔ ارجاع‌های
+    // «cf:N» در بخش‌ها یکی جابه‌جا می‌شدند — افکت اشتباه پخش می‌شد.
+    // حالا سقف داریم ولی چیزی بی‌صدا حذف نمی‌شود.
+    if (trim && this.list.length >= MAX_CUSTOM) return -1;
     this.list.push(fx);
-    if (trim && this.list.length > 12) this.list.shift();
     return this.list.length - 1;
   }
 
-  remove(i) { if (this.list.length > 1) this.list.splice(i, 1); }
+  /** حذف افکت i. ارجاع‌ها را با remapCustomRefs درست کنید. */
+  remove(i) {
+    if (this.list.length <= 1 || i < 0 || i >= this.list.length) return false;
+    this.list.splice(i, 1);
+    return true;
+  }
   get(i) { return this.list[i] || null; }
   get count() { return this.list.length; }
   toJSON() { return this.list.map(f => ({ name: f.name, code: f.code })); }
 
   /** سبک‌هایی که این مجموعه فراهم می‌کند */
   styles() { return this.list.map((f, i) => ({ id: `cf:${i}`, label: f.name })); }
+}
+
+export const MAX_CUSTOM = 30;
+
+/**
+ * بعد از حذف افکت سفارشی شمارهٔ removed، ارجاع‌های «cf:N» را درست
+ * می‌کند: ارجاع به خود افکت حذف‌شده به fallback برمی‌گردد و
+ * ارجاع‌های بعد از آن یکی عقب می‌آیند.
+ */
+export function remapCustomRefs(removed, sections, lineFx, fallback = 'verse') {
+  const fix = id => {
+    if (!String(id).startsWith('cf:')) return id;
+    const n = +id.slice(3);
+    if (n === removed) return fallback;
+    return n > removed ? `cf:${n - 1}` : id;
+  };
+  for (const s of sections || []) s[2] = fix(s[2]);
+  for (const k of Object.keys(lineFx || {})) {
+    if (lineFx[k]?.style) lineFx[k].style = fix(lineFx[k].style);
+  }
 }
 
 export class CustomFx {
@@ -147,7 +175,7 @@ export class CustomFx {
       low: song.A?.lowAt ? song.A.lowAt(t) : 0,
       beat: song.beatI(t),
       pulse: song.beatEnv(t, 16),
-      fx: toolbox(),
+      fx: TOOLBOX,
     };
     try {
       this.fn(ctx, e);
@@ -199,3 +227,4 @@ for (let i = 0; i < pts.length; i++) {
                e.H/2 + pts[i].y + Math.sin(ang)*d, 4, 4);
 }`,
 };
+

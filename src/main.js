@@ -11,19 +11,22 @@ import { exportVideo, canExport, RESOLUTIONS } from './engine/export.js';
 import { saveFile, shareFile } from './engine/save.js';
 import { Overrides } from './engine/overrides.js';
 import { analyzeBuffer, decodeAudioFile } from './engine/analyze.js';
-import { Library, autoSections, plainToLines } from './engine/library.js';
-import { Timeline } from './ui/timeline.js';
+import { Library, autoSections, plainToLines, silentAnalysis } from './engine/library.js';
+import { Timeline, TL_HEIGHT } from './ui/timeline.js';
 import { PreviewPool } from './ui/previews.js';
 import { newText, TEXT_ANIM, layerBox } from './engine/textlayers.js';
-import { CustomSet, DEFAULT_CODE, SNIPPETS } from './engine/custom.js';
-import { LESSONS, CATEGORIES } from './engine/learn.js';
-import { TEXT_FX } from './engine/textfx.js';
-import { TEXT_FX2 } from './engine/textfx2.js';
+import { CustomSet, DEFAULT_CODE, SNIPPETS, remapCustomRefs, MAX_CUSTOM } from './engine/custom.js';
+import { MediaPool } from './motion/media.js';
+import { normalizeLayer, uid } from './motion/schema.js';
+const KEY_PROPS = ['x', 'y', 'sc', 'rot', 'opacity'];   // دکمهٔ ◆ نوار کلیپ
+import { sample, setKey } from './motion/tracks.js';
+import * as OPS from './motion/ops.js';
+import { MotionPanel } from './ui/motionpanel.js';
+import { FFmpegPanel } from './ui/ffmpegpanel.js';
+import { Lessons } from './ui/lessons.js';
 
-const $ = s => document.querySelector(s);
-const $$ = s => [...document.querySelectorAll(s)];
+import { $, $$, faN } from './ui/dom.js';
 const BASE = import.meta.env.BASE_URL;
-const faN = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
 
 // ابعاد زندهٔ فضای طراحی (با تغییر نسبت عوض می‌شوند)
 import * as SONG from './engine/song.js';
@@ -60,7 +63,14 @@ R.overrides = OV;
 
 let lineFx = {};              // تنظیمات جداگانهٔ هر خط شعر
 let texts = [];               // لایه‌های متن آزاد
-R.lineFx = lineFx; R.texts = texts;
+let layers = [];              // لایه‌های موشن (مثل Alight Motion)
+let selLayerId = null;        // لایهٔ موشن انتخاب‌شده
+R.lineFx = lineFx; R.texts = texts; R.layers = layers;
+
+/* عکس و ویدیوی لایه‌ها: فایل در IndexedDB، عنصر آماده در این استخر */
+const MEDIA = new MediaPool();
+MEDIA.onUpdate = () => { if (!app.playing) draw(); };
+R.media = MEDIA;
 
 const CSET = new CustomSet();
 R.customSet = CSET;
@@ -69,19 +79,90 @@ let cfIdx = 0;                 // افکت سفارشی در حال ویرایش
 /** حالت پروژهٔ نمونه جدا ذخیره می‌شود تا تغییراتتان بماند ولی سرایت نکند */
 const DEMO_KEY = 'lyricstudio.demo.state.v2';
 
+/** همهٔ حالت قابل ذخیرهٔ یک پروژه.
+    باگ قدیمی: برای پروژه‌های غیرنمونه فقط look/overrides/sections
+    برمی‌گشت؛ یعنی افکت‌های سفارشی، تنظیم خطوط و متن‌ها بعد از
+    باز کردن دوباره پاک می‌شدند. */
 function readState(p) {
   if (!p || p.id === '__demo') {
     try { return JSON.parse(localStorage.getItem(DEMO_KEY) || '{}'); } catch { return {}; }
   }
-  return { look: p.look, overrides: p.overrides, sections: p.sections };
+  const { look: lk, overrides, sections: sc, custom, code, lineFx: lf, texts: tx, layers: ly } = p;
+  return { look: lk, overrides, sections: sc, custom, code, lineFx: lf, texts: tx, layers: ly };
+}
+
+const currentPayload = () => ({ look, overrides: OV.map, sections: R.sections,
+  custom: CSET.toJSON(), lineFx, texts, layers });
+
+/** حالت را روی برنامه بنشان (هنگام باز کردن پروژه و واگرد) */
+function loadPayload(st) {
+  look = Object.assign(DEFAULT_LOOK(), st.look || {});
+  OV.setMap(JSON.parse(JSON.stringify(st.overrides || {})), saveState);
+  if (st.sections?.length) {
+    R.sections = st.sections.map(x => x.slice());
+    look.accents = {};       // رنگ هر بخش داخل خود جدول ذخیره شده است
+  }
+  CSET.load(st.custom || (st.code ? [{ name: 'افکت من', code: st.code }] : null));
+  cfIdx = Math.min(cfIdx, Math.max(0, CSET.count - 1));
+  lineFx = JSON.parse(JSON.stringify(st.lineFx || {}));
+  texts = JSON.parse(JSON.stringify(st.texts || []));
+  layers = (JSON.parse(JSON.stringify(st.layers || []))).map(normalizeLayer);
+  R.lineFx = lineFx; R.texts = texts; R.layers = layers;
+  if (selLayerId && !layers.some(L => L.id === selLayerId)) selLayerId = null;
+  R.selLayer = selLayerId;
+}
+
+/* ── واگرد / ازنو ────────────────────────────────────────────
+   هر ذخیره یک عکس فوری از کل حالت می‌گیرد. چون ذخیره با تأخیر
+   انجام می‌شود، کشیدن‌های پشت سر هم یک قدم حساب می‌شوند. */
+const HIST = { stack: [], i: -1, max: 60, lock: false };
+function histReset() { HIST.stack = [JSON.stringify(currentPayload())]; HIST.i = 0; syncUndo(); }
+function histPush() {
+  if (HIST.lock) return;
+  const snap = JSON.stringify(currentPayload());
+  if (snap === HIST.stack[HIST.i]) return;
+  HIST.stack.length = HIST.i + 1;
+  HIST.stack.push(snap);
+  if (HIST.stack.length > HIST.max) HIST.stack.shift();
+  HIST.i = HIST.stack.length - 1;
+  syncUndo();
+}
+function histGo(d) {
+  const j = HIST.i + d;
+  if (j < 0 || j >= HIST.stack.length) return;
+  HIST.i = j;
+  HIST.lock = true;
+  loadPayload(JSON.parse(HIST.stack[j]));
+  applyLook();
+  HIST.lock = false;
+  persist();
+  refreshAll();
+  syncUndo();
+}
+function syncUndo() {
+  const u = $('#undoBtn'), r = $('#redoBtn');
+  if (u) u.disabled = HIST.i <= 0;
+  if (r) r.disabled = HIST.i >= HIST.stack.length - 1;
+}
+/** همه‌چیز را از نو بکش (بعد از واگرد) */
+function refreshAll() {
+  if (TL.pick?.kind === 'layer' && !layers.some(L => L.id === TL.pick.id)) TL.choose(null);
+  else if (TL.pick?.kind === 'text' && !texts.some(L => L.id === TL.pick.id)) TL.choose(null);
+  else showClipBar(TL.pick);
+  if (app.pane === 'layers') MP.render();
+  if (app.pane === 'look') syncLook();
+  if (app.pane === 'clip') buildClipPanel();
+  TL.draw(); buildStrip(); draw();
 }
 
 let saveTimer = 0;
 function saveState() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    const payload = { look, overrides: OV.map, sections: R.sections,
-      custom: CSET.toJSON(), lineFx, texts };
+  saveTimer = setTimeout(() => { histPush(); persist(); }, 250);
+}
+async function persist() {
+  {
+    const payload = currentPayload();
     if (app.projectId === '__demo') {
       try { localStorage.setItem(DEMO_KEY, JSON.stringify(payload)); } catch {}
       return;
@@ -90,7 +171,7 @@ function saveState() {
     if (!p) return;
     Object.assign(p, payload);
     await Library.put(p);
-  }, 250);
+  }
 }
 const saveLook = saveState;
 
@@ -99,6 +180,9 @@ function applyLook() {
   R.bloom = look.bloom;
   R.chroma = look.chroma;
   R.showFurniture = look.furniture;
+  // رنگ‌های تأکید قدیمی فقط وقتی اعمال شوند که جدول بخش ذخیره نشده باشد؛
+  // وگرنه رنگ هر بخش داخل خود جدول است و شماره‌ها ممکن است جابه‌جا شده باشند.
+  if (!look.accents || !Object.keys(look.accents).length) return;
   const tbl = R.sections || SECT;
   for (const [i, col] of Object.entries(look.accents)) if (tbl[i]) tbl[i][3] = col;
 }
@@ -119,13 +203,19 @@ function fit() {
 }
 
 /* ── حلقهٔ رندر ──────────────────────────────────────────── */
-let frames = 0, lastFpsAt = performance.now();
+let frames = 0, lastFpsAt = performance.now(), lastTick = 0;
 
 function draw() {
   if (!app.song) return;
   R.renderFrame(app.t);
   $('#tc').textContent = faTime(app.t);
   TL.draw();
+  // مقدار ویژگی‌های پنل لایه با زمان عوض می‌شود (کی‌فریم‌ها)؛
+  // در حین پخش هر ۱۵۰ میلی‌ثانیه یک بار کافی است.
+  if (app.pane === 'layers' && selLayerId) {
+    const now = performance.now();
+    if (!app.playing || now - lastTick > 150) { lastTick = now; MP.tick(); }
+  }
 
   if (app.playing) {
     frames++;
@@ -140,6 +230,7 @@ function draw() {
 function loop() {
   if (!app.playing) return;
   app.t = app.audio ? app.audio.currentTime : app.t + 1 / 60;
+  if (rangeEnd != null && app.t >= rangeEnd) { rangeEnd = null; pause(); }
   if (app.t >= app.duration) { pause(); app.t = app.duration; }
   draw();
   app.raf = requestAnimationFrame(loop);
@@ -148,6 +239,7 @@ function play() {
   if (app.playing || !app.song) return;
   POOL.stop(); POOL2.stop();
   app.playing = true;
+  R.playing = true;
   $('#play').textContent = '❚❚';
   if (app.audio) { app.audio.currentTime = app.t; app.audio.play().catch(() => {}); }
   lastFpsAt = performance.now(); frames = 0;
@@ -155,14 +247,26 @@ function play() {
 }
 function pause() {
   app.playing = false;
+  R.playing = false;
+  MEDIA.pauseAll();
   if (app.pane === 'fx') POOL.start(fxPreviewTime());
   if (app.pane === 'clip') POOL2.start(app.t);
   $('#play').textContent = '▶';
+  rangeEnd = null;
   $('#fps').textContent = '—';
   app.audio?.pause();
   cancelAnimationFrame(app.raf);
 }
 const toggle = () => (app.playing ? pause() : play());
+
+/** پخش یک بازه و توقف در انتهایش (پیش‌نمایش انیمیشن ورود/خروج) */
+let rangeEnd = null;
+function playRange(t0, t1) {
+  pause();
+  seek(t0);
+  rangeEnd = t1;
+  play();
+}
 function seek(v) {
   app.t = Math.max(0, Math.min(app.duration, v));
   if (app.audio) app.audio.currentTime = app.t;
@@ -180,7 +284,8 @@ function screen(name) {
   APP.dataset.screen = name;
   if (name !== 'editor') pause();
   if (name === 'editor') { fit(); draw(); }
-  if (name === 'learn') buildLessons();
+  if (name === 'learn') LS.list();
+  else LS.stop();
   if (name === 'library') buildProjList();
 }
 
@@ -206,6 +311,8 @@ function go(name, toggle = false) {
   if (name === 'clip') buildClipPanel();
   if (name === 'lyrics') syncLyricsPane();
   if (name === 'fx') { buildFxCats(); buildFxGrid(); buildCfList(); }
+  if (name === 'layers') MP.render();
+  if (name === 'export') FF.render();
 }
 $$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go, true); });
 
@@ -223,9 +330,11 @@ $('#paneGrab').onclick = closePane;
 $('#backBtn').onclick = () => screen('library');
 $('#learnBtn').onclick = () => screen('learn');
 $('#lnBack').onclick = () => {
-  if (!$('#lnBody').classList.contains('hidden')) { buildLessons(); return; }
-  screen('library');
+  if (LS.open) { LS.list(); return; }
+  screen(lessonReturn);
+  lessonReturn = 'library';
 };
+let lessonReturn = 'library';     // آموزش از ویرایشگر باز شد؟ برگرد همان‌جا
 $('#gearBtn').onclick = () => { syncProject(); $('#pjSheet').classList.remove('hidden'); };
 $('#pjX').onclick = () => $('#pjSheet').classList.add('hidden');
 $('#pjSheet').onclick = e => { if (e.target.id === 'pjSheet') $('#pjSheet').classList.add('hidden'); };
@@ -272,7 +381,6 @@ function buildStrip() {
     try { r2.renderFrame(thumbTime(sec)); } catch (e) { console.warn('thumb', sec[2], e); }
   });
 }
-function markActive() {}
 
 /* ── ویرایش بخش‌ها ───────────────────────────────────────── */
 const FX_CATS = {
@@ -285,7 +393,13 @@ const STYLES = Object.values(FX_CATS).flat();
 const styleLabel = id => String(id).startsWith('cf:')
   ? (CSET.get(+id.slice(3))?.name || 'سفارشی') : (SECTION_NAMES[id] || id);
 
-function sections() { return R.sections || (R.sections = SECT.map(s => s.slice())); }
+/** جدول پیش‌فرض بخش‌ها برای پروژهٔ فعلی */
+function defaultSections() {
+  if (app.projectId === '__demo') return SECT.map(s => s.slice());
+  if (!app.song?.lines.length) return [[0, Math.max(1, app.duration), 'none', C.CRIMSON]];
+  return autoSections(app.song.lines, app.duration);
+}
+function sections() { return R.sections || (R.sections = defaultSections()); }
 
 /* ── تایم‌لاین ───────────────────────────────────────────── */
 const TL = new Timeline(document.getElementById('tl'), {
@@ -296,9 +410,17 @@ const TL = new Timeline(document.getElementById('tl'), {
   seek: v => seek(v),
   getTexts: () => texts,
   getLineFx: () => lineFx,
+  getLayers: () => layers,
   label: id => styleLabel(id),
   onSelect: p => showClipBar(p),
-  onChange: (done) => { if (done) { sortSections(); saveState(); buildStrip(); } draw(); },
+  onKey: () => { if (app.pane === 'layers') MP.tick(); },
+  onChange: (done) => {
+    if (done) {
+      sortSections(); saveState(); buildStrip();
+      if (TL.pick?.kind === 'layer' || TL.pick?.kind === 'text') showClipBar(TL.pick);
+    }
+    draw();
+  },
 });
 const buildSecList = () => { TL.draw(); showClipBar(TL.sel); };
 
@@ -316,7 +438,11 @@ const ACTS = {
             ['clear','↺','پیش‌فرض'],['close','✕','بستن']],
   text:    [['opts','⚙','تنظیمات'],['setA','⇤','شروع اینجا'],['setB','⇥','پایان اینجا'],
             ['dup','⧉','تکثیر'],['del','🗑','حذف'],['close','✕','بستن']],
+  layer:   [['opts','⚙','ویرایش'],['key','◆','کی‌فریم'],['setA','⇤','شروع اینجا'],
+            ['setB','⇥','پایان اینجا'],['split','⁄','تقسیم'],['dup','⧉','تکثیر'],
+            ['del','🗑','حذف'],['close','✕','بستن']],
 };
+const pickedLayer = () => (TL.pick?.kind === 'layer' ? layers.find(L => L.id === TL.pick.id) : null);
 
 function curPick() { return TL.pick; }
 function pickedText() {
@@ -327,6 +453,13 @@ function pickedText() {
 function showClipBar(p) {
   const bar = $('#clipBar');
   R.selText = p?.kind === 'text' ? p.id : null;
+  const newSel = p?.kind === 'layer' ? p.id : null;
+  if (newSel !== selLayerId) {
+    selLayerId = newSel;
+    R.selLayer = newSel;
+    // انتخاب از روی تایم‌لاین: پنل لایه هم باید عوض شود
+    if (app.pane === 'layers' && !mpSelecting) MP.render();
+  }
   if (!p) { bar.classList.add('hidden'); if (app.pane === 'clip') closePane(); draw(); return; }
   bar.classList.remove('hidden');
   sizePane();
@@ -339,6 +472,10 @@ function showClipBar(p) {
     const L = app.song?.lines[p.i]; if (!L) { bar.classList.add('hidden'); return; }
     name = L.text.slice(0, 18) + (L.text.length > 18 ? '…' : '');
     time = `خط ${faN(p.i + 1)}` + (lineFx[p.i] ? ' · تنظیم‌شده' : '');
+  } else if (p.kind === 'layer') {
+    const L = pickedLayer(); if (!L) { bar.classList.add('hidden'); return; }
+    name = L.name;
+    time = `${L.t0.toFixed(1)} – ${L.t1.toFixed(1)}s`;
   } else {
     const L = pickedText(); if (!L) { bar.classList.add('hidden'); return; }
     name = (L.text || 'متن').slice(0, 18);
@@ -362,8 +499,44 @@ function showClipBar(p) {
   draw();
 }
 
+/** کارهای نوار کلیپ برای لایهٔ موشن */
+function layerAct(act, L) {
+  const done = (keep = true) => { saveState(); TL.draw(); if (keep) showClipBar(TL.pick); if (app.pane === 'layers') MP.render(); draw(); };
+  const lt = Math.max(0, Math.min(L.t1 - L.t0, app.t - L.t0));
+  switch (act) {
+    case 'opts': go('layers'); break;
+    case 'key':
+      // روی همهٔ ویژگی‌های تبدیل در این لحظه کی‌فریم بگذار
+      for (const k of KEY_PROPS) {
+        const tr = L.props[k];
+        if (tr) setKey(tr, lt, sample(tr, lt));
+      }
+      done(); break;
+    case 'setA': if (app.t < L.t1 - 0.1) OPS.trimStart(L, app.t); done(); break;
+    case 'setB': if (app.t > L.t0 + 0.1) OPS.trimEnd(L, app.t); done(); break;
+    case 'split': {
+      const b = OPS.split(L, app.t);
+      if (!b) return;
+      layers.splice(layers.indexOf(L) + 1, 0, b);
+      done(); break;
+    }
+    case 'dup': {
+      const n = OPS.duplicate(L, L.t1 - L.t0);
+      layers.splice(layers.indexOf(L) + 1, 0, n);
+      TL.choose({ kind: 'layer', id: n.id }); done(); break;
+    }
+    case 'del': {
+      layers.splice(layers.indexOf(L), 1);
+      for (const x of layers) if (x.parent === L.id) x.parent = null;
+      TL.choose(null); done(false); break;
+    }
+  }
+}
+
 function clipAct(act) {
   const p = TL.pick; if (!p) return;
+  if (act === 'close') { TL.choose(null); return; }
+  if (p.kind === 'layer') { const Lr = pickedLayer(); if (Lr) layerAct(act, Lr); return; }
   const s = p.kind === 'section' ? sections()[p.i] : null;
   const L = pickedText();
   switch (act) {
@@ -531,7 +704,7 @@ function buildClipPanel() {
   const s = sections()[p.i]; if (!s) return;
   const ac = document.createElement('input');
   ac.type = 'color'; ac.value = s[3] || C.CRIMSON;
-  ac.oninput = () => { s[3] = ac.value; look.accents[p.i] = ac.value; saveState(); TL.draw(); draw(); };
+  ac.oninput = () => { s[3] = ac.value; saveState(); TL.draw(); draw(); };
   host.append(row('رنگ تأکید', ac));
   const note = document.createElement('p');
   note.className = 'note';
@@ -561,6 +734,29 @@ $('#txtAdd').onclick = () => {
   saveState();
   TL.choose({ kind: 'text', id: L.id });
   go('clip');
+};
+
+/* بخش تازه: بخشِ زیر نشانگر را همان‌جا دو تکه می‌کند؛ اگر نشانگر
+   بیرون از همهٔ بخش‌ها باشد، فاصلهٔ خالی را پر می‌کند. (قبلاً این دکمه
+   هیچ کاری نمی‌کرد.) */
+$('#secAdd').onclick = () => {
+  if (!app.song) return;
+  const tbl = sections(), t = +app.t.toFixed(2);
+  const i = tbl.findIndex(s => t >= s[0] && t < s[1]);
+  if (i >= 0) {
+    const s = tbl[i];
+    if (t <= s[0] + 0.4 || t >= s[1] - 0.4) return;
+    tbl.splice(i + 1, 0, [t, s[1], s[2], s[3]]);
+    s[1] = t;
+    TL.choose({ kind: 'section', i: i + 1 });
+  } else {
+    const end = Math.min(app.duration, ...tbl.filter(s => s[0] > t).map(s => s[0]), t + 8);
+    if (end - t < 0.4) return;
+    tbl.push([t, +end.toFixed(2), 'none', C.CRIMSON]);
+    sortSections();
+    TL.choose({ kind: 'section', i: tbl.findIndex(s => s[0] === t) });
+  }
+  saveState(); TL.draw(); buildStrip(); draw();
 };
 
 $('#zIn').onclick = () => TL.setZoom(1.5);
@@ -607,18 +803,19 @@ $('#lkBloom').oninput = e => { look.bloom = +e.target.value / 100; applyLook(); 
 $('#lkChroma').oninput = e => { look.chroma = +e.target.value / 10; applyLook(); saveLook(); syncLook(); draw(); };
 $('#lkFurn').onchange = e => { look.furniture = e.target.checked; applyLook(); saveLook(); draw(); };
 $('#lkAccent').oninput = e => {
-  const i = curSecIndex();
-  look.accents[i] = e.target.value;
-  applyLook(); saveLook(); draw(); buildStrip();
+  const s = sections()[curSecIndex()];
+  if (s) s[3] = e.target.value;
+  saveLook(); draw(); buildStrip();
 };
 $('#lkAccentAll').onclick = () => {
   const col = $('#lkAccent').value;
-  sections().forEach((_, i) => { look.accents[i] = col; });
-  applyLook(); saveLook(); draw(); buildStrip();
+  for (const s of sections()) s[3] = col;
+  saveLook(); draw(); buildStrip();
 };
 $('#lkReset').onclick = () => {
   look = DEFAULT_LOOK();
-  R.sections = null; sections();
+  // پروژهٔ کاربر به چیدمان خودکار خودش برمی‌گردد، نه به جدول آهنگ نمونه
+  R.sections = defaultSections();
   applyLook(); saveLook(); syncLook(); buildSecList(); buildStrip(); draw();
 };
 
@@ -725,7 +922,7 @@ async function buildProjList() {
     }
     host.append(el);
   };
-  mk('__demo', 'نقاب — زروان اکو', 'نمونهٔ همراه برنامه · ۳:۴۸ · ۱۶:۹', false, '۹:۱۶'.slice(0,0) || 'ن');
+  mk('__demo', 'نقاب — زروان اکو', 'نمونهٔ همراه برنامه · ۳:۴۸ · ۱۶:۹', false, 'ن');
   let n = 1;
   try {
     for (const p of await Library.all()) {
@@ -733,7 +930,7 @@ async function buildProjList() {
       const asp = p.aspect || '16:9';
       const sub = p.audio
         ? `${faN(Math.floor(p.duration / 60))}:${faN(String(Math.round(p.duration % 60)).padStart(2, '0'))} · ${faN(p.analysis.tempo.toFixed(0))} ضرب · ${asp}`
-        : `بدون آهنگ · ${asp}`;
+        : `بدون آهنگ · ${faN(p.length || 15)} ثانیه · ${asp}`;
       mk(p.id, p.title || p.name, sub, true, (p.title || p.name || '؟').trim().charAt(0));
     }
   } catch (e) { console.warn(e); }
@@ -753,6 +950,9 @@ async function openProject(id) {
   pause();
   clearLayoutCache(); clearGlyphCache();
   app.projectId = id;
+  // انتخاب پروژهٔ قبلی نباید به این پروژه نشت کند
+  TL.pick = null; TL.sel = -1; selLayerId = null; R.selLayer = null;
+  $('#clipBar').classList.add('hidden');
   if (id === '__demo') {
     setAspect('16:9');
     const [lrc, an] = await Promise.all([
@@ -778,23 +978,30 @@ async function openProject(id) {
       R.sections = p.sections ? p.sections.map(s => s.slice())
                               : autoSections(app.song.lines, p.duration);
     } else {
-      // پروژهٔ خالی: هنوز آهنگی ندارد
-      app.song = null; app.duration = 0; app.audioUrl = null; R.sections = null;
+      // پروژهٔ بی‌صدا: یک «آهنگ ساکت» با طول دلخواه می‌سازیم تا لایه‌ها،
+      // متن‌ها و خروجی مثل یک پروژهٔ موشن‌گرافیک معمولی کار کنند.
+      const dur = Math.max(1, +p.length || 15);
+      app.song = new Song(parseLRC(p.lrc || ''), new Analysis(silentAnalysis(dur)), {
+        title: p.title || p.name, artist: p.artist || '', tg: p.tg || '', duration: dur,
+      });
+      app.duration = dur;
+      app.audioUrl = null;
+      R.sections = p.sections ? p.sections.map(s => s.slice())
+        : app.song.lines.length ? autoSections(app.song.lines, dur)
+        : [[0, dur, 'none', C.CRIMSON]];
     }
   }
   // حالت این پروژه را بار کن — پروژهٔ تازه کاملاً دست‌نخورده است
   {
     const rec = app.projectId === '__demo' ? { id: '__demo' } : await Library.get(app.projectId);
-    const st = readState(rec);
-    look = Object.assign(DEFAULT_LOOK(), st.look || {});
-    OV.setMap(JSON.parse(JSON.stringify(st.overrides || {})), saveState);
-    if (st.sections?.length) R.sections = st.sections.map(x => x.slice());
-    CSET.load(st.custom || (st.code ? [{ name: 'افکت من', code: st.code }] : null));
     cfIdx = 0;
-    lineFx = JSON.parse(JSON.stringify(st.lineFx || {}));
-    texts = JSON.parse(JSON.stringify(st.texts || []));
-    R.lineFx = lineFx; R.texts = texts; R.selText = null;
+    loadPayload(readState(rec));
+    R.selText = null;
   }
+  // عکس‌ها و ویدیوهای همین پروژه
+  MEDIA.clear();
+  try { for (const m of await Library.mediaOf(id)) MEDIA.add(m); } catch (e) { console.warn('media', e); }
+  histReset();
   R.selected = null; lastPicked = null;
   R.setSong(app.song);
   applyLook();
@@ -803,7 +1010,10 @@ async function openProject(id) {
   app.t = 0;
   $('#tdur').textContent = faTime(app.duration || 0);
   $('#nowName').textContent = app.song?.title || (await currentMeta())?.title || 'پروژهٔ خالی';
-  $('#noAudio').classList.toggle('hidden', !!app.song);
+  app.hasAudio = !!app.audioUrl;
+  // راهنمای پروژهٔ خالی: فقط وقتی هنوز هیچ چیزی در آن نیست
+  $('#noAudio').classList.toggle('hidden',
+    app.hasAudio || layers.length > 0 || texts.length > 0 || (app.song?.lines.length || 0) > 0);
   buildStrip(); buildSecList(); buildProjList(); updateEstimate();
   fit(); draw();
 }
@@ -847,8 +1057,8 @@ $('#nwGo').onclick = async () => {
     artist: ($('#nwArtist').value || '').trim(),
     tg: ($('#nwTg').value || '').trim(),
     aspect: newAspect,
-    audio: null, lrc: '', analysis: null, duration: 0, sections: null,
-    look: DEFAULT_LOOK(), overrides: {}, custom: null, lineFx: {}, texts: [],
+    audio: null, lrc: '', analysis: null, duration: 0, sections: null, length: 15,
+    look: DEFAULT_LOOK(), overrides: {}, custom: null, lineFx: {}, texts: [], layers: [],
     createdAt: Date.now(),
   };
   await Library.put(proj);
@@ -875,6 +1085,9 @@ async function syncProject() {
     }
   }
   sel.value = m.aspect || '16:9';
+  // طول فقط برای پروژهٔ بی‌صدا معنا دارد؛ با آهنگ، طول همان طول آهنگ است
+  $('#pjLenRow').classList.toggle('hidden', !!m.audio || app.projectId === '__demo');
+  $('#pjLen').value = Math.round(m.length || 15);
   const demo = app.projectId === '__demo';
   $('#pjSave').disabled = demo;
   $('#pjSave').textContent = demo ? 'نمونه قابل ویرایش نیست' : 'ذخیره';
@@ -890,9 +1103,17 @@ $('#pjSave').onclick = async () => {
   p.tg = ($('#pjTg').value || '').trim();
   const aspChanged = p.aspect !== $('#pjAspect').value;
   p.aspect = $('#pjAspect').value;
+  let lenChanged = false;
+  if (!p.audio) {
+    const len = Math.max(1, Math.min(600, Math.round(+$('#pjLen').value || 15)));
+    lenChanged = len !== (p.length || 15);
+    p.length = len;
+    // جدول پیش‌فرض تک‌بخشی با طول تازه کش می‌آید
+    if (lenChanged && p.sections?.length === 1 && p.sections[0][2] === 'none') p.sections[0][1] = len;
+  }
   await Library.put(p);
   $('#pjSheet').classList.add('hidden');
-  if (aspChanged) await openProject(p.id);
+  if (aspChanged || lenChanged) await openProject(p.id);
   else {
     if (app.song) { app.song.title = p.title; app.song.artist = p.artist; app.song.tg = p.tg; }
     $('#nowName').textContent = p.title;
@@ -1002,6 +1223,7 @@ $('#exAll').onclick = () => {
 };
 
 let exAbort = null;
+let lastExport = null;        // آخرین ویدیوی ساخته‌شده {blob, name}
 const setMsg = (t, cls = '') => { $('#exMsg').textContent = t; $('#exMsg').className = 'msg ' + cls; };
 
 $('#exGo').onclick = async () => {
@@ -1027,7 +1249,7 @@ $('#exGo').onclick = async () => {
       fps: parseInt($('#exFps').value, 10),
       bitrate: parseInt($('#exBr').value, 10) * 1e6,
       grain: look.grain, overrides: OV, sections: R.sections, customSet: CSET,
-      lineFx, texts,
+      lineFx, texts, layers, media: MEDIA,
       look,
       signal: exAbort.signal,
       onProgress: p => {
@@ -1041,6 +1263,8 @@ $('#exGo').onclick = async () => {
     const mb = (blob.size / 1048576).toFixed(1);
     const name = `${(app.song.title || 'clip').replace(/\s+/g, '_')}_${from | 0}-${to | 0}_${curRes().id}p.mp4`;
     setMsg(`در حال ذخیره… (${faN(mb)} مگابایت)`);
+    lastExport = { blob, name };      // ورودی آمادهٔ FFmpeg
+    if (app.pane === 'export') { FF.src = 'last'; FF.duration = 0; FF.render(); }
     const res = await saveFile(blob, name, p => { fill.style.width = (p * 100).toFixed(0) + '%'; });
     if (res.where === 'browser') setMsg(`آماده شد — ${faN(mb)} مگابایت، در پوشهٔ Downloads`, 'ok');
     else if (res.where === 'downloads') setMsg(`✓ ذخیره شد در ${res.path} — ${faN(mb)} مگابایت`, 'ok');
@@ -1267,7 +1491,9 @@ function buildCfList() {
   });
 }
 $('#cfAdd').onclick = () => {
-  cfIdx = CSET.add('افکت ' + faN(CSET.count + 1), DEFAULT_CODE);
+  const i = CSET.add('افکت ' + faN(CSET.count + 1), DEFAULT_CODE);
+  if (i < 0) { alert(`حداکثر ${faN(MAX_CUSTOM)} افکت سفارشی — یکی را حذف کنید`); return; }
+  cfIdx = i;
   saveState(); buildCfList(); buildSecList(); go('code');
 };
 
@@ -1319,7 +1545,9 @@ $('#cdText').addEventListener('input', e => {
 $('#cdReset').onclick = () => { curCf().compile(DEFAULT_CODE); $('#cdText').value = DEFAULT_CODE; saveState(); draw(); showCodeMsg(); };
 $('#cdDel').onclick = () => {
   if (CSET.count <= 1) return;
-  CSET.remove(cfIdx); cfIdx = 0; saveState(); syncCode(); buildSecList(); draw();
+  // ارجاع‌های cf:N بعد از حذف باید یکی عقب بروند، وگرنه افکت اشتباه پخش می‌شود
+  if (CSET.remove(cfIdx)) remapCustomRefs(cfIdx, sections(), lineFx);
+  cfIdx = 0; saveState(); syncCode(); buildSecList(); buildStrip(); draw();
 };
 $('#cdCopy').onclick = async () => {
   try { await navigator.clipboard.writeText($('#cdText').value); setCdMsg('کپی شد', 'ok'); }
@@ -1342,51 +1570,66 @@ $('#cdSnip').onchange = e => {
   curCf().compile(ta.value); saveState(); draw(); showCodeMsg();
 };
 
-/* ── آموزش ───────────────────────────────────────────────── */
-function buildLessons() {
-  $('#lnBody').classList.add('hidden');
-  $('#lnList').classList.remove('hidden');
-  $('#lnHead').textContent = 'آموزش';
-  const host = $('#lnList');
-  if (host.childElementCount) return;
-  for (const cat of CATEGORIES) {
-    const items = LESSONS.filter(l => l.cat === cat);
-    if (!items.length) continue;
-    const h = document.createElement('div');
-    h.className = 'lcat'; h.textContent = cat;
-    const g = document.createElement('div');
-    g.className = 'lgrid';
-    for (const L of items) {
-      const i = LESSONS.indexOf(L) + 1;
-      const el = document.createElement('div');
-      el.className = 'litem';
-      el.innerHTML = `<div class="n"></div><div><div class="lt"></div><div class="lo"></div></div>`;
-      el.querySelector('.n').textContent = faN(i);
-      el.querySelector('.lt').textContent = L.title;
-      el.querySelector('.lo').textContent = L.one;
-      el.onclick = () => openLesson(L);
-      g.append(el);
-    }
-    host.append(h, g);
-  }
-}
-function openLesson(L) {
-  const b = $('#lnBody');
-  const esc = t => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  let html = `<h3>${esc(L.title)}</h3>`;
-  html += `<div class="lvl">۱ · شهود</div><p class="big">${esc(L.one)}</p>`;
-  html += `<div class="lvl">۲ · تشبیه</div><p>${esc(L.like)}</p>`;
-  if (L.svg) html += L.svg;
-  html += `<div class="lvl">۳ · ساز و کار</div><p>${esc(L.how)}</p>`;
-  if (L.code) html += `<div class="lvl">۴ · کد</div><pre>${esc(L.code)}</pre>`;
-  if (L.note) html += `<div class="nb">${esc(L.note)}</div>`;
-  b.innerHTML = html;
-  b.classList.remove('hidden');
-  $('#lnList').classList.add('hidden');
-  $('#lnHead').textContent = L.title;
-  document.querySelector('.screen[data-screen="learn"] .scroll').scrollTop = 0;
+/* ── پنل‌های مستقل ─────────────────────────────────────────
+   هر پنل بزرگ کلاس خودش را دارد و فقط از راه «host» با برنامه حرف
+   می‌زند؛ این‌طوری main.js فقط سیم‌کشی است و هر بخش جدا خوانا می‌ماند. */
+let mpSelecting = false;
+
+async function addMediaFile(file) {
+  const type = file.type.startsWith('video') ? 'video' : file.type.startsWith('image') ? 'image' : null;
+  if (!type) { alert('فقط عکس یا ویدیو'); return null; }
+  const rec = { id: uid('md'), projectId: app.projectId, type, name: file.name, blob: file };
+  try { await Library.putMedia(rec); } catch (e) { console.warn('media save', e); }
+  MEDIA.add(rec);
+  $('#noAudio').classList.add('hidden');
+  return rec;
 }
 
+const MP = new MotionPanel($('#mpRoot'), {
+  getLayers: () => layers,
+  getTime: () => app.t,
+  seek: v => seek(v),
+  draw: () => { $('#noAudio').classList.add('hidden'); draw(); TL.draw(); },
+  save: () => saveState(),
+  select: id => {
+    mpSelecting = true;
+    try { TL.choose(id ? { kind: 'layer', id } : null); } finally { mpSelecting = false; }
+  },
+  selectedId: () => selLayerId,
+  renderer: R, stage, canvas, media: MEDIA,
+  addMediaFile,
+  duration: () => app.duration,
+  W: () => SONG.W, H: () => SONG.H,
+  isPaneOpen: () => app.pane === 'layers' && $('#panes').classList.contains('open'),
+  playRange,
+  openLearn: () => { lessonReturn = 'editor'; screen('learn'); },
+});
+MP.attachGizmo();
+
+const FF = new FFmpegPanel($('#ffRoot'), {
+  getLastExport: () => lastExport,
+  save: (blob, name) => saveFile(blob, name),
+  share: uri => shareFile(uri),
+});
+
+const LS = new Lessons({
+  list: $('#lnList'), body: $('#lnBody'), head: $('#lnHead'),
+  scroller: () => document.querySelector('.screen[data-screen="learn"] .scroll'),
+}, {
+  // کد زمین بازی را به‌صورت یک لایهٔ کد به پروژهٔ باز اضافه کن
+  tryInProject(code) {
+    lessonReturn = 'library';
+    screen('editor');
+    go('layers');
+    const L = MP.add('code');
+    L.data.code = code;
+    MP.render(); saveState(); draw();
+  },
+});
+
+$('#undoBtn').onclick = () => histGo(-1);
+$('#redoBtn').onclick = () => histGo(1);
+$('#noAudioLayers').onclick = () => { $('#noAudio').classList.add('hidden'); go('layers'); };
 
 /* ── رویدادهای عمومی ─────────────────────────────────────── */
 $('#play').onclick = toggle;
@@ -1403,7 +1646,7 @@ function sizePane() {
   const body = document.querySelector('.ebody');
   if (!body) return;
   const h = body.clientHeight;
-  const chrome = 60 + 153 + ($('#clipBar').classList.contains('hidden') ? 0 : 58);
+  const chrome = 60 + TL_HEIGHT + 2 + ($('#clipBar').classList.contains('hidden') ? 0 : 58);
   const avail = Math.max(120, h - chrome - 110);   // ۱۱۰ = کمینهٔ صحنه
   const paneH = Math.round(Math.min(avail, Math.max(180, h * 0.40)));
   document.documentElement.style.setProperty('--paneH', paneH + 'px');
@@ -1415,6 +1658,13 @@ if (window.ResizeObserver) {
   new ResizeObserver(() => { sizePane(); }).observe(document.querySelector('.ebody'));
 }
 window.addEventListener('keydown', e => {
+  // وقتی کاربر در جعبهٔ متن یا کد تایپ می‌کند، فاصله و جهت‌ها مال همان جعبه‌اند
+  // (قبلاً فاصله‌زدن در ویرایشگر کد آهنگ را پخش/توقف می‌کرد)
+  const tg = e.target;
+  if (tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName))) return;
+  if (APP.dataset.screen !== 'editor') return;
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); histGo(e.shiftKey ? 1 : -1); return; }
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyY') { e.preventDefault(); histGo(1); return; }
   if (app.pane === 'words' && R.selected && e.code.startsWith('Arrow')) {
     const s = e.shiftKey ? 10 : 1;
     const d = { ArrowLeft: [-s, 0], ArrowRight: [s, 0], ArrowUp: [0, -s], ArrowDown: [0, s] }[e.code];
@@ -1450,6 +1700,10 @@ window.__studio = {
   get texts() { return texts; },
   get overrides() { return OV; },
   get look() { return look; },
+  get layers() { return layers; },
+  get media() { return MEDIA; },
+  get motionPanel() { return MP; },
+  undo: () => histGo(-1), redo: () => histGo(1),
   exportVideo, canExport,
 };
 window.addEventListener('seek-test', e => seek(e.detail));
@@ -1458,3 +1712,4 @@ boot().catch(err => {
   console.error(err);
   $('#loading').textContent = 'خطا: ' + err.message;
 });
+

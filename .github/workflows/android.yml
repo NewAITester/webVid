@@ -2,7 +2,7 @@ name: ساخت APK اندروید
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**']
   workflow_dispatch:
     inputs:
       release:
@@ -44,12 +44,15 @@ jobs:
           restore-keys: gradle-${{ runner.os }}-
 
       - name: نصب وابستگی‌ها
-        run: npm ci
+        # npm install (نه npm ci): وابستگی‌های FFmpeg تازه اضافه شده‌اند و
+        # قفل‌فایل را خود npm به‌روز می‌کند
+        run: npm install --no-audit --no-fund
 
       - name: تست موتور
         run: |
           node tests/engine.test.mjs
           node tests/song.test.mjs
+          node tests/motion.test.mjs
 
       - name: بیلد وب
         run: npm run build
@@ -105,3 +108,4 @@ jobs:
             - کاملاً آفلاین (آهنگ، فونت‌ها و شعر داخل اپ)
             - امضای debug — هنگام نصب باید «نصب از منابع ناشناس» را اجازه بدهید
           files: ${{ steps.apk.outputs.path }}
+
