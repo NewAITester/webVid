@@ -12,6 +12,7 @@ import { W, H, S, SF } from './song.js';
 import { clamp, hash, rgba } from './core.js';
 import { textFa } from './draw.js';
 import { FONTS } from './text.js';
+import * as REEL from './reelfx.js';
 
 export const IDLE_DEFAULT_OPT = { amt: 1, minGap: 3, color: '' };
 
@@ -266,6 +267,25 @@ export const IDLE_FX = {
     },
   },
 };
+
+/* قطعه‌های شوریل: در فاصله‌های بی‌کلام با ضرب آهنگ تکان می‌خورند */
+const R = (song, t) => REEL.envFromSong(song, t, W, H);
+Object.assign(IDLE_FX, {
+  swarm: { label: '✦ کهکشان ذرات', icon: '✺', draw(ctx, song, t, acc, kick, k) { REEL.vortex(ctx, R(song, t), { c1: acc, c2: '#18E0FF', a: k, n: 900 }); } },
+  morph: { label: '✦ دگردیسی شکل‌ها', icon: '◆', draw(ctx, song, t, acc, kick, k) { REEL.morph(ctx, R(song, t), { c1: acc, c2: '#F6F3EC', a: k }); } },
+  wire: { label: '✦ بیست‌وجهی سیمی', icon: '⬡', draw(ctx, song, t, acc, kick, k) { REEL.wire(ctx, R(song, t), { c1: '#18E0FF', c2: acc, a: k }); } },
+  warp: { label: '✦ پرواز در ستاره‌ها', icon: '✧', draw(ctx, song, t, acc, kick, k) { REEL.starfield(ctx, R(song, t), { a: k, n: 500 }); } },
+  shockb: { label: '✦ انفجار ذرات روی ضرب', icon: '✹', draw(ctx, song, t, acc, kick, k) { REEL.burst(ctx, R(song, t), { c1: acc, c2: '#FFD447', a: k }); } },
+  logo: {
+    label: '✦ نام آهنگ از ذره‌ها', icon: '⁂',
+    draw(ctx, song, t, acc, kick, k, w) {
+      // ذره‌ها در نیمهٔ اول فاصله جمع می‌شوند و نزدیک خط بعد دوباره پخش
+      const span = Math.max(0.5, w.t1 - w.t0), u = (t - w.t0) / span;
+      const kk = Math.min(REEL.clamp(u * 2.2), w.next < 0 ? 1 : REEL.clamp((1 - u) * 4));
+      REEL.swarmText(ctx, R(song, t), { text: song.title || 'MOTION', k: kk, a: k, c1: '#F6F3EC', c2: acc, n: 1400, w: W * 0.7 });
+    },
+  },
+});
 
 export const IDLE_IDS = Object.keys(IDLE_FX);
 

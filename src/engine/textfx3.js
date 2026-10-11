@@ -3,6 +3,7 @@ import { clamp, ease, hash, hexToRgb } from './core.js';
 import { place, modeFor } from './layout.js';
 import { textFa, outlineTextFa, DRAW, ghostHidden } from './draw.js';
 import { applyOverrides } from './overrides.js';
+import * as REEL from './reelfx.js';
 import { FONTS, font } from './text.js';
 
 /**
@@ -22,14 +23,15 @@ export const MIX_OPTS = [
     ['synth', 'سینت‌ویو'], ['lasers', 'لیزر'], ['bokeh', 'بوکه'], ['halftone', 'نقطه‌های کمیک'], ['stripes', 'راه‌راه'],
     ['stars', 'پرواز در ستاره‌ها'], ['vhs', 'نوار VHS'], ['paper', 'کاغذ روشن'], ['aurora', 'شفق'], ['embers', 'آتش و جرقه'],
     ['tunnel', 'تونل'], ['eq', 'اکولایزر'], ['rain', 'باران'], ['checker', 'شطرنجی'], ['waves', 'خط‌های موج'],
-    ['film', 'فیلم قدیمی'], ['rays', 'پرتو نور از بالا'], ['confetti', 'جشن کاغذرنگی'], ['neonframe', 'قاب نئون'], ['liquid', 'مایع رنگی']] },
+    ['film', 'فیلم قدیمی'], ['rays', 'پرتو نور از بالا'], ['confetti', 'جشن کاغذرنگی'], ['neonframe', 'قاب نئون'], ['liquid', 'مایع رنگی'],
+    ['swarm', '✦ کهکشان ذرات'], ['burstbg', '✦ انفجار روی ضرب'], ['morph', '✦ دگردیسی شکل‌ها'], ['wire', '✦ بیست‌وجهی سیمی'], ['warp', '✦ پرواز سریع'], ['grid3d', '✦ زمین نئونی'], ['eqring', '✦ اکولایزر حلقه‌ای']] },
   { k: 'bgA', label: 'رنگ ۱ پس‌زمینه', color: true },
   { k: 'bgB', label: 'رنگ ۲ پس‌زمینه', color: true },
   { k: 'enter', label: 'ورود کلمه', ch: [
     ['pop', 'پاپ فنری'], ['rise', 'بالا آمدن'], ['drop', 'افتادن'], ['slide', 'سُر از کنار'],
     ['zoom', 'زوم از جلو'], ['blur', 'از تاری'], ['spin', 'چرخشی'], ['flip', 'ورق خوردن'],
     ['type', 'تایپ'], ['stretch', 'کش‌سان'], ['glitch', 'گلیچ'], ['swing', 'تاب خوردن'], ['bounceIn', 'توپی'],
-    ['scatterIn', 'جمع شدن از اطراف'], ['stamp', 'مُهر'], ['mask', 'پرده از پایین'], ['fade', 'محو آرام'], ['none', 'بدون حرکت']] },
+    ['scatterIn', 'جمع شدن از اطراف'], ['stamp', 'مُهر'], ['mask', 'پرده از پایین'], ['fade', 'محو آرام'], ['slam', '✦ کوبنده (شوریل)'], ['none', 'بدون حرکت']] },
   { k: 'reveal', label: 'زمان ورود', ch: [['timed', 'هر کلمه سر وقت خودش'], ['all', 'کل خط با هم']] },
   { k: 'layout', label: 'چیدمان', ch: [['line', 'خط معمولی'], ['big', 'درشت (کرس)'], ['solo', 'تک‌کلمهٔ غول‌پیکر']] },
   { k: 'emph', label: 'کلمهٔ فعال', ch: [
@@ -39,7 +41,7 @@ export const MIX_OPTS = [
   { k: 'deco', label: 'تزئین', ch: [
     ['none', 'بدون'], ['pill', 'کپسول پشت خط'], ['sticker', 'استیکر هر کلمه'], ['bars', 'خط‌های بالا و پایین'],
     ['burst', 'پرتو روی ضرب کلمه'], ['ring', 'موج دایره'], ['confetti', 'کاغذرنگی'], ['brackets', 'گوشه‌های قاب'],
-    ['frame', 'قاب دور خط'], ['hearts', 'قلب‌های پرنده'], ['sparkle', 'ستاره‌ریز']] },
+    ['frame', 'قاب دور خط'], ['hearts', 'قلب‌های پرنده'], ['sparkle', 'ستاره‌ریز'], ['speed', '✦ خط‌های سرعت (شوریل)']] },
   { k: 'shadow', label: 'سایه', ch: [['none', 'بدون'], ['hard', 'سایهٔ تخت (پاپ‌آرت)'], ['soft', 'نرم'], ['long', 'بلند'], ['neon', 'نئون']] },
   { k: 'palette', label: 'پالت', ch: [
     ['mono', 'سفید + رنگ تأکید'], ['rainbow', 'رنگین‌کمان'], ['sunset', 'غروب'], ['candy', 'آب‌نباتی'],
@@ -163,6 +165,23 @@ VIDEO_PRESETS.push(
     { bg: 'neonframe', bgA: '#06040C', bgB: '#00F0FF', enter: 'mask', shadow: 'neon', emph: 'scale', palette: 'duo', text: '#FFFFFF', hi: '#FF2E97', beat: 0.9 }),
   P('vs_liquid', 'مایع رنگی', 'رنگ‌های روان و درخشان مثل جوهر در آب',
     { bg: 'liquid', bgA: '#0A0614', bgB: '#FF2E97', enter: 'stretch', emph: 'scale', shadow: 'hard', text: '#FFFFFF', hi: '#FFE14F', beat: 0.8 }),
+);
+/* قطعه‌های شوریل موشن به‌شکل استایل ویدیو */
+VIDEO_PRESETS.push(
+  P('vs_reel_galaxy', '✦ کهکشان ذرات', 'هزار ذره در یک گرداب که با هر ضرب به بیرون پرت می‌شوند',
+    { bg: 'swarm', bgA: '#05030D', bgB: '#E4142A', enter: 'blur', reveal: 'all', emph: 'glow', palette: 'ice', hi: '#9BE7FF', shadow: 'soft', beat: 0.7, exit: 'blur' }),
+  P('vs_reel_burst', '✦ انفجار ضربی', 'روی هر ضرب یک انفجار ذره و موج ضربه',
+    { bg: 'burstbg', bgA: '#07070C', bgB: '#E4142A', enter: 'slam', deco: 'speed', emph: 'scale', hi: '#FFD447', shadow: 'hard', layout: 'big', beat: 1.3, exit: 'zoom' }),
+  P('vs_reel_shapes', '✦ دگردیسی شکل‌ها', 'دایره، مثلث، مربع و ستاره که روی ضرب به هم تبدیل می‌شوند',
+    { bg: 'morph', bgA: '#E4142A', bgB: '#F6F3EC', enter: 'pop', emph: 'box', box: '#07070C', text: '#F6F3EC', hi: '#FFD447', shadow: 'hard', beat: 0.9 }),
+  P('vs_reel_wire', '✦ سه‌بعدی سیمی', 'بیست‌وجهی نئونی چرخان و پرواز در ستاره‌ها',
+    { bg: 'wire', bgA: '#060A1A', bgB: '#18E0FF', enter: 'glitch', deco: 'brackets', emph: 'glow', palette: 'ice', hi: '#18E0FF', shadow: 'neon', beat: 0.8 }),
+  P('vs_reel_type', '✦ تایپوگرافی کوبنده', 'کلمهٔ غول‌پیکر که می‌کوبد، با خط‌های سرعت',
+    { bg: 'warp', bgA: '#07070C', bgB: '#F6F3EC', enter: 'slam', deco: 'speed', layout: 'solo', emph: 'none', shadow: 'long', text: '#F6F3EC', hi: '#E4142A', beat: 1, ghost: 0, exit: 'zoom' }),
+  P('vs_reel_grid', '✦ زمین نئونی', 'خورشید راه‌راه، شهر اکولایزری و زمین شبکه‌ای',
+    { bg: 'grid3d', bgA: '#05010F', bgB: '#FF2E97', enter: 'mask', emph: 'scale', text: '#FFFFFF', hi: '#18E0FF', shadow: 'hard', layout: 'big', beat: 0.9 }),
+  P('vs_reel_eq', '✦ اکولایزر حلقه‌ای', 'حلقهٔ میله‌های صدا دور شعر',
+    { bg: 'eqring', bgA: '#0A0710', bgB: '#E4142A', enter: 'zoom', emph: 'scale', hi: '#FFD447', shadow: 'soft', beat: 1 }),
 );
 MG_PRESETS.push(...VIDEO_PRESETS);
 export const MG_LABELS = Object.fromEntries(MG_PRESETS.map(p => [p.id, p.name]));
@@ -311,6 +330,13 @@ function enterT(o, k, it, i, t) {
       if (e > 0.7) r.dx = Math.sin(e * 60) * it.size * 0.04 * (1 - e) * 3;
       break;
     }
+    case 'slam': {
+      // از خیلی بزرگ می‌کوبد، لرزش کوتاه و جدا شدن رنگ — مثل شوریل
+      const b = REEL.E.out5(clamp(e * 1.25));
+      r.sx = r.sy = 1 + (1 - b) * 1.9; r.rot = (1 - b) * -0.06; r.a = clamp(e * 6);
+      if (e > 0.25 && e < 0.9) { const q = (0.9 - e) * it.size * 0.07; r.dx = Math.sin(e * 90) * q; r.dy = Math.cos(e * 70) * q; }
+      r.rgb = (1 - b) * it.size * 0.1; break;
+    }
     case 'mask': r.clipY = ease.outCubic(e); r.dy = (1 - ease.outCubic(e)) * it.size * 0.5; break;
     case 'fade': r.a = ease.inOutCubic ? ease.inOutCubic(e) : e; break;
     case 'glitch': {
@@ -362,6 +388,16 @@ function decoHit(ctx, o, it, dt, col, i) {
       ctx.beginPath(); ctx.moveTo(Math.cos(an) * r0, Math.sin(an) * r0 * 0.6); ctx.lineTo(Math.cos(an) * r1, Math.sin(an) * r1 * 0.6); ctx.stroke();
     }
     ctx.restore();
+  } else if (o.deco === 'speed') {
+    const k = 1 - clamp(dt / 0.5);
+    if (k > 0) {
+      ctx.save(); ctx.strokeStyle = col; ctx.globalAlpha = 0.75 * k; ctx.lineWidth = 3 * sc; ctx.lineCap = 'round'; ctx.beginPath();
+      for (let j = 0; j < 16; j++) {
+        const an = hash(i * 11 + j) * Math.PI * 2, r0 = (it.w / 2 + z * 0.3) * (1 + (1 - k) * 0.6), L = z * 0.9 * k;
+        ctx.moveTo(Math.cos(an) * r0, Math.sin(an) * r0 * 0.6); ctx.lineTo(Math.cos(an) * (r0 + L), Math.sin(an) * (r0 + L) * 0.6);
+      }
+      ctx.stroke(); ctx.restore();
+    }
   } else if (o.deco === 'ring') {
     const k = ease.outCubic(clamp(dt / 0.7));
     ctx.save(); ctx.strokeStyle = col; ctx.globalAlpha = (1 - k) * 0.9; ctx.lineWidth = 4 * sc * (1 - k) + 1;
@@ -975,6 +1011,19 @@ function paintBg(ctx, song, t, acc, kick, o, soft) {
         ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       }
       ctx.globalCompositeOperation = 'source-over';
+      break;
+    }
+    /* ── قطعه‌های شوریل (reelfx) — همه با ضرب آهنگ تکان می‌خورند ── */
+    case 'swarm': case 'burstbg': case 'morph': case 'wire': case 'warp': case 'grid3d': case 'eqring': {
+      const env = REEL.envFromSong(song, t, W, H);
+      const C2 = mix2(B, '#FFFFFF', 0.35);
+      if (o.bg === 'swarm') REEL.vortex(ctx, env, { c1: B, c2: o.bgB2 || '#18E0FF', n: 1000 });
+      else if (o.bg === 'burstbg') { REEL.starfield(ctx, env, { n: 260, c: C2, a: 0.6 }); REEL.burst(ctx, env, { c1: B, c2: '#FFD447' }); }
+      else if (o.bg === 'morph') { ctx.globalAlpha = 0.55; REEL.morph(ctx, env, { c1: mix2(A, B, 0.6), c2: C2, r: Math.min(W, H) * 0.3 }); ctx.globalAlpha = 1; }
+      else if (o.bg === 'wire') { REEL.starfield(ctx, env, { n: 420, c: B, a: 0.8 }); ctx.globalAlpha = 0.7; REEL.wire(ctx, env, { c1: B, c2: '#FF2E97', r: Math.min(W, H) * 0.3 }); ctx.globalAlpha = 1; }
+      else if (o.bg === 'warp') REEL.starfield(ctx, env, { n: 650, c: C2, speed: 1.5 });
+      else if (o.bg === 'grid3d') REEL.grid3d(ctx, env, { c1: B, c2: '#18E0FF', horizon: 0.74 });
+      else if (o.bg === 'eqring') { REEL.eqRing(ctx, env, { c1: B, c2: C2, r: Math.min(W, H) * 0.36 }); }
       break;
     }
     case 'embers': {

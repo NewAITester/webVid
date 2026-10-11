@@ -2232,6 +2232,18 @@ async function doImport(text) {
     msg.textContent = 'وارد نشد: ' + (e.message || e);
   }
 }
+/* نمونهٔ آماده: شوریل موشن — همهٔ قطعه‌های شوریل داخل بخش‌های برنامه */
+$('#reelTpl')?.addEventListener('click', async e => {
+  const b = e.currentTarget, old = b.textContent;
+  b.disabled = true; b.textContent = 'در حال آماده‌سازی…';
+  try {
+    const r = await fetch(import.meta.env.BASE_URL + 'templates/motion-reel.lyricstudio.json');
+    if (!r.ok) throw new Error('فایل نمونه پیدا نشد');
+    await doImport(await r.text());
+    if ($('#imMsg').classList.contains('err')) throw new Error($('#imMsg').textContent);
+  } catch (err) { alert('نمونه باز نشد: ' + (err.message || err)); }
+  finally { b.disabled = false; b.textContent = old; }
+});
 async function exportProjectFile(withMedia) {
   const msg = $('#pjMsg');
   try {

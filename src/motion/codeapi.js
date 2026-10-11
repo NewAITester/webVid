@@ -1,5 +1,6 @@
 import { EASINGS } from './easing.js';
 import { noise } from './expr.js';
+import { reelApi, envFromSong, envFromBeats } from '../engine/reelfx.js';
 
 /**
  * جعبه‌ابزار «لایهٔ کد» — ساده برای تازه‌کارها
@@ -114,7 +115,17 @@ export function codeEnv(o) {
     ...MATH,
     ...drawHelpers(o.ctx),
     fx: o.fx || {},
+    /* قطعه‌های شوریل: e.reel.vortex({...}) — مبدأ وسط لایه، اندازه = کادر لایه */
+    get reel() { return reelLayer(o.ctx, o, time); },
   };
+}
+function reelLayer(ctx, o, time) {
+  const w = o.P?.w ?? 800, h = o.P?.h ?? 800;
+  const env = o.song ? envFromSong(o.song, time, w, h) : envFromBeats([], time, w, h);
+  if (o.pulse != null && !o.song) env.pulse = o.pulse;
+  const api = reelApi(ctx, env), out = {};
+  for (const [k, fn] of Object.entries(api)) out[k] = (...a) => { ctx.save(); ctx.translate(-w / 2, -h / 2); try { fn(...a); } finally { ctx.restore(); } };
+  return out;
 }
 
 const _cache = new Map();
@@ -146,6 +157,27 @@ for (let i = 0; i < n; i++) {
 
 /** نمونه‌کدهای آماده برای لایهٔ کد — هرکدام یک ایدهٔ کامل و کوتاه */
 export const CODE_SNIPPETS = {
+  'شوریل: کهکشان ذرات': `// هزار ذره در یک گرداب؛ با هر ضرب به بیرون پرت می‌شوند
+// p1 = تعداد، c1 و c2 = رنگ‌ها
+e.reel.vortex({ n: 300 + e.p1 * 14, c1: e.c1, c2: e.c2, spin: 1 })`,
+  'شوریل: انفجار ضربی': `// روی هر ضرب: انفجار ذره + موج ضربه + فلاش
+e.reel.burst({ cx: e.w / 2, cy: e.h / 2, n: 30 + e.p1, c1: e.c1, c2: e.c2 })`,
+  'شوریل: دگردیسی شکل‌ها': `// دایره ← مثلث ← مربع ← پنج‌ضلعی ← شش‌ضلعی ← ستاره، هر ضرب یکی
+e.reel.morph({ c1: e.c1, c2: e.c2, r: Math.min(e.w, e.h) * 0.3 })`,
+  'شوریل: بیست‌وجهی سیمی': `// جسم سه‌بعدی سیمی که می‌چرخد و روی ضرب می‌تپد
+e.reel.wire({ c1: e.c1, c2: e.c2, shape: e.p1 > 50 ? 'cube' : 'ico' })`,
+  'شوریل: پرواز در ستاره‌ها': `// وارپ: ستاره‌ها از وسط به بیرون می‌آیند، با ضرب تندتر
+e.reel.starfield({ n: 200 + e.p1 * 8, c: e.c2, speed: 0.5 + e.p2 / 50 })`,
+  'شوریل: زمین نئونی': `// خورشید راه‌راه + شهر اکولایزری + زمین شبکه‌ای متحرک
+e.reel.grid3d({ c1: e.c1, c2: e.c2 })`,
+  'شوریل: اکولایزر حلقه‌ای': `// میله‌های صدا دور یک دایره
+e.reel.eqRing({ c1: e.c1, c2: e.c2, r: Math.min(e.w, e.h) * 0.3 })`,
+  'شوریل: نوشتهٔ ذره‌ای': `// ذره‌ها جمع می‌شوند و نوشته را می‌سازند (نیمهٔ اول لایه)
+e.reel.swarmText({ text: 'MOTION', k: e.ease('inOutCubic', e.p * 2), c1: e.c2, c2: e.c1, w: e.w * 0.9 })`,
+  'شوریل: کلمهٔ کوبنده': `// کلمه از خیلی بزرگ می‌کوبد، می‌لرزد و خط سرعت می‌گیرد
+e.reel.slamText({ text: 'حرکت', d: e.t, c: e.c2, c2: e.c1, size: e.h * 0.5 })`,
+  'شوریل: گذار نوارهای رنگی': `// گذار: نوارهای مورب صفحه را می‌پوشانند و باز می‌کنند (لایه را تمام‌صفحه بگذارید)
+e.reel.wipe(e.p, { cols: [e.c1, '#FFD447', '#18E0FF', '#0B0B12'] })`,
   'حلقه‌های ضربی': `// سه حلقه که با هر ضرب آهنگ بزرگ می‌شوند
 for (let i = 0; i < 3; i++) {
   const r = 120 + i * 110 + e.kick * 90;

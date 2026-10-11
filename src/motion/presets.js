@@ -65,6 +65,8 @@ export const TEXT_STYLES = [
     anim: A('pop', 0.4, 'fade', 0.3, 'beat', 1, 120) },
   { id: 'subtitle', label: 'زیرنویس', ic: '⎁', props: { fill: '#FFFFFF', size: 64, bg: '#000000A6', bgPad: 18, bgR: 10 },
     place: (L, W, H) => { L.props.y = { v: Math.round(H * 0.36) }; }, anim: A('fade', 0.2, 'fade', 0.2) },
+  { id: 'slam', label: '✦ کوبنده (شوریل)', ic: '💢', props: { fill: '#F6F3EC' },
+    fx: [['extrude', { len: 18, ang: 45, color: '#E4142A' }], ['rgb', { amt: 4 }]], anim: A('zoomBlur', 0.3, 'zoomOut', 0.25, 'beat', 1, 140) },
   { id: 'retro', label: 'رترو VHS', ic: '📼', props: { fill: '#FFDEE9' },
     fx: [['vhs', { amt: 70 }], ['glow', { r: 12, amt: 60, color: '#FF4FD8' }]], anim: A('tvOn', 0.5, 'tvOn', 0.35) },
 ];
@@ -122,6 +124,17 @@ export const ELEMENTS = [
   { id: 'stars', label: 'آسمان پرستاره', ic: '✦', type: 'code', code: 'ستاره‌های چشمک‌زن', props: { w: 1200, h: 1800 } },
   { id: 'beatRings', label: 'حلقه‌های ضربی', ic: '◎', type: 'code', code: 'حلقه‌های ضربی' },
   { id: 'progress', label: 'نوار پیشرفت', ic: '▰', type: 'code', code: 'نوار پیشرفت', props: { w: 900, h: 60 } },
+  /* قطعه‌های شوریل موشن — همه با ضرب آهنگ تکان می‌خورند (کد قابل ویرایش است) */
+  { id: 'reelVortex', label: '✦ کهکشان ذرات', ic: '🌀', type: 'code', code: 'شوریل: کهکشان ذرات', props: { w: 1400, h: 1000, c1: '#E4142A', c2: '#18E0FF' } },
+  { id: 'reelBurst', label: '✦ انفجار ضربی', ic: '💥', type: 'code', code: 'شوریل: انفجار ضربی', props: { w: 1000, h: 1000, c1: '#E4142A', c2: '#FFD447' } },
+  { id: 'reelMorph', label: '✦ دگردیسی شکل‌ها', ic: '◆', type: 'code', code: 'شوریل: دگردیسی شکل‌ها', props: { w: 800, h: 800, c1: '#E4142A', c2: '#F6F3EC' } },
+  { id: 'reelWire', label: '✦ بیست‌وجهی سیمی', ic: '⬡', type: 'code', code: 'شوریل: بیست‌وجهی سیمی', props: { w: 800, h: 800, c1: '#18E0FF', c2: '#FF2E97' } },
+  { id: 'reelWarp', label: '✦ پرواز در ستاره‌ها', ic: '✧', type: 'code', code: 'شوریل: پرواز در ستاره‌ها', props: { w: 1920, h: 1920, c2: '#FFFFFF' } },
+  { id: 'reelGrid', label: '✦ زمین نئونی', ic: '🌅', type: 'code', code: 'شوریل: زمین نئونی', props: { w: 1920, h: 1080, c1: '#FF2E97', c2: '#18E0FF' } },
+  { id: 'reelEq', label: '✦ اکولایزر حلقه‌ای', ic: '✹', type: 'code', code: 'شوریل: اکولایزر حلقه‌ای', props: { w: 800, h: 800, c1: '#E4142A', c2: '#F6F3EC' } },
+  { id: 'reelSwarmText', label: '✦ نوشتهٔ ذره‌ای', ic: '⁂', type: 'code', code: 'شوریل: نوشتهٔ ذره‌ای', props: { w: 1200, h: 500, c1: '#E4142A', c2: '#F6F3EC' } },
+  { id: 'reelSlam', label: '✦ کلمهٔ کوبنده', ic: '💢', type: 'code', code: 'شوریل: کلمهٔ کوبنده', props: { w: 1200, h: 500, c1: '#E4142A', c2: '#F6F3EC' } },
+  { id: 'reelWipe', label: '✦ گذار نوارهای رنگی', ic: '▧', type: 'code', code: 'شوریل: گذار نوارهای رنگی', props: { w: 1920, h: 1920, c1: '#E4142A' } },
   { id: 'vignetteAll', label: 'سایهٔ لبهٔ کل تصویر', ic: '◎', type: 'adjust', fx: [['vignette', { amt: 65 }]], noDefaultFx: true },
   { id: 'filmAll', label: 'حس فیلم روی همه', ic: '🎞', type: 'adjust', fx: [['grain', { amt: 25 }], ['vignette', { amt: 40 }], ['color', { contrast: 110, sat: 90 }]], noDefaultFx: true },
 ];
