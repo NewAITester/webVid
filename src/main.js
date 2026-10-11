@@ -2163,6 +2163,16 @@ const MP = new MotionPanel($('#mpRoot'), {
   addMediaFile,
   duration: () => app.duration,
   W: () => SONG.W, H: () => SONG.H,
+  bpm: () => {               // سرعت آهنگ از فاصلهٔ ضرب‌ها (میانه)
+    const b = app.song?.beats;
+    if (!b || b.length < 4) return 120;
+    const d = []; for (let i = 1; i < b.length; i++) d.push(b[i] - b[i - 1]);
+    d.sort((x, y) => x - y);
+    const m = d[d.length >> 1];
+    return m > 0.2 && m < 2 ? Math.round(600 / m) / 10 : 120;
+  },
+  title: () => app.song?.title || '',
+  saveFile: (blob, name) => saveFile(blob, name),
   isPaneOpen: () => app.pane === 'layers' && $('#panes').classList.contains('open'),
   playRange,
   openLearn: () => { lessonReturn = 'editor'; screen('learn'); },

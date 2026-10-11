@@ -16,6 +16,8 @@ import { FONT_CHOICES } from '../motion/render.js';
 import { frameEnv } from '../motion/evaluate.js';
 import * as M from '../motion/mat.js';
 import { pickFontFile, userFonts, removeFont } from '../motion/fonts.js';
+import { ELEMENT_KINDS, ELEMENT_CATS, colorProp, elementParams, setElementParam, swapElement, findTweaks, setTweak } from '../motion/elements.js';
+import { openScriptSheet } from './scriptpanel.js';
 
 /** نشانهٔ ردیف «شعر» در ترتیب لایه‌ها */
 const LYRIC = { lyric: true };
@@ -171,6 +173,8 @@ export class MotionPanel {
         h('div', { class: 'sscroll' },
           grp('لایهٔ خالی', 'از صفر بسازید', ...basic),
           grp('متن آماده', 'یک ضربه = متن با رنگ، افکت و انیمیشن', ...styles),
+          grp('کد و اسکریپت', 'کل ویدیو را با کد بنویسید، بعد دستی ویرایش کنید',
+            tile('📜', 'موشن‌اسکریپت', 'صحنه‌ها با کد ← لایه‌ها', run(() => this.openScript(), false))),
           grp('عنصرهای آماده', 'شکل متحرک، ذرات، نوار و…', ...els),
           ext.length ? grp('شعر و زیرنویس', 'برای بخش‌های آهنگ', ...ext) : null)));
     document.body.append(sheet);
@@ -179,6 +183,9 @@ export class MotionPanel {
   }
 
   pickMedia() { this._file.value = ''; this._file.click(); }
+
+  /** پنجرهٔ موشن‌اسکریپت */
+  openScript() { return openScriptSheet(this); }
 
   async _onFile() {
     const f = this._file.files?.[0];
@@ -219,6 +226,8 @@ export class MotionPanel {
       h('span', { class: 'pill' }, faN(this.layers.length))));
     R.append(h('button', { class: 'btn primary wide addbig', onclick: () => this.openAdd() },
       '＋ افزودن لایه، متن آماده یا عنصر'));
+    R.append(h('button', { class: 'btn ghost wide sm', style: { marginBottom: '10px' }, onclick: () => this.openScript() },
+      '📜 موشن‌اسکریپت — ساختن و ویرایش با کد'));
     if (!this.layers.length) {
       R.append(h('div', { class: 'empty' },
         h('div', { class: 'bigicon' }, '◧'),
@@ -246,7 +255,7 @@ export class MotionPanel {
         grip,
         h('span', { class: 'lic t-' + L.type, title: LAYER_TYPES[L.type].label }, LAYER_TYPES[L.type].icon),
         h('span', { class: 'lnm' }, L.name,
-          h('small', {}, LAYER_TYPES[L.type].label + (L.effects.length ? ` · ${faN(L.effects.length)} افکت` : '')
+          h('small', {}, (L.scene ? `🎬 ${L.scene} · ` : '') + (L.data?.el && ELEMENT_KINDS[L.data.el.kind] ? 'المان ' + ELEMENT_KINDS[L.data.el.kind].ic : LAYER_TYPES[L.type].label) + (L.effects.length ? ` · ${faN(L.effects.length)} افکت` : '')
             + ` · ${faN(L.t0.toFixed(1))}–${faN(L.t1.toFixed(1))}ث`),
           hasAnyKeys(L) ? h('em', { class: 'kf' }, ' ◆') : null),
         iconBtn(L.visible === false ? '◌' : '👁', 'نمایش', () => { L.visible = L.visible === false; this.changed(true); }),
@@ -665,7 +674,9 @@ export class MotionPanel {
       this._props(L, body, ['w', 'h', 'fill', 'fill2', 'gain', 'gap']);
       return;
     }
+    if (L.type === 'code' && L.data.el && ELEMENT_KINDS[L.data.el.kind]) { this._elementEdit(L, body); return; }
     if (L.type === 'code') {
+      this._codeTweaks(L, body);
       this._props(L, body, ['w', 'h', 'c1', 'c2', 'p1', 'p2', 'p3']);
       body.append(h('p', { class: 'note' }, 'این مقدارها در کد به شکل e.c1، e.p1 و… در دسترس‌اند — و می‌شود رویشان کی‌فریم گذاشت. کد را در زبانهٔ «{} کد» بنویسید.'));
       return;
@@ -675,6 +686,69 @@ export class MotionPanel {
       return;
     }
     body.append(h('p', { class: 'note' }, 'والد خالی دیده نمی‌شود. لایه‌های دیگر را از زبانهٔ «⚙ پیشرفته» فرزند این کنید تا با جابه‌جا کردن این، همه با هم حرکت کنند.'));
+  }
+
+  /** تنظیم‌های نام‌دار یک المان + تعویض با المان دیگر */
+  _elementEdit(L, body) {
+    const el = L.data.el, K = ELEMENT_KINDS[el.kind], p = elementParams(L);
+    const W = this.host.W(), H = this.host.H();
+    // تعویض: فهرست همهٔ المان‌ها، دسته‌بندی‌شده
+    const sw = h('select', { class: 'elswap', onchange: () => {
+      swapElement(L, sw.value, W, H); this.changed(true);
+    } });
+    for (const [cat, cl] of ELEMENT_CATS) {
+      const og = h('optgroup', { label: cl });
+      for (const [k, X] of Object.entries(ELEMENT_KINDS)) if (X.cat === cat) og.append(h('option', { value: k, selected: k === el.kind }, `${X.ic} ${X.label}`));
+      sw.append(og);
+    }
+    body.append(h('div', { class: 'elhead' }, h('span', { class: 'elic' }, K.ic),
+      h('div', {}, h('b', {}, K.label), h('small', {}, K.desc + (L.scene ? ` · صحنهٔ «${L.scene}»` : ''))),
+      h('label', { class: 'elsw' }, h('small', {}, '⇄ تعویض با'), sw)));
+    for (const d of K.params) {
+      const cp = colorProp(el.kind, d.key);
+      if (cp && L.props[cp]) {         // رنگ اصلی ← ویژگی لایه (کی‌فریم‌پذیر)
+        const def = { key: cp, label: d.label, type: 'color', def: d.def };
+        body.append(this._propRow(L, L.props[cp], def, `${L.id}.${cp}`));
+        continue;
+      }
+      if (d.type === 'num') {
+        body.append(this._staticNum(d.label, p[d.key], d.min, d.max, d.step, v => { setElementParam(L, d.key, v); }));
+      } else if (d.type === 'color') {
+        const inp = h('input', { type: 'color', value: String(p[d.key]).slice(0, 7), oninput: () => { setElementParam(L, d.key, inp.value); this.host.draw(); this.host.save(); } });
+        body.append(h('div', { class: 'ctl' }, h('label', {}, d.label), inp));
+      } else if (d.type === 'text') {
+        let t = 0;
+        const inp = h('input', { class: 'txt', type: 'text', value: p[d.key], oninput: () => {
+          clearTimeout(t); t = setTimeout(() => { setElementParam(L, d.key, inp.value); this.host.draw(); this.host.save(); }, 200);
+        } });
+        body.append(h('div', { class: 'frow' }, h('label', {}, d.label), inp));
+      } else if (d.type === 'sel') {
+        body.append(h('div', { class: 'frow' }, h('label', {}, d.label),
+          select(d.opts, p[d.key], v => { setElementParam(L, d.key, v); this.changed(); })));
+      }
+    }
+    this._props(L, body, ['w', 'h']);
+    body.append(h('p', { class: 'note' }, 'رنگ‌ها کی‌فریم می‌خورند (◆). «تعویض» زمان، جا، حرکت، افکت و رنگ‌ها را نگه می‌دارد. کد این المان در زبانهٔ «{} کد» دیده می‌شود.'));
+  }
+
+  /** «عددهای قابل تنظیم» کد آزاد: هر  const نام = مقدار; // برچسب  یک کنترل می‌شود */
+  _codeTweaks(L, body) {
+    const tws = findTweaks(L.data.code);
+    if (!tws.length) return;
+    body.append(h('div', { class: 'shead sm' }, 'مقدارهای داخل کد'));
+    for (const tw of tws) {
+      const set = v => { L.data.code = setTweak(L.data.code, tw, v); tw.value = v; this.host.draw(); this.host.save(); };
+      if (tw.type === 'num') body.append(this._staticNum(tw.label, tw.value, Math.min(tw.min, tw.value), Math.max(tw.max, tw.value), tw.step, set));
+      else if (tw.type === 'color') {
+        const inp = h('input', { type: 'color', value: tw.value.slice(0, 7), oninput: () => set(inp.value) });
+        body.append(h('div', { class: 'ctl' }, h('label', {}, tw.label), inp));
+      } else {
+        let t = 0;
+        const inp = h('input', { class: 'txt', type: 'text', value: tw.value, oninput: () => { clearTimeout(t); t = setTimeout(() => set(inp.value), 200); } });
+        body.append(h('div', { class: 'frow' }, h('label', {}, tw.label), inp));
+      }
+    }
+    body.append(h('p', { class: 'note' }, 'این کنترل‌ها از خط‌های «const نام = مقدار; // برچسب» در کد ساخته شده‌اند. بازه را می‌شود در برچسب نوشت: // سرعت [0..10]'));
   }
 
   _staticNum(label, val, min, max, step, set, unit = '') {
@@ -873,6 +947,9 @@ export class MotionPanel {
   _tabCode(L, body) {
     if (L.type === 'code') {
       const D = L.data;
+      if (D.el && ELEMENT_KINDS[D.el.kind]) body.append(h('p', { class: 'note warn' },
+        `این لایه المان «${ELEMENT_KINDS[D.el.kind].label}» است و کدش از روی تنظیم‌های زبانهٔ «✎ تنظیم» ساخته می‌شود. `
+        + 'اگر کد را دستی عوض کنید، به «لایهٔ کد آزاد» تبدیل می‌شود (تنظیم‌های نام‌دار دیگر نیستند، ولی عددهای const بالای کد قابل تنظیم می‌مانند).'));
       const ta = h('textarea', { class: 'code', spellcheck: false, value: D.code || '' });
       const msg = h('div', { class: 'msg' });
       const show = () => {
@@ -884,7 +961,10 @@ export class MotionPanel {
       let timer = 0;
       ta.oninput = () => {
         clearTimeout(timer);
-        timer = setTimeout(() => { D.code = ta.value; this.host.draw(); this.host.save(); setTimeout(show, 30); }, 300);
+        timer = setTimeout(() => {
+          if (D.el && ta.value !== D.code) delete D.el;      // ویرایش دستی ← کد آزاد
+          D.code = ta.value; this.host.draw(); this.host.save(); setTimeout(show, 30);
+        }, 300);
       };
       const sn = select([['', 'نمونه‌کدها…'], ...Object.keys(CODE_SNIPPETS).map(k => [k, k])], '', k => {
         if (!k) return;

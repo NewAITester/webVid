@@ -1,5 +1,6 @@
 import { newLayer, newEffect, LAYER_TYPES } from './schema.js';
 import { CODE_SNIPPETS } from './codeapi.js';
+import { ELEMENT_KINDS, makeElementLayer } from './elements.js';
 
 /**
  * قالب‌های آماده — یک ضربه، یک ظاهر کامل
@@ -124,17 +125,8 @@ export const ELEMENTS = [
   { id: 'stars', label: 'آسمان پرستاره', ic: '✦', type: 'code', code: 'ستاره‌های چشمک‌زن', props: { w: 1200, h: 1800 } },
   { id: 'beatRings', label: 'حلقه‌های ضربی', ic: '◎', type: 'code', code: 'حلقه‌های ضربی' },
   { id: 'progress', label: 'نوار پیشرفت', ic: '▰', type: 'code', code: 'نوار پیشرفت', props: { w: 900, h: 60 } },
-  /* قطعه‌های شوریل موشن — همه با ضرب آهنگ تکان می‌خورند (کد قابل ویرایش است) */
-  { id: 'reelVortex', label: '✦ کهکشان ذرات', ic: '🌀', type: 'code', code: 'شوریل: کهکشان ذرات', props: { w: 1400, h: 1000, c1: '#E4142A', c2: '#18E0FF' } },
-  { id: 'reelBurst', label: '✦ انفجار ضربی', ic: '💥', type: 'code', code: 'شوریل: انفجار ضربی', props: { w: 1000, h: 1000, c1: '#E4142A', c2: '#FFD447' } },
-  { id: 'reelMorph', label: '✦ دگردیسی شکل‌ها', ic: '◆', type: 'code', code: 'شوریل: دگردیسی شکل‌ها', props: { w: 800, h: 800, c1: '#E4142A', c2: '#F6F3EC' } },
-  { id: 'reelWire', label: '✦ بیست‌وجهی سیمی', ic: '⬡', type: 'code', code: 'شوریل: بیست‌وجهی سیمی', props: { w: 800, h: 800, c1: '#18E0FF', c2: '#FF2E97' } },
-  { id: 'reelWarp', label: '✦ پرواز در ستاره‌ها', ic: '✧', type: 'code', code: 'شوریل: پرواز در ستاره‌ها', props: { w: 1920, h: 1920, c2: '#FFFFFF' } },
-  { id: 'reelGrid', label: '✦ زمین نئونی', ic: '🌅', type: 'code', code: 'شوریل: زمین نئونی', props: { w: 1920, h: 1080, c1: '#FF2E97', c2: '#18E0FF' } },
-  { id: 'reelEq', label: '✦ اکولایزر حلقه‌ای', ic: '✹', type: 'code', code: 'شوریل: اکولایزر حلقه‌ای', props: { w: 800, h: 800, c1: '#E4142A', c2: '#F6F3EC' } },
-  { id: 'reelSwarmText', label: '✦ نوشتهٔ ذره‌ای', ic: '⁂', type: 'code', code: 'شوریل: نوشتهٔ ذره‌ای', props: { w: 1200, h: 500, c1: '#E4142A', c2: '#F6F3EC' } },
-  { id: 'reelSlam', label: '✦ کلمهٔ کوبنده', ic: '💢', type: 'code', code: 'شوریل: کلمهٔ کوبنده', props: { w: 1200, h: 500, c1: '#E4142A', c2: '#F6F3EC' } },
-  { id: 'reelWipe', label: '✦ گذار نوارهای رنگی', ic: '▧', type: 'code', code: 'شوریل: گذار نوارهای رنگی', props: { w: 1920, h: 1920, c1: '#E4142A' } },
+  /* قطعه‌های شوریل موشن — «المان» با تنظیم‌های نام‌دار (از elements.js)؛ قابل تعویض با هم */
+  ...Object.entries(ELEMENT_KINDS).map(([kind, K]) => ({ id: 'el_' + kind, label: '✦ ' + K.label, ic: K.ic, type: 'code', kind })),
   { id: 'vignetteAll', label: 'سایهٔ لبهٔ کل تصویر', ic: '◎', type: 'adjust', fx: [['vignette', { amt: 65 }]], noDefaultFx: true },
   { id: 'filmAll', label: 'حس فیلم روی همه', ic: '🎞', type: 'adjust', fx: [['grain', { amt: 25 }], ['vignette', { amt: 40 }], ['color', { contrast: 110, sat: 90 }]], noDefaultFx: true },
 ];
@@ -169,6 +161,12 @@ export function applyLook(L, look, replace = false) {
 
 /** لایهٔ تازه از روی یک عنصر آماده */
 export function buildElement(el, t0, dur, W = 1080, H = 1920) {
+  if (el.kind) {
+    const L = makeElementLayer(el.kind, el.p || {}, t0, dur, W, H);
+    setProps(L, el.props);
+    if (ELEMENT_KINDS[el.kind].tr) { L.t1 = +(t0 + Math.min(dur, 0.6)).toFixed(2); }
+    return L;
+  }
   const L = newLayer(el.type, t0, dur);
   L.name = el.label;
   L.data = { ...L.data, ...(el.data || {}) };
