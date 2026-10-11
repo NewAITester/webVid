@@ -221,22 +221,64 @@ function rrect(ctx, x, y, w, h, r) {
 }
 const fillA = (ctx, col, a) => { ctx.globalAlpha = clamp(a); ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1; };
 
-/** کلمه با سایهٔ انتخابی، دور (0,0) */
+/**
+ * کلمه با سایهٔ انتخابی، دور (0,0)
+ *
+ * سایهٔ نرم و نئون با shadowBlur خیلی گران‌اند (هر فریم، هر کلمه).
+ * چون اندازه و متن هر کلمه در طول خط ثابت است و حرکت با ترنسفرم
+ * انجام می‌شود، «کلمه + سایه» را یک بار روی بوم کوچکی می‌کشیم و
+ * بعد فقط همان تصویر را جابه‌جا می‌کنیم. شفافیت هم یک‌جا اعمال
+ * می‌شود، پس درز بین حروف هم پیدا نیست.
+ */
+const _spr = new Map();
+function sprite(ctx, s, size, col, o, acc) {
+  // وضوح بر پایهٔ اندازهٔ بوم (نه ترنسفرم لحظه‌ای)، تا زوم ورود هر فریم کش تازه نسازد
+  const dev = (ctx.canvas?.width || W) / W;
+  const k = Math.min(2, Math.max(0.25, Math.round(dev * 4) / 4));
+  const key = `${s}|${Math.round(size)}|${col}|${o.shadow}|${o.hi}|${acc}|${k}`;
+  let e = _spr.get(key);
+  if (e) { _spr.delete(key); _spr.set(key, e); return e; }
+  const sc = S();
+  const pad = size * 0.5 + 40 * sc;
+  const pr = document.createElement('canvas').getContext('2d');
+  pr.font = font(size, FONTS.black);
+  const w = pr.measureText(s).width;
+  const cw = Math.ceil((w + pad * 2) * k), ch = Math.ceil((size * 1.7 + pad * 2) * k);
+  if (cw > 6000 || ch > 4000 || cw < 2) return null;
+  const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+  const g = c.getContext('2d');
+  g.scale(k, k);
+  const cx = cw / k / 2, cy = ch / k / 2;
+  const prevRaw = DRAW.raw, prevNg = DRAW.noGhost;
+  DRAW.raw = true; DRAW.noGhost = false;
+  if (o.shadow === 'hard') textFa(g, s, cx + 6 * sc * (size / 90), cy + 6 * sc * (size / 90), size, okHex(o.hi) ? '#000000' : mix2(acc, '#000000', 0.35), 0.95);
+  else if (o.shadow === 'long') for (let q = 10; q >= 1; q--) textFa(g, s, cx + q * 2.2 * sc, cy + q * 2.2 * sc, size, '#000000', 0.09);
+  g.save();
+  if (o.shadow === 'soft') { g.shadowColor = 'rgba(0,0,0,.65)'; g.shadowBlur = 22 * sc * k; g.shadowOffsetY = 6 * sc * k; }
+  if (o.shadow === 'neon') { g.shadowColor = col; g.shadowBlur = 26 * sc * k; }
+  textFa(g, s, cx, cy, size, col, 1);
+  if (o.shadow === 'neon') { g.shadowBlur = 10 * sc * k; textFa(g, s, cx, cy, size, '#FFFFFF', 0.55); }
+  g.restore();
+  DRAW.raw = prevRaw; DRAW.noGhost = prevNg;
+  e = { c, w: cw / k, h: ch / k };
+  _spr.set(key, e);
+  if (_spr.size > 160) _spr.delete(_spr.keys().next().value);
+  return e;
+}
 function word(ctx, s, size, col, a, o, acc, outline = false) {
   if (a <= 0.01) return;
-  const sc = S();
-  if (o.shadow === 'hard') textFa(ctx, s, 6 * sc * (size / 90), 6 * sc * (size / 90), size, okHex(o.hi) ? '#000000' : mix2(acc, '#000000', 0.35), a * 0.95);
-  else if (o.shadow === 'long') {
-    for (let k = 10; k >= 1; k--) textFa(ctx, s, k * 2.2 * sc, k * 2.2 * sc, size, '#000000', a * 0.09);
+  if (outline) {
+    const sc = S();
+    if (o.shadow === 'hard') textFa(ctx, s, 6 * sc * (size / 90), 6 * sc * (size / 90), size, '#000000', a * 0.95);
+    outlineTextFa(ctx, s, 0, 0, size, col, a, FONTS.black, Math.max(2, size * 0.035));
+    return;
   }
+  if (o.shadow === 'none' || typeof document === 'undefined') { textFa(ctx, s, 0, 0, size, col, a); return; }
+  const e = sprite(ctx, s, size, col, o, acc);
+  if (!e) { textFa(ctx, s, 0, 0, size, col, a); return; }
   ctx.save();
-  if (o.shadow === 'soft') { ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = 22 * sc; ctx.shadowOffsetY = 6 * sc; }
-  if (o.shadow === 'neon') { ctx.shadowColor = col; ctx.shadowBlur = 26 * sc; }
-  if (outline) outlineTextFa(ctx, s, 0, 0, size, col, a, FONTS.black, Math.max(2, size * 0.035));
-  else {
-    textFa(ctx, s, 0, 0, size, col, a);
-    if (o.shadow === 'neon') textFa(ctx, s, 0, 0, size, '#FFFFFF', a * 0.55);
-  }
+  ctx.globalAlpha *= clamp(a);
+  ctx.drawImage(e.c, -e.w / 2, -e.h / 2, e.w, e.h);
   ctx.restore();
 }
 
@@ -521,16 +563,20 @@ export function drawMix(ctx, song, t, acc, kick, ov, o0) {
     }
     // گلیچ: کانال‌های رنگی جابه‌جا
     if (en.rgb > 0.5) {
+      DRAW.raw = true;
       textFa(ctx, it.word, -en.rgb, 0, it.size, '#FF2E63', a * 0.7);
       textFa(ctx, it.word, en.rgb, 0, it.size, '#08F7FE', a * 0.7);
+      DRAW.raw = false;
     }
     // تاری با چند کپی (روی همهٔ مرورگرها کار می‌کند)
     const bl = (en.blur + ex.blur) * sc;
     if (bl > 0.6) {
-      for (let q = 0; q < 6; q++) {
-        const an = (q / 6) * Math.PI * 2;
-        textFa(ctx, it.word, Math.cos(an) * bl, Math.sin(an) * bl, it.size, col, a * 0.15);
+      DRAW.raw = true;
+      for (let q = 0; q < 4; q++) {
+        const an = (q / 4) * Math.PI * 2 + 0.6;
+        textFa(ctx, it.word, Math.cos(an) * bl, Math.sin(an) * bl, it.size, col, a * 0.2);
       }
+      DRAW.raw = false;
       a *= 0.55;
     }
     // پرده از پایین
@@ -542,7 +588,9 @@ export function drawMix(ctx, song, t, acc, kick, ov, o0) {
       ctx.beginPath(); ctx.rect(it.w / 2 + it.size * 0.2 - (it.w + it.size * 0.4) * en.clip, -it.size, (it.w + it.size * 0.4) * en.clip, it.size * 2); ctx.clip();
     }
     if (o.emph === 'glow' && sung && heat > 0.02) {
-      for (let g = 3; g >= 1; g--) textFa(ctx, it.word, 0, 0, it.size * (1 + g * 0.025), hi, a * heat * 0.18 * g);
+      DRAW.raw = true;
+      for (let g = 2; g >= 1; g--) textFa(ctx, it.word, 0, 0, it.size * (1 + g * 0.03), hi, a * heat * 0.25 * g);
+      DRAW.raw = false;
     }
     const outl = o.emph === 'outline' && !sung;
     word(ctx, it.word, it.size, col, a, o, acc, outl);
@@ -571,7 +619,41 @@ export const TEXT_FX3 = Object.fromEntries(MG_PRESETS.map(p =>
 
 /* ── پس‌زمینه‌های متحرک «استایل ویدیو» ─────────────────────── */
 const rgbaH = (h, a) => { const [r, g, b] = hexToRgb(h); return `rgba(${r},${g},${b},${a})`; };
+/* پس‌زمینه‌های نرم (گرادیان، لکه، بوکه…) جزئیات تیز ندارند؛ آن‌ها را با
+   وضوح کمتر روی بوم کمکی می‌کشیم و بزرگ می‌کنیم — چند برابر سریع‌تر. */
+const SOFT_BG = new Set(['grad', 'blobs', 'bokeh', 'aurora', 'liquid', 'rays', 'embers', 'sunburst']);
+let _bgC = null, _vigC = null, _vigKey = '';
+function vignette(ctx) {
+  const key = W + 'x' + H;
+  if (!_vigC || _vigKey !== key) {
+    _vigC = document.createElement('canvas'); _vigC.width = 320; _vigC.height = Math.max(1, Math.round(320 * H / W));
+    const g = _vigC.getContext('2d'), w = _vigC.width, h = _vigC.height, d = Math.hypot(w, h);
+    const v = g.createRadialGradient(w / 2, h / 2, d * 0.25, w / 2, h / 2, d * 0.6);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.45)');
+    g.fillStyle = v; g.fillRect(0, 0, w, h); _vigKey = key;
+  }
+  ctx.drawImage(_vigC, 0, 0, W, H);
+}
 export function drawMixBg(ctx, song, t, acc, kick, o) {
+  if (typeof document !== 'undefined' && SOFT_BG.has(o.bg)) {
+    const dev = (ctx.canvas?.width || W) / W;
+    const q = Math.max(0.15, Math.min(0.5, dev * 0.45));
+    const cw = Math.max(2, Math.round(W * q)), ch = Math.max(2, Math.round(H * q));
+    if (!_bgC) _bgC = document.createElement('canvas');
+    if (_bgC.width !== cw || _bgC.height !== ch) { _bgC.width = cw; _bgC.height = ch; }
+    const g = _bgC.getContext('2d');
+    g.setTransform(q, 0, 0, q, 0, 0);
+    paintBg(g, song, t, acc, kick, o, true);
+    ctx.save(); ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(_bgC, 0, 0, W, H);
+    ctx.restore();
+    if (o.bg !== 'paper') vignette(ctx);
+    return;
+  }
+  paintBg(ctx, song, t, acc, kick, o, false);
+  if (o.bg !== 'paper' && typeof document !== 'undefined') vignette(ctx);
+}
+function paintBg(ctx, song, t, acc, kick, o, soft) {
   const A = okHex(o.bgA) ? o.bgA : '#120A24', B = okHex(o.bgB) ? o.bgB : acc;
   const sc = S(), D = Math.hypot(W, H);
   ctx.save();
@@ -671,16 +753,17 @@ export function drawMixBg(ctx, song, t, acc, kick, o) {
       break;
     }
     case 'halftone': {
-      const step = 34 * sc, ph = t * 0.5;
-      ctx.fillStyle = B;
+      const step = 40 * sc, ph = t * 0.5;
+      ctx.fillStyle = B; ctx.beginPath();
       for (let y = step / 2; y < H + step; y += step) {
         for (let x = (Math.floor(y / step) % 2) * step / 2; x < W + step; x += step) {
           const d = Math.hypot(x - W / 2, y - H / 2) / (D / 2);
           const r = step * 0.42 * clamp(0.15 + 0.85 * (0.5 + 0.5 * Math.sin(d * 9 - ph * 4)) * (0.6 + 0.4 * d)) * (1 + 0.15 * kick);
           if (r < 0.6) continue;
-          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+          ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, Math.PI * 2);
         }
       }
+      ctx.fill();
       break;
     }
     case 'stripes': {
@@ -696,13 +779,18 @@ export function drawMixBg(ctx, song, t, acc, kick, o) {
       const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, D / 2);
       g.addColorStop(0, mix2(A, B, 0.6)); g.addColorStop(1, A); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       const spd = 0.35 + 0.8 * kick;
-      for (let i = 0; i < 160; i++) {
-        const an = hash(i * 2.3) * Math.PI * 2;
-        const z = (hash(i * 5.1) + t * 0.18 * (1 + hash(i) * 0.5)) % 1;
-        const r0 = z * z * D * 0.6, r1 = r0 + (6 + 40 * z * spd) * sc;
-        ctx.strokeStyle = `rgba(255,255,255,${clamp(z * 1.4)})`; ctx.lineWidth = (1 + 2.5 * z) * sc;
-        ctx.beginPath(); ctx.moveTo(W / 2 + Math.cos(an) * r0, H / 2 + Math.sin(an) * r0);
-        ctx.lineTo(W / 2 + Math.cos(an) * r1, H / 2 + Math.sin(an) * r1); ctx.stroke();
+      for (let bk = 0; bk < 3; bk++) {
+        ctx.strokeStyle = `rgba(255,255,255,${0.35 + bk * 0.3})`; ctx.lineWidth = (1 + bk * 1.2) * sc;
+        ctx.beginPath();
+        for (let i = 0; i < 160; i++) {
+          const z = (hash(i * 5.1) + t * 0.18 * (1 + hash(i) * 0.5)) % 1;
+          if (Math.min(2, Math.floor(z * 3)) !== bk) continue;
+          const an = hash(i * 2.3) * Math.PI * 2;
+          const r0 = z * z * D * 0.6, r1 = r0 + (6 + 40 * z * spd) * sc;
+          ctx.moveTo(W / 2 + Math.cos(an) * r0, H / 2 + Math.sin(an) * r0);
+          ctx.lineTo(W / 2 + Math.cos(an) * r1, H / 2 + Math.sin(an) * r1);
+        }
+        ctx.stroke();
       }
       break;
     }
@@ -863,10 +951,12 @@ export function drawMixBg(ctx, song, t, acc, kick, o) {
       const m = Math.min(W, H) * 0.06, pw = (6 + 8 * kick) * sc;
       for (const [k, col] of [[0, B], [1, '#FF2E97']]) {
         const inset = m + k * 22 * sc;
-        ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = pw; ctx.shadowColor = col; ctx.shadowBlur = 30 * sc;
-        ctx.globalAlpha = 0.6 + 0.4 * (k ? Math.abs(Math.sin(t * 3)) : kick);
+        ctx.save(); ctx.strokeStyle = col;
+        const ga = 0.6 + 0.4 * (k ? Math.abs(Math.sin(t * 3)) : kick);
         ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(inset, inset, W - inset * 2, H - inset * 2, 30 * sc); else ctx.rect(inset, inset, W - inset * 2, H - inset * 2);
-        ctx.stroke(); ctx.restore();
+        // هالهٔ ارزان: چند خط پهن کم‌رنگ به‌جای shadowBlur
+        for (const [lw, al] of [[pw * 6, 0.08], [pw * 3, 0.16], [pw, 1]]) { ctx.lineWidth = lw; ctx.globalAlpha = ga * al; ctx.stroke(); }
+        ctx.restore();
       }
       break;
     }
@@ -901,11 +991,8 @@ export function drawMixBg(ctx, song, t, acc, kick, o) {
       break;
     }
   }
-  // سایه‌گوشهٔ ملایم تا متن جلوتر بنشیند (جز کاغذ)
-  if (o.bg !== 'paper') {
-    const v = ctx.createRadialGradient(W / 2, H / 2, D * 0.25, W / 2, H / 2, D * 0.6);
-    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.45)');
-    ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
-  }
   ctx.restore();
 }
+
+/** بعد از عوض شدن فونت شعر، تصویرهای کش‌شدهٔ کلمه‌ها باید دور ریخته شوند */
+export function clearMixCache() { _spr.clear(); }

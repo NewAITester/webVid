@@ -88,14 +88,17 @@
 
   <section class="transport">
     <button id="play" class="btn primary round">▶</button>
-    <div class="time" id="tc">۰۰:۰۰٫۰۰</div>
-    <div class="time dim" id="tdur">—</div>
-    <button id="undoBtn" class="icon sm" title="واگرد (Ctrl+Z)" disabled>↶</button>
-    <button id="redoBtn" class="icon sm" title="ازنو (Ctrl+Shift+Z)" disabled>↷</button>
+    <div class="tbox"><span class="time" id="tc">۰۰:۰۰٫۰۰</span><span class="tsep">/</span><span class="time dim" id="tdur">—</span></div>
+    <div class="tgroup">
+      <button id="undoBtn" class="icon sm" title="واگرد (Ctrl+Z)" disabled>↶</button>
+      <button id="redoBtn" class="icon sm" title="ازنو (Ctrl+Shift+Z)" disabled>↷</button>
+    </div>
     <div class="spacer"></div>
-    <button id="zFit" class="icon sm" title="جا دادن">⤢</button>
-    <button id="zOut" class="icon sm">−</button>
-    <button id="zIn" class="icon sm">+</button>
+    <div class="tgroup">
+      <button id="zOut" class="icon sm" title="کوچک‌نمایی">−</button>
+      <button id="zFit" class="icon sm" title="جا دادن">⤢</button>
+      <button id="zIn" class="icon sm" title="بزرگ‌نمایی">+</button>
+    </div>
     <button id="addBtn" class="btn sm primary addtop" title="افزودن متن، عکس، شکل، افکت آماده یا بخش شعر">＋ افزودن</button>
     <!-- این دو حالا از داخل برگهٔ «＋ افزودن» صدا زده می‌شوند -->
     <button id="secAdd" class="hidden" tabindex="-1">بخش تازه</button>
@@ -107,7 +110,7 @@
   </div>
 
   <!-- نوار کارِ بلوک انتخاب‌شده -->
-  <div id="clipBar" class="clipbar hidden">
+  <div id="clipBar" class="clipbar empty">
     <div class="cinfo"><b id="cbName">—</b><span id="cbTime"></span></div>
     <div class="spacer"></div>
     <div id="cbActs" class="cbacts"></div>
@@ -177,19 +180,22 @@
       </div>
       <div class="phead">سبک نمایش شعر<div class="spacer"></div>
         <span class="pill" id="fxFor">—</span></div>
-      <p class="note">اینجا انتخاب می‌کنید شعرِ <b>بخشی که در تایم‌لاین انتخاب کرده‌اید</b> (یا بخش زیر نشانگر)
-        چطور روی تصویر بیاید. «استایل ویدیو» پس‌زمینه و رنگ کل تصویر را هم عوض می‌کند. برای افکت روی متن، عکس یا شکل خودتان به
-        <a href="#" data-goto="layers">◧ لایه‌ها</a> بروید.</p>
+      <p class="note">برای <b>بخش انتخاب‌شده</b> در تایم‌لاین (یا بخش زیر نشانگر). «استایل ویدیو» پس‌زمینه را هم عوض می‌کند. افکت لایه‌ها در
+        <a href="#" data-goto="layers">◧ لایه‌ها</a>.</p>
       <label class="frow ghosttog"><input id="fxGhost" type="checkbox" checked> نمایش کم‌رنگ کلمه‌ها قبل از خوانده شدن
         <span class="dim">(خاموش = هر کلمه فقط وقتی خوانده شد دیده شود)</span></label>
       <div class="fxbg" id="fxBg"></div>
       <div class="frow btns" id="fxCats"></div>
       <div id="fxGrid" class="fxgrid"></div>
-      <div id="mxBox" class="mxbox"></div>
-      <div class="phead" style="margin-top:14px">افکت سفارشی
-        <div class="spacer"></div>
-        <button id="cfAdd" class="btn sm ghost">+ افزودن کد</button></div>
-      <div id="cfList" class="list"></div>
+      <details id="mxFold" class="fold">
+        <summary>🎛 ساخت سبک دلخواه <span class="dim">(ترکیب ورود، حرکت، پس‌زمینه…)</span></summary>
+        <div id="mxBox" class="mxbox"></div>
+      </details>
+      <details id="cfFold" class="fold">
+        <summary>⌨ افکت با کد <span class="dim">(پیشرفته)</span></summary>
+        <div class="frow btns"><button id="cfAdd" class="btn sm ghost">+ افزودن کد</button></div>
+        <div id="cfList" class="list"></div>
+      </details>
     </section>
 
     <section class="pane" data-pane="words">

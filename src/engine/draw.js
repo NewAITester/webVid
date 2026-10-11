@@ -9,7 +9,9 @@ import { solidText } from '../motion/solidtext.js';
  * کشیده نشوند. global از «کل ویدیو» می‌آید و رندرکننده هر فریم آن را
  * با تنظیم بخش فعلی جایگزین می‌کند.
  */
-export const DRAW = { noGhost: false, global: false };
+export const DRAW = { noGhost: false, global: false, raw: false };
+/* raw: برای کپی‌های تزئینی (هاله، تاری، سایه) — سریع، بدون بوم کمکی */
+const fillT = (ctx, s, x, y) => (DRAW.raw ? ctx.fillText(s, x, y) : solidText(ctx, s, x, y));
 const GHOSTS = new Set([C.GHOST, '#8E8E96']);
 
 /* ── ابزارهای هندسی ─────────────────────────────────────────── */
@@ -82,15 +84,15 @@ export function textFa(ctx, s, x, y, size, color, a = 1,
 
   if (baseline === 'cap') {
     ctx.textBaseline = 'alphabetic';
-    solidText(ctx, s, x, y + size * 0.74);
+    fillT(ctx, s, x, y + size * 0.74);
   } else {
     const off = inkOffset(ctx, s, size, family);
     if (off === null) {
       ctx.textBaseline = 'middle';
-      solidText(ctx, s, x, y);
+      fillT(ctx, s, x, y);
     } else {
       ctx.textBaseline = 'alphabetic';
-      solidText(ctx, s, x, y + off);
+      fillT(ctx, s, x, y + off);
     }
   }
   ctx.restore();

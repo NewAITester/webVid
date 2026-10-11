@@ -24,7 +24,7 @@ import * as OPS from './motion/ops.js';
 import { MotionPanel } from './ui/motionpanel.js';
 import { FFmpegPanel } from './ui/ffmpegpanel.js';
 import { Lessons } from './ui/lessons.js';
-import { MG_PRESETS, VIDEO_PRESETS, MG_LABELS, MIX, MIX_OPTS, MIX_DEFAULT, setMixes, mixOf } from './engine/textfx3.js';
+import { MG_PRESETS, VIDEO_PRESETS, MG_LABELS, MIX, MIX_OPTS, MIX_DEFAULT, setMixes, mixOf, clearMixCache } from './engine/textfx3.js';
 import { DRAW } from './engine/draw.js';
 import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
@@ -195,7 +195,7 @@ function applyLook() {
   DRAW.global = !!look.noGhost;
   if ((look.lyricFont || null) !== curLyricFont) {
     curLyricFont = look.lyricFont || null;
-    setLyricFont(curLyricFont).then(() => { clearLayoutCache(); clearGlyphCache(); draw(); });
+    setLyricFont(curLyricFont).then(() => { clearLayoutCache(); clearGlyphCache(); clearMixCache(); draw(); });
   }
   // رنگ‌های تأکید قدیمی فقط وقتی اعمال شوند که جدول بخش ذخیره نشده باشد؛
   // وگرنه رنگ هر بخش داخل خود جدول است و شماره‌ها ممکن است جابه‌جا شده باشند.
@@ -488,24 +488,31 @@ function showClipBar(p) {
     // انتخاب از روی تایم‌لاین: پنل لایه هم باید عوض شود
     if (app.pane === 'layers' && !mpSelecting) MP.render();
   }
-  if (!p) { bar.classList.add('hidden'); if (app.pane === 'clip') closePane(); draw(); return; }
-  bar.classList.remove('hidden');
+  // نوار همیشه سر جایش است تا صفحه بالا و پایین نپرد؛ بدون انتخاب فقط راهنما نشان می‌دهد
+  const empty = () => {
+    bar.classList.add('empty');
+    $('#cbName').textContent = 'چیزی انتخاب نشده';
+    $('#cbTime').textContent = 'روی بخش، خط شعر یا لایه در تایم‌لاین بزنید';
+    $('#cbActs').innerHTML = '';
+  };
+  if (!p) { empty(); if (app.pane === 'clip') closePane(); draw(); return; }
+  bar.classList.remove('empty');
   sizePane();
 
   let name = '', time = '';
   if (p.kind === 'section') {
-    const s = sections()[p.i]; if (!s) { bar.classList.add('hidden'); return; }
+    const s = sections()[p.i]; if (!s) { empty(); return; }
     name = styleLabel(s[2]); time = `${s[0].toFixed(1)} – ${s[1].toFixed(1)}s · ${(s[1]-s[0]).toFixed(1)}s`;
   } else if (p.kind === 'line') {
-    const L = app.song?.lines[p.i]; if (!L) { bar.classList.add('hidden'); return; }
+    const L = app.song?.lines[p.i]; if (!L) { empty(); return; }
     name = L.text.slice(0, 18) + (L.text.length > 18 ? '…' : '');
     time = `خط ${faN(p.i + 1)}` + (lineFx[p.i] ? ' · تنظیم‌شده' : '');
   } else if (p.kind === 'layer') {
-    const L = pickedLayer(); if (!L) { bar.classList.add('hidden'); return; }
+    const L = pickedLayer(); if (!L) { empty(); return; }
     name = L.name;
     time = `${L.t0.toFixed(1)} – ${L.t1.toFixed(1)}s`;
   } else {
-    const L = pickedText(); if (!L) { bar.classList.add('hidden'); return; }
+    const L = pickedText(); if (!L) { empty(); return; }
     name = (L.text || 'متن').slice(0, 18);
     time = `${L.t0.toFixed(1)} – ${L.t1.toFixed(1)}s`;
   }
@@ -1105,7 +1112,7 @@ async function openProject(id) {
   app.projectId = id;
   // انتخاب پروژهٔ قبلی نباید به این پروژه نشت کند
   TL.pick = null; TL.sel = -1; selLayerId = null; R.selLayer = null;
-  $('#clipBar').classList.add('hidden');
+  $('#clipBar').classList.add('empty'); $('#cbActs').innerHTML = '';
   if (id === '__demo') {
     setAspect('16:9');
     const [lrc, an] = await Promise.all([
@@ -1674,7 +1681,9 @@ function buildMixBox(sec, acc) {
   const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
   const cur = sec?.[2];
   const head = el('div', 'phead', 'سبک دلخواه');
-  head.style.marginTop = '14px';
+  // وقتی در حال ویرایش یک سبک دلخواه هستیم، بخش تاشو باز بماند
+  const fold = $('#mxFold');
+  if (fold && (mixEdit || String(cur || '').startsWith('mx:'))) fold.open = true;
   head.append(el('div', 'spacer'));
   const curIsMg = cur && (MG_LABELS[cur] || String(cur).startsWith('mx:'));
   if (curIsMg && !String(cur).startsWith('mx:')) {
@@ -2031,7 +2040,7 @@ function sizePane() {
   const body = document.querySelector('.ebody');
   if (!body) return;
   const h = body.clientHeight;
-  const chrome = 60 + TL_HEIGHT + 2 + ($('#clipBar').classList.contains('hidden') ? 0 : 58);
+  const chrome = 60 + TL_HEIGHT + 2 + 58;
   const avail = Math.max(120, h - chrome - 110);   // ۱۱۰ = کمینهٔ صحنه
   const paneH = Math.round(Math.min(avail, Math.max(180, h * 0.40)));
   document.documentElement.style.setProperty('--paneH', paneH + 'px');
