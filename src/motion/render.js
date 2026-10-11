@@ -1,4 +1,5 @@
 import { evalLayer, frameEnv, needsBuffer } from './evaluate.js';
+import { solidText } from './solidtext.js';
 import { compileCode, codeEnv } from './codeapi.js';
 import { MediaPool } from './media.js';
 import { parseColor } from './tracks.js';
@@ -168,8 +169,7 @@ function drawText(ctx, st) {
         ctx.textAlign = 'center';
         if (fill) ctx.fillStyle = fill;
         else if (grad) ctx.fillStyle = makeGrad(cx + dx, y + dy);
-        if (P.strokeW > 0) ctx.strokeText(w.s, 0, 0);
-        ctx.fillText(w.s, 0, 0);
+        solidText(ctx, w.s, 0, 0, P.strokeW > 0);
         ctx.restore();
       }
       return;
@@ -180,8 +180,7 @@ function drawText(ctx, st) {
     budget -= ln.s.length;
     if (!s) return;
     ctx.textAlign = 'right';
-    if (P.strokeW > 0) ctx.strokeText(s, right, y);
-    ctx.fillText(s, right, y);
+    solidText(ctx, s, right, y, P.strokeW > 0);
   });
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
 }

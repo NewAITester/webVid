@@ -233,7 +233,12 @@ export class Renderer {
     DRAW.noGhost = ng === undefined || ng === null ? DRAW.global : !!ng;
 
     // استایل ویدیو: پس‌زمینهٔ متحرک خود سبک (زیر همه‌چیز)
-    const mo = mixOf(style);
+    // پس‌زمینه از «استایل ویدیو»ی بخش می‌آید (sec[4].bg) و با عوض کردن
+    // سبک متن از بین نمی‌رود. اگر خطی سبک پس‌زمینه‌دار خودش را دارد، آن مقدم است.
+    const lfo = lf?.style ? mixOf(lf.style) : null;
+    const bgSrc = lfo?.bg && lfo.bg !== 'none' ? lf.style
+      : (sec[4]?.bg !== undefined && sec[4]?.bg !== null ? sec[4].bg : style);
+    const mo = mixOf(bgSrc);
     const hasBg = !!(mo?.bg && mo.bg !== 'none');
     if (hasBg && !invert) drawMixBg(ctx, song, t, acc, kick, mo);
 

@@ -1,6 +1,7 @@
 import { rgba } from './core.js';
 import { font, FONTS } from './text.js';
 import { C } from './song.js';
+import { solidText } from '../motion/solidtext.js';
 
 /**
  * تنظیم سراسری رسم.
@@ -81,15 +82,15 @@ export function textFa(ctx, s, x, y, size, color, a = 1,
 
   if (baseline === 'cap') {
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(s, x, y + size * 0.74);
+    solidText(ctx, s, x, y + size * 0.74);
   } else {
     const off = inkOffset(ctx, s, size, family);
     if (off === null) {
       ctx.textBaseline = 'middle';
-      ctx.fillText(s, x, y);
+      solidText(ctx, s, x, y);
     } else {
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(s, x, y + off);
+      solidText(ctx, s, x, y + off);
     }
   }
   ctx.restore();

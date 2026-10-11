@@ -874,9 +874,14 @@ function styleSecIndex() {
   return curSecIndex();
 }
 /** سبک یک بخش را عوض کن — همهٔ خط‌های داخل آن بازه هم همین سبک را می‌گیرند */
+const hasOwnBg = id => { const o = mixOf(id); return !!(o?.bg && o.bg !== 'none'); };
+const secBg = sec => sec?.[4]?.bg ?? null;
 function applySecStyle(sec, id) {
   if (!sec) return;
   sec[2] = id;
+  // استایل ویدیو (پس‌زمینه‌دار) پس‌زمینهٔ بخش را تعیین می‌کند؛ سبک متنی فقط متن را
+  // عوض می‌کند و پس‌زمینهٔ انتخاب‌شده سر جایش می‌ماند.
+  if (hasOwnBg(id)) (sec[4] ||= { lyric: [], screen: [] }).bg = id;
   for (const l of app.song?.lines || []) {
     const t0 = l.words[0]?.t ?? -1;
     if (t0 >= sec[0] && t0 < sec[1] && lineFx[l.i]?.style) {
@@ -1588,7 +1593,7 @@ const POOL3 = new PreviewPool();     // پیش‌نمایش سازندهٔ سب�
 const allStyles = () => Object.values(FX_CATS).flat().concat(mixIds(), CSET.styles().map(x => x.id));
 
 /** یک کارت پیش‌نمایش می‌سازد و به استخر اضافه می‌کند */
-function fxCard(pool, id, active, accent, onPick) {
+function fxCard(pool, id, active, accent, onPick, bg = null) {
   const { W: dw, H: dh } = stageDims();
   const tw = dh > dw ? 72 : 132;
   const el = document.createElement('div');
@@ -1599,7 +1604,7 @@ function fxCard(pool, id, active, accent, onPick) {
   lb.className = 'fl'; lb.textContent = styleLabel(id);
   el.append(c, lb);
   el.onclick = () => onPick(id);
-  pool.add({ canvas: c, style: id, song: app.song, accent, customSet: CSET });
+  pool.add({ canvas: c, style: id, song: app.song, accent, customSet: CSET, bg: bg && !hasOwnBg(id) ? bg : null });
   return el;
 }
 
@@ -1614,11 +1619,32 @@ function buildFxGrid() {
   const gh = $('#fxGhost');
   if (gh) gh.checked = !look.noGhost;
   const acc = sec ? sec[3] : C.CRIMSON;
+  // پس‌زمینهٔ فعلی بخش: کارت‌های سبک متن روی همین زمینه نشان داده می‌شوند
+  const bgNow = secBg(sec);
+  const bgBar = $('#fxBg');
+  if (bgBar) {
+    bgBar.innerHTML = '';
+    if (bgNow && bgNow !== 'none') {
+      const t = document.createElement('span');
+      t.textContent = '🎬 پس‌زمینهٔ این بخش: ' + styleLabel(bgNow);
+      const x = document.createElement('button');
+      x.className = 'btn sm ghost'; x.textContent = 'برداشتن پس‌زمینه';
+      x.onclick = () => { sec[4].bg = 'none'; saveState(); TL.draw(); buildStrip(); draw(); buildFxGrid(); };
+      const all = document.createElement('button');
+      all.className = 'btn sm ghost'; all.textContent = 'روی همهٔ بخش‌ها';
+      all.onclick = () => { for (const s2 of sections()) (s2[4] ||= { lyric: [], screen: [] }).bg = bgNow; saveState(); TL.draw(); buildStrip(); draw(); };
+      bgBar.append(t, x, all);
+    } else {
+      const t = document.createElement('span'); t.className = 'dim';
+      t.textContent = 'این بخش پس‌زمینهٔ ویژه ندارد — از «استایل ویدیو» یکی انتخاب کنید. بعد هر سبک متنی که بزنید روی همان زمینه می‌آید.';
+      bgBar.append(t);
+    }
+  }
   for (const id of catIds(fxCat)) {
     host.append(fxCard(POOL, id, sec?.[2], acc, pick => {
       if (!sec) return;
       applySecStyle(sec, pick); buildFxGrid();
-    }));
+    }, bgNow && bgNow !== 'none' ? bgNow : null));
   }
   if (fxCat === MINE && !mixIds().length) {
     const p = document.createElement('p');
@@ -1680,7 +1706,12 @@ function buildMixBox(sec, acc) {
   }
   m.o = { ...MIX_DEFAULT, ...(m.o || {}) };
   const commit = (rebuild = false) => {
-    setMixes(look.mixes); saveState(); draw();
+    setMixes(look.mixes);
+    if (sec && sec[2] === 'mx:' + m.id) {
+      if (m.o.bg && m.o.bg !== 'none') (sec[4] ||= { lyric: [], screen: [] }).bg = 'mx:' + m.id;
+      else if (sec[4]?.bg === 'mx:' + m.id) delete sec[4].bg;
+    }
+    saveState(); draw();
     if (rebuild) buildFxGrid();
   };
   const top = el('div', 'mxtop');
@@ -1716,6 +1747,7 @@ function buildMixBox(sec, acc) {
     if (!confirm('این سبک حذف شود؟ بخش‌هایی که از آن استفاده می‌کنند به «بند» برمی‌گردند.')) return;
     look.mixes = look.mixes.filter(x => x !== m);
     for (const s2 of sections()) if (s2[2] === 'mx:' + m.id) s2[2] = 'verse';
+    for (const s2 of sections()) if (s2[4]?.bg === 'mx:' + m.id) delete s2[4].bg;
     for (const f of Object.values(lineFx)) if (f?.style === 'mx:' + m.id) delete f.style;
     mixEdit = null; setMixes(look.mixes); saveState(); TL.draw(); buildStrip(); buildFxGrid(); draw();
   };
