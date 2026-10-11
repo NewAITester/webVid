@@ -1603,7 +1603,17 @@ const MP = new MotionPanel($('#mpRoot'), {
   isPaneOpen: () => app.pane === 'layers' && $('#panes').classList.contains('open'),
   playRange,
   openLearn: () => { lessonReturn = 'editor'; screen('learn'); },
+  openPane: () => go('layers'),
+  // کارهای «＋ افزودن» که لایهٔ موشن نیستند
+  addExtras: () => [
+    { ic: '▦', label: 'بخش تازهٔ شعر', desc: 'بخش زیر نشانگر را دو تکه می‌کند', openLayers: false,
+      fn: () => $('#secAdd').click() },
+    { ic: 'T', label: 'زیرنویس ساده', desc: 'متن ساده روی شعر (روش قدیمی)', openLayers: false,
+      fn: () => $('#txtAdd').click() },
+  ],
 });
+$('#addBtn').onclick = () => MP.openAdd();
+document.querySelectorAll('[data-goto]').forEach(a => { a.onclick = e => { e.preventDefault(); go(a.dataset.goto); }; });
 MP.attachGizmo();
 
 const FF = new FFmpegPanel($('#ffRoot'), {
@@ -1629,7 +1639,7 @@ const LS = new Lessons({
 
 $('#undoBtn').onclick = () => histGo(-1);
 $('#redoBtn').onclick = () => histGo(1);
-$('#noAudioLayers').onclick = () => { $('#noAudio').classList.add('hidden'); go('layers'); };
+$('#noAudioLayers').onclick = () => { $('#noAudio').classList.add('hidden'); go('layers'); MP.openAdd(); };
 
 /* ── رویدادهای عمومی ─────────────────────────────────────── */
 $('#play').onclick = toggle;

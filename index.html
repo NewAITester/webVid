@@ -80,7 +80,7 @@
       <div>پروژهٔ خالی — آهنگ اضافه کنید، یا بی‌صدا با لایه‌ها بسازید</div>
       <div class="frow btns">
         <button id="addAudioBtn" class="btn sm">افزودن آهنگ</button>
-        <button id="noAudioLayers" class="btn sm primary">+ افزودن لایه</button>
+        <button id="noAudioLayers" class="btn sm primary">＋ افزودن متن، عکس یا شکل</button>
       </div>
     </div>
   </main>
@@ -95,8 +95,10 @@
     <button id="zFit" class="icon sm" title="جا دادن">⤢</button>
     <button id="zOut" class="icon sm">−</button>
     <button id="zIn" class="icon sm">+</button>
-    <button id="secAdd" class="icon sm" title="بخش تازه">＋▦</button>
-    <button id="txtAdd" class="icon sm" title="متن تازه">＋T</button>
+    <button id="addBtn" class="btn sm primary addtop" title="افزودن متن، عکس، شکل، افکت آماده یا بخش شعر">＋ افزودن</button>
+    <!-- این دو حالا از داخل برگهٔ «＋ افزودن» صدا زده می‌شوند -->
+    <button id="secAdd" class="hidden" tabindex="-1">بخش تازه</button>
+    <button id="txtAdd" class="hidden" tabindex="-1">زیرنویس ساده</button>
   </section>
 
   <div class="tlwrap">
@@ -162,10 +164,11 @@
 
     <!-- گالری افکت -->
     <section class="pane" data-pane="fx">
-      <div class="phead">افکت‌ها<div class="spacer"></div>
+      <div class="phead">سبک نمایش شعر<div class="spacer"></div>
         <span class="pill" id="fxFor">—</span></div>
-      <p class="note">افکت روی بخشی که الان در آن هستید اعمال می‌شود.
-        پیش‌نمایش‌ها همین لحظهٔ آهنگ را نشان می‌دهند.</p>
+      <p class="note">اینجا انتخاب می‌کنید شعرِ <b>بخشی که الان در آن هستید</b> چطور
+        روی تصویر بیاید. برای افکت روی متن، عکس یا شکل خودتان به
+        <a href="#" data-goto="layers">◧ لایه‌ها</a> بروید.</p>
       <div class="frow btns" id="fxCats"></div>
       <div id="fxGrid" class="fxgrid"></div>
       <div class="phead" style="margin-top:14px">افکت سفارشی
@@ -193,7 +196,8 @@
     </section>
 
     <section class="pane" data-pane="look">
-      <div class="phead">ظاهر</div>
+      <div class="phead">رنگ و حس کلی ویدیو</div>
+      <p class="note">این‌ها روی کل ویدیو اثر دارند. برای افکت روی یک لایهٔ خاص به «◧ لایه‌ها» بروید.</p>
       <div class="form">
         <div class="frow"><label>رنگ تأکید</label>
           <input id="lkAccent" type="color" value="#E4142A">
@@ -262,12 +266,12 @@
   </div>
 
   <nav class="nav" id="nav">
-    <button data-go="lyrics" class="on"><i>✎</i><b>شعر</b></button>
-    <button data-go="layers"><i>◧</i><b>لایه‌ها</b></button>
-    <button data-go="fx"><i>✦</i><b>افکت</b></button>
-    <button data-go="words"><i>✥</i><b>کلمات</b></button>
-    <button data-go="look"><i>◐</i><b>ظاهر</b></button>
-    <button data-go="export"><i>↓</i><b>خروجی</b></button>
+    <button data-go="lyrics" class="on" title="نوشتن و هم‌زمان کردن شعر"><i>✎</i><b>شعر</b></button>
+    <button data-go="layers" title="متن، عکس، شکل و افکت‌های شما"><i>◧</i><b>لایه‌ها</b></button>
+    <button data-go="fx" title="انیمیشن نمایش شعر در هر بخش آهنگ"><i>♪</i><b>سبک شعر</b></button>
+    <button data-go="words" title="جابه‌جا کردن کلمه‌های شعر روی تصویر"><i>✥</i><b>جای کلمات</b></button>
+    <button data-go="look" title="رنگ تأکید، دانه و درخشش کل ویدیو"><i>◐</i><b>رنگ کلی</b></button>
+    <button data-go="export" title="ساخت فایل ویدیو"><i>↓</i><b>خروجی</b></button>
   </nav>
 </section>
 

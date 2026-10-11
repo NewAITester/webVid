@@ -14,6 +14,9 @@ import { split, duplicate, trimStart, trimEnd, allKeyTimes } from '../src/motion
 import { buildArgs, defaultOptions, atempoChain, parseCommand, parseTime } from '../src/ffmpeg/args.js';
 import { remapCustomRefs } from '../src/engine/custom.js';
 import { compileCode } from '../src/motion/codeapi.js';
+import { EFFECTS, EFFECT_CATS, effectsFor } from '../src/motion/schema.js';
+import { APPEAR, APPEAR_GROUPS, LOOPS } from '../src/motion/animate.js';
+import { TEXT_STYLES, LOOKS, ELEMENTS, applyTextStyle, applyLook, buildElement, fxWith } from '../src/motion/presets.js';
 
 let fail = 0;
 const ok = (c, m) => { console.log((c ? '  ✅' : '  ❌') + ' ' + m); if (!c) fail++; };
@@ -120,6 +123,37 @@ const lf = { 0: { style: 'cf:2' }, 1: { style: 'cf:1' } };
 remapCustomRefs(1, secs, lf);
 ok(secs[0][2] === 'cf:0' && secs[1][2] === 'verse' && secs[2][2] === 'cf:1', `بخش‌ها: ${secs.map(s => s[2]).join(' ')}`);
 ok(lf[0].style === 'cf:1' && (lf[1].style === 'verse' || lf[1].style === undefined), 'تنظیم خطوط هم جابه‌جا می‌شود');
+
+console.log('\n── افکت‌ها و قالب‌های آماده ──');
+const catIds = new Set(EFFECT_CATS.map(c => c[0]));
+ok(Object.values(EFFECTS).every(E => catIds.has(E.cat) && E.label && E.desc && E.ic), 'هر افکت دسته، نام، نماد و توضیح دارد');
+ok(effectsFor('image').every(([, E]) => !E.only || E.only.includes('image')) && effectsFor('text').length > effectsFor('image').length,
+  'افکت‌های مخصوص متن فقط برای متن نشان داده می‌شوند');
+const grouped = APPEAR_GROUPS.flatMap(g => g[1]);
+ok(Object.keys(APPEAR).every(k => grouped.includes(k)) && grouped.every(k => APPEAR[k]), 'همهٔ انیمیشن‌های ورود در یک گروه‌اند');
+let presetBad = [];
+const fxOk = L => L.effects.every(f => EFFECTS[f.type]) && APPEAR[L.anim.in.id] && APPEAR[L.anim.out.id] && LOOPS[L.anim.loop.id];
+const finite = L => [0, 0.3, 1.5, 4.9].every(t => {
+  const s = evalLayer(normalizeLayer(JSON.parse(JSON.stringify(L))), t, env, new Map());
+  return [s.alpha, ...s.world].every(Number.isFinite);
+});
+for (const st of [...TEXT_STYLES, ...LOOKS, ...ELEMENTS]) {
+  for (const [t, v] of st.fx || []) for (const k of Object.keys(v)) if (!EFFECTS[t]?.params.some(p => p.key === k)) presetBad.push(`${st.id}:${t}.${k}`);
+}
+ok(!presetBad.length, 'پارامترهای قالب‌ها همه معتبرند ' + presetBad.join(' '));
+const TL = newLayer('text', 0, 5); TL.data.str = 'سلام'; TL.props.x.v = 77;
+applyTextStyle(TL, TEXT_STYLES.find(s => s.id === 'neonRed'));
+ok(TL.data.str === 'سلام' && TL.props.x.v === 77 && TL.effects[0].type === 'glow', 'سبک متن نوشته و جا را نگه می‌دارد');
+ok(TEXT_STYLES.every(st => { const L = newLayer('text', 0, 5); applyTextStyle(L, st); return fxOk(L) && finite(L); }), `${TEXT_STYLES.length} سبک متن سالم‌اند`);
+ok(LOOKS.every(lk => { const L = newLayer('image', 0, 5); applyLook(L, lk); return fxOk(L) && finite(L); }), `${LOOKS.length} ظاهر آماده سالم‌اند`);
+ok(ELEMENTS.every(el => { const L = buildElement(el, 0, 5); return fxOk(L) && finite(L); }), `${ELEMENTS.length} عنصر آماده سالم‌اند`);
+ok(ELEMENTS.filter(e => e.type === 'code').every(e => !compileCode(buildElement(e, 0, 5).data.code).error && buildElement(e, 0, 5).data.code), 'کد عنصرهای ذره‌ای کامپایل می‌شود');
+ok(Object.keys(EFFECTS).every(k => { const L = newLayer(EFFECTS[k].only ? 'text' : 'shape', 0, 5); L.effects = [fxWith(k)]; return finite(L); }),
+  `${Object.keys(EFFECTS).length} افکت روی ماتریس عدد معتبر می‌دهند`);
+const SP = newLayer('shape', 0, 5); SP.effects = [fxWith('spin', { speed: 0.5 })];
+ok(near(evalLayer(SP, 1, env, new Map()).mods.rot, 180), 'چرخش پیوسته: نیم دور در ثانیه');
+const ST = newLayer('shape', 0, 5); ST.effects = [fxWith('strobe', { rate: 2, depth: 100 })];
+ok(evalLayer(ST, 0.1, env, new Map()).alpha === 1 && evalLayer(ST, 0.35, env, new Map()).alpha === 0, 'چشمک: روشن و خاموش');
 
 console.log(fail ? `\n❌ ${fail} تست شکست خورد` : '\n✅ همه گذشتند');
 process.exit(fail ? 1 : 0);

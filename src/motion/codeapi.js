@@ -192,6 +192,39 @@ for (let i = 0; i < 5; i++) {
 const s = 1 + e.kick * 0.2;
 ctx.scale(s, s);
 e.text(e.lineText || '…', 0, 0, 90, e.c2);`,
+  'کانفتی': `// کاغذرنگی‌های رنگارنگ که می‌چرخند و می‌افتند
+for (let i = 0; i < 70; i++) {
+  const speed = 120 + e.random(i + 50) * 160;
+  const x = (e.random(i) - 0.5) * e.w + e.sin(e.t * 2 + i) * 30;
+  const y = ((e.time * speed + e.random(i + 9) * e.h) % e.h) - e.h / 2;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(e.t * 3 + i);
+  e.box(0, 0, 18, 10, e.hsl(e.random(i + 3) * 360), 1, 2);
+  ctx.restore();
+}`,
+  'برف': `// دانه‌های برف نرم که آرام پایین می‌آیند و تاب می‌خورند
+for (let i = 0; i < 90; i++) {
+  const speed = 40 + e.random(i + 7) * 90;
+  const x = (e.random(i) - 0.5) * e.w + e.sin(e.t + i) * 25;
+  const y = ((e.time * speed + e.random(i + 3) * e.h) % e.h) - e.h / 2;
+  e.circle(x, y, 2 + e.random(i + 11) * 6, e.c2, 0.35 + e.random(i + 13) * 0.6);
+}`,
+  'حباب': `// حباب‌هایی که از پایین بالا می‌روند
+for (let i = 0; i < 30; i++) {
+  const speed = 60 + e.random(i + 5) * 120;
+  const x = (e.random(i) - 0.5) * e.w + e.sin(e.t * 1.5 + i) * 20;
+  const y = e.h / 2 - ((e.time * speed + e.random(i + 8) * e.h) % e.h);
+  e.ring(x, y, 10 + e.random(i + 2) * 30, e.c2, 3, 0.6);
+}`,
+  'ستاره‌های چشمک‌زن': `// آسمان پرستاره که چشمک می‌زند
+for (let i = 0; i < 70; i++) {
+  const x = (e.random(i) - 0.5) * e.w, y = (e.random(i + 70) - 0.5) * e.h;
+  const s = 1.5 + 4 * (0.5 + 0.5 * e.sin(e.t * 3 + i * 7));
+  e.circle(x, y, s, i % 9 ? e.c2 : e.c1, 0.9);
+}`,
+  'نوار پیشرفت': `// نواری که در طول لایه پر می‌شود
+e.box(0, 0, e.w, 14, e.c2, 0.25, 7);
+e.box(-e.w / 2 + (e.w * e.p) / 2, 0, e.w * e.p, 14, e.c1, 1, 7);
+e.circle(-e.w / 2 + e.w * e.p, 0, 14 + e.kick * 8, e.c1);`,
   'اکولایزر دایره‌ای': `// میله‌هایی دور یک دایره که با بلندی صدا بلند می‌شوند
 const n = 60;
 for (let i = 0; i < n; i++) {
