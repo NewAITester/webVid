@@ -40,6 +40,15 @@ export class Stage {
     return ctx;
   }
 
+  /** ترنسفرم فضای طراحی را دوباره اعمال کن (مثلاً بعد از گرید) */
+  applyDesign() {
+    const { ctx, canvas, scale } = this;
+    const ox = (canvas.width - DW * scale) / 2;
+    const oy = (canvas.height - DH * scale) / 2;
+    ctx.setTransform(scale, 0, 0, scale, ox, oy);
+    return ctx;
+  }
+
   end() {
     this.ctx.restore();
   }
@@ -54,3 +63,4 @@ export class Stage {
     return { x: (px - ox) / this.scale, y: (py - oy) / this.scale };
   }
 }
+

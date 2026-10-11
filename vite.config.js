@@ -11,5 +11,9 @@ export default defineConfig({
     allowedHosts: true,          // اجازه به هاست پیش‌نمایش سندباکس
     hmr: { clientPort: 443, protocol: 'wss' },
   },
+  // ffmpeg.wasm کارگر (Worker) خودش را با import.meta.url می‌سازد؛
+  // پیش‌بستهٔ Vite این مسیر را می‌شکند، پس از آن مستثنا می‌شود.
+  optimizeDeps: { exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'] },
+  worker: { format: 'es' },
   build: { target: 'es2022', outDir: 'dist', assetsDir: 'a' },
 });

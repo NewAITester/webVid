@@ -287,7 +287,7 @@ textarea.lyr:focus{border-color:#333B4A}
 /* ── تایم‌لاین ───────────────────────────────────────────── */
 .tlwrap{flex:0 0 auto;background:#0B0D12;border-top:1px solid var(--line);
   border-bottom:1px solid var(--line);position:relative}
-#tl{display:block;width:100%;height:127px;touch-action:none}
+#tl{display:block;width:100%;height:181px;touch-action:none}  /* ارتفاع دقیق را timeline.js از TL_HEIGHT می‌گذارد */
 .icon.sm{width:30px;height:30px;font-size:13px;border-radius:9px}
 
 /* ── نوار بلوک انتخاب‌شده ────────────────────────────────── */
@@ -305,10 +305,163 @@ textarea.lyr:focus{border-color:#333B4A}
 .cb:active{transform:scale(.94)}
 
 .cbacts{display:flex;gap:2px;overflow-x:auto}
-#tl{height:151px}
 .ctl{display:flex;align-items:center;gap:9px}
 .ctl>label{font-size:12px;color:var(--dim);min-width:62px}
 .ctl .v{font-size:11px;color:var(--dim);min-width:38px;text-align:center;direction:ltr}
 .fxmini{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;
   max-height:200px;overflow-y:auto;padding:2px}
 .fxmini .fxcard .fl{font-size:10px;padding:4px 5px 5px}
+
+
+/* ══════════════════════════════════════════════════════════════
+   پنل لایه‌ها (موشن) — src/ui/motionpanel.js
+   ══════════════════════════════════════════════════════════════ */
+.ib{background:none;border:1px solid transparent;color:var(--ink2);cursor:pointer;
+  width:30px;height:30px;border-radius:8px;font-size:13px;flex:0 0 auto;font-family:inherit}
+.ib:hover{background:#1A1E27;color:var(--ink);border-color:var(--line)}
+
+/* دکمه‌های افزودن لایه */
+.addbar{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:6px;margin-bottom:12px}
+.addb{display:flex;flex-direction:column;align-items:center;gap:4px;padding:9px 4px;
+  background:var(--surf2);border:1px solid var(--line);border-radius:11px;color:var(--ink2);
+  cursor:pointer;font-family:inherit;transition:.15s}
+.addb i{font-style:normal;font-size:17px;line-height:1;color:var(--ink)}
+.addb b{font-size:10.5px;font-weight:normal}
+.addb:hover{border-color:#333B4A;color:var(--ink)}
+.addb:active{transform:scale(.95)}
+.empty{padding:22px 12px;text-align:center;color:var(--dim);font-size:12px;line-height:1.9;
+  border:1px dashed var(--line);border-radius:var(--r)}
+
+/* فهرست لایه‌ها */
+.llist{display:flex;flex-direction:column;gap:4px}
+.lrow{display:flex;align-items:center;gap:8px;padding:7px 9px;background:var(--surf);
+  border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:12.5px}
+.lrow:hover{background:var(--surf2)}
+.lrow.live{border-inline-start:3px solid var(--red)}
+.lrow.off{opacity:.45}
+.lic{width:26px;height:26px;display:grid;place-items:center;border-radius:7px;
+  background:#07080B;color:var(--ink);font-size:12px;flex:0 0 auto}
+.lnm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lnm em{font-style:normal;color:var(--dim);font-size:11px}
+.lnm em.kf{color:var(--warn)}
+.ltm{font-size:10.5px;color:var(--dim);direction:ltr;flex:0 0 auto}
+
+/* بازرس یک لایه */
+.ihead{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.ihead .txt{min-width:60px}
+.kfnav{display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:8px;
+  background:#07080B;border:1px solid var(--line);border-radius:10px}
+.kgrp{display:flex;align-items:center;gap:4px}
+.kft{font-size:11px;color:var(--dim)}
+.kbtn{background:none;border:1px solid var(--line);color:#3A4150;cursor:pointer;
+  width:26px;height:26px;border-radius:7px;font-size:12px;flex:0 0 auto;line-height:1;transition:.12s}
+.kbtn.has{color:var(--ink2)}
+.kbtn.on{color:var(--warn);border-color:var(--warn);background:rgba(232,179,57,.1)}
+.kbtn.big{width:34px;height:30px;font-size:15px}
+.recb{background:none;border:1px solid var(--line);color:var(--dim);border-radius:999px;
+  padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit}
+.recb.on{color:#fff;background:var(--red);border-color:var(--red);animation:recp 1.2s infinite}
+@keyframes recp{50%{box-shadow:0 0 0 4px rgba(228,20,42,.25)}}
+.tabs{display:flex;gap:5px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;
+  border-bottom:1px solid var(--line);scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs .chip{flex:0 0 auto}
+.ibody{display:flex;flex-direction:column;gap:9px;padding-top:4px}
+
+/* یک ویژگی: نام · کنترل · ◆ · ƒ */
+.pwrap{display:flex;flex-direction:column;gap:5px}
+.prow{display:flex;align-items:center;gap:7px}
+.prow>label{font-size:11.5px;color:var(--dim);min-width:58px;flex:0 0 auto}
+.pctl{display:flex;align-items:center;gap:7px;flex:1;min-width:0}
+.pctl .rng{min-width:40px}
+.pnum{width:64px!important;padding:5px 6px!important;font-size:12px;direction:ltr;text-align:center}
+.fbtn{background:none;border:1px solid var(--line);color:#3A4150;cursor:pointer;
+  width:26px;height:26px;border-radius:7px;font-style:italic;font-family:Georgia,serif;flex:0 0 auto}
+.fbtn.on{color:#6FB7FF;border-color:#2C5C8F}
+.fbtn.bad{color:#FF6B6B;border-color:#FF6B6B}
+.exprbox{display:flex;flex-direction:column;gap:5px;padding:7px;background:#07080B;
+  border:1px solid #1E2E44;border-radius:9px}
+textarea.code.sm{min-height:62px;font-size:12px}
+textarea.lyr.sm{min-height:70px}
+.rng.sm{max-width:90px}
+.chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);cursor:pointer}
+.xhelp{font-size:11.5px;color:var(--dim)}
+.xhelp summary{cursor:pointer;padding:3px 0;color:var(--ink2)}
+.xhelp>div{display:flex;flex-direction:column;gap:3px;padding:6px 2px}
+.xh code{direction:ltr;display:inline-block;color:#6FB7FF;background:#07080B;padding:1px 6px;
+  border-radius:5px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px}
+
+/* گروه‌های تاشو */
+.grp{border:1px solid var(--line);border-radius:10px;padding:0 9px;background:var(--surf)}
+.grp>summary{cursor:pointer;padding:9px 0;font-size:12px;color:var(--ink2);list-style:none}
+.grp>summary::before{content:'▸ ';color:var(--dim)}
+.grp[open]>summary::before{content:'▾ '}
+.grp[open]{padding-bottom:9px}
+.grp>*:not(summary){margin-top:7px}
+
+/* شبکهٔ گزینه‌ها (انیمیشن، افکت، دستور آماده) */
+.agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:5px}
+.achip{padding:7px 6px;font-size:11px;border-radius:9px;background:var(--surf2);
+  border:1px solid var(--line);color:var(--ink2);cursor:pointer;font-family:inherit;line-height:1.5}
+.achip:hover{color:var(--ink);border-color:#333B4A}
+.achip.on{background:var(--red);border-color:var(--red);color:#fff}
+.fxcat{font-size:11px;color:var(--red);margin-top:6px}
+.fxbox{border:1px solid var(--line);border-radius:10px;background:var(--surf);padding:0 9px}
+.fxbox>summary{display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 0;list-style:none}
+.fxbox[open]{padding-bottom:9px}
+.fxbox[open]>summary{border-bottom:1px solid var(--line);margin-bottom:7px}
+.fxn{flex:1;font-size:12.5px}
+.fxn.off{color:var(--dim);text-decoration:line-through}
+
+/* منحنی‌ها */
+.egrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px}
+.ebtn{display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 2px;
+  background:var(--surf2);border:1px solid var(--line);border-radius:9px;cursor:pointer;
+  color:var(--ink2);font-family:inherit}
+.ebtn span{font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ebtn svg{display:block}
+.ebtn.on{border-color:var(--red);color:var(--ink);background:rgba(228,20,42,.12)}
+canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto;
+  background:#07080B;border:1px solid var(--line);border-radius:11px;touch-action:none}
+.kstrip{display:flex;gap:4px;overflow-x:auto;padding-bottom:4px}
+.kchip{flex:0 0 auto;padding:4px 9px;border-radius:999px;font-size:11px;background:var(--surf2);
+  border:1px solid var(--line);color:var(--ink2);cursor:pointer;direction:ltr;font-family:inherit}
+.kchip.on{border-color:var(--warn);color:var(--warn)}
+
+/* ── FFmpeg ── */
+.ffm{margin-top:20px;padding-top:14px;border-top:1px solid var(--line);
+  display:flex;flex-direction:column;gap:10px}
+.ffl{max-height:180px;overflow:auto;background:#07080B;border:1px solid var(--line);
+  border-radius:9px;padding:8px;font-size:10.5px;line-height:1.5;direction:ltr;
+  text-align:left;white-space:pre-wrap;color:var(--ink2);font-family:ui-monospace,Menlo,Consolas,monospace}
+.tnum{width:84px!important;direction:ltr}
+.ffm textarea.code{min-height:90px}
+
+/* ── آموزش: زمین بازی ── */
+.lintro{padding:14px;border-radius:var(--r);background:linear-gradient(135deg,#2A0A10,#111319);
+  border:1px solid #3A1520;line-height:1.9}
+.lintro b{font-family:"IRANSansX Black";font-size:15px}
+.lintro p{font-size:12px;color:var(--ink2);margin-top:4px}
+.pg{margin:12px 0;display:flex;flex-direction:column;gap:7px;padding:9px;
+  background:var(--surf);border:1px solid var(--line);border-radius:var(--r)}
+.pgcv{display:block;width:100%;aspect-ratio:16/9;border-radius:9px;background:#0A0B0E}
+.pg textarea.code{min-height:120px;font-size:12.5px;direction:ltr;text-align:left}
+.lesson .task{margin:12px 0;padding:10px 12px;border-radius:11px;background:#0E1A14;
+  border:1px solid #1E3A2A;color:var(--ink2)}
+.lesson .task b{color:var(--ok);font-weight:normal}
+.lesson .ans summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
+.lesson pre{direction:ltr;text-align:left}
+.lnav{margin-top:20px;justify-content:space-between}
+#noAudio .frow{justify-content:center}
+.icon:disabled,.btn:disabled{opacity:.35;cursor:default;pointer-events:none}
+/* نوار پایین با ۶ تب روی گوشی‌های باریک هم جا شود */
+.nav button{min-width:0}
+/* نوار پخش روی گوشی باریک: فاصله‌ها کم و در صورت نیاز اسکرول افقی */
+.transport{overflow-x:auto;scrollbar-width:none}
+.transport::-webkit-scrollbar{display:none}
+.transport>*{flex-shrink:0}
+@media (max-width:480px){
+  .transport{gap:5px;padding:8px 10px}
+  .time{min-width:0;font-size:11px}
+  .transport .icon.sm{width:28px;height:28px}
+}

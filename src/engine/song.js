@@ -77,7 +77,7 @@ export const SECT = [
 export const SECTION_NAMES = {
   intro: 'تیتراژ', cold: 'ورود سرد', inst_a: 'ورود باند', verse: 'بند',
   pre: 'پیش‌کرس', chorus: 'کرس', inst_b: 'شکست ۲۹ ثانیه', inst_c: 'فرود',
-  mirror: 'آینه', end: 'کارت پایان',
+  mirror: 'آینه', end: 'کارت پایان', none: 'خالی (فقط لایه‌ها)',
   type: 'تایپ', karaoke: 'کاریوکی', wave: 'موج',
   punch: 'پرش', split: 'دوپاره', stack: 'ستونی',
   neon: 'نئون', sh3d: 'سایهٔ سه‌بعدی', slide: 'سُر خوردن', drop: 'افتادن',
@@ -180,3 +180,4 @@ export class Song {
     return s;
   }
 }
+
