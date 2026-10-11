@@ -2,6 +2,7 @@ import { newLayer, LAYER_TYPES, EFFECTS, SHAPE_KINDS, BLEND_MODES } from './sche
 import { APPEAR, LOOPS } from './animate.js';
 import { TEXT_STYLES, applyTextStyle, fxWith } from './presets.js';
 import { ELEMENT_KINDS, makeElementLayer, elementParams } from './elements.js';
+import { importedBody } from './importers/canvasjs.js';
 
 /**
  * «موشن‌اسکریپت» — یک ویدیوی موشن را با چند خط کد بنویسید
@@ -84,6 +85,11 @@ export function runScript(src, { W = 1080, H = 1920, bpm = 120 } = {}) {
     spectrum: o => item('spectrum', { o: opt(o) }),
     code: (src, o) => item('code', { src: isFn(src) ? fnBody(src) : String(src || ''), o: opt(o) }),
     adjust: o => item('adjust', { o: opt(o) }),
+    /** کد وارد‌شده: imported(PROGRAM, { run, start, values, tweaks, title }) ← لایهٔ کدی که کد اصلی را اجرا می‌کند */
+    imported: (prog, o = {}) => {
+      const { run, start, values, tweaks, title, ...rest } = opt(o);
+      return item('code', { src: importedBody(String(prog || ''), { run, start, values, tweaks, title }), o: rest });
+    },
     layer: raw => item('raw', { raw }),
     /** ابزار: رنگ‌ها با شفافیت  ← '#RRGGBBAA' */
     alpha: (hex, a) => String(hex).slice(0, 7) + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0'),

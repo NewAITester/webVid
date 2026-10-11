@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#222">
+<canvas id="c" width="1920" height="1080"></canvas>
+<script type="module">
+import { analyzeJS, importedBody, extractHtml } from '../src/motion/importers/canvasjs.js';
+import { analyzeRun, runImported } from '../src/motion/importers/runtime.js';
+window.M = { analyzeJS, importedBody, extractHtml, analyzeRun, runImported };
+window.loadCanvas = async (path) => {
+  let src = await (await fetch(path)).text(), W0 = null, H0 = null;
+  if (/\.html?$/.test(path)) { const h = extractHtml(src); src = h.blocks.map(b => b.code).join('\n;\n'); W0 = h.W0; H0 = h.H0; }
+  const A = analyzeJS(src, { file: path, W0, H0 });
+  const T = Object.fromEntries(A.tweaks.map(t => [t.id, t.value]));
+  const t0 = performance.now();
+  const R = analyzeRun(A.program, T, A.run, {});
+  window.A = A; window.T = T; window.R = R;
+  return { ms: Math.round(performance.now() - t0), run: { ...A.run, declared: undefined, uses: undefined }, err: R.error, dur: R.duration, bpm: R.bpm, audio: R.hasAudio,
+    segs: R.segments.map(s => [s.key, s.t0, s.t1, Object.keys(s.calls).join(','), s.texts.slice(0, 3).join('|')]) };
+};
+window.sheet = (times, w = 480, h = 270, cols = 4, T2) => {
+  const c = document.getElementById('c'); const rows = Math.ceil(times.length / cols);
+  c.width = w * cols; c.height = h * rows; const x = c.getContext('2d');
+  x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height);
+  times.forEach((t, i) => { x.save(); x.translate((i % cols) * w + w / 2, Math.floor(i / cols) * h + h / 2); x.beginPath(); x.rect(-w / 2, -h / 2, w, h); x.clip();
+    try { runImported(x, { t, w, h }, window.A.program, T2 || window.T, { ...window.A.run, start: 0 }); } catch (e) { x.fillStyle = 'red'; x.font = '20px sans-serif'; x.fillText(String(e.message).slice(0, 50), -w / 2 + 5, 0); }
+    x.restore(); x.fillStyle = '#ff0'; x.font = '14px monospace'; x.fillText(t.toFixed(2), (i % cols) * w + 4, Math.floor(i / cols) * h + 16); });
+};
+window.ready = true;
+</script>

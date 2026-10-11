@@ -1,6 +1,7 @@
 import { EASINGS } from './easing.js';
 import { noise } from './expr.js';
 import { reelApi, envFromSong, envFromBeats } from '../engine/reelfx.js';
+import { runImported } from './importers/runtime.js';
 
 /**
  * جعبه‌ابزار «لایهٔ کد» — ساده برای تازه‌کارها
@@ -117,6 +118,8 @@ export function codeEnv(o) {
     fx: o.fx || {},
     /* قطعه‌های شوریل: e.reel.vortex({...}) — مبدأ وسط لایه، اندازه = کادر لایه */
     get reel() { return reelLayer(o.ctx, o, time); },
+    /* کد وارد‌شده (فایل JS/HTML بوم) — همان کد اصلی را در این لایه اجرا می‌کند */
+    runImported,
   };
 }
 function reelLayer(ctx, o, time) {

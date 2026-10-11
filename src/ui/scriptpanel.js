@@ -3,6 +3,8 @@ import { runScript, scriptToLayers, layersToScript, SCRIPT_HELP } from '../motio
 import { SAMPLE_SCRIPTS } from '../motion/samplescript.js';
 import { ELEMENT_KINDS } from '../motion/elements.js';
 import { LAYER_TYPES } from '../motion/schema.js';
+import { importCard } from './importpanel.js';
+import { detectFormat } from '../motion/importers/index.js';
 
 /**
  * پنجرهٔ «📜 موشن‌اسکریپت»
@@ -11,7 +13,10 @@ import { LAYER_TYPES } from '../motion/schema.js';
  * لایه‌ها را می‌سازد. بعد از اجرا فهرست صحنه‌ها و المان‌ها نشان داده
  * می‌شود؛ با زدن هر المان، همان لایه برای ویرایش دستی باز می‌شود.
  * «📤 از لایه‌ها» برعکس کار می‌کند: از لایه‌های فعلی کد می‌سازد.
+ * «🧩 وارد کردن کد ویدیو»: کد بوم (JS/HTML) یا پایتون (MoviePy/Manim) که با
+ * آن ویدیو ساخته شده را می‌خواند و به صحنه‌ها و لایه‌های قابل‌تغییر تبدیل می‌کند.
  */
+const VIDEO_CODE = new Set(['canvas', 'html', 'moviepy', 'manim', 'python']);
 const DRAFT = 'ls.motionScript';
 const fmt = s => faN((+s).toFixed(2).replace(/\.?0+$/, ''));
 
@@ -30,10 +35,31 @@ export function openScriptSheet(mp) {
   });
   const msg = h('div', { class: 'msg' });
   const out = h('div', { class: 'sres' });
-  const file = h('input', { type: 'file', accept: '.js,.txt,.mjs,text/javascript,text/plain', class: 'hidden', onchange: async () => {
-    const f = file.files?.[0]; if (!f) return;
-    ta.value = await f.text(); ta.dispatchEvent(new Event('input')); say('ok', `«${f.name}» باز شد — «▶ اجرا» را بزنید.`);
+  const impBox = h('div', { class: 'impbox' });
+  const file = h('input', { type: 'file', multiple: true, accept: '.js,.txt,.mjs,.html,.htm,.py,text/javascript,text/plain,text/html,text/x-python', class: 'hidden', onchange: async () => {
+    const fs = [...(file.files || [])]; if (!fs.length) return;
+    const files = await Promise.all(fs.map(async f => ({ name: f.name, text: await f.text() })));
+    if (files.length === 1 && !VIDEO_CODE.has(detectFormat(files[0].text, files[0].name))) {
+      ta.value = files[0].text; ta.dispatchEvent(new Event('input')); say('ok', `«${files[0].name}» باز شد — «▶ اجرا» را بزنید.`);
+      return;
+    }
+    showImport(files);
   } });
+  function showImport(files) {
+    impBox.innerHTML = '';
+    say('', '🧩 در حال خواندن کد…');
+    setTimeout(() => {
+      try {
+        impBox.append(importCard({ host, files, say, onScript: (script, build) => {
+          ta.value = script; ta.dispatchEvent(new Event('input'));
+          if (build) run(false);
+          else { say('ok', '✓ کد تبدیل‌شده در کادر اسکریپت است؛ هر خط یک لایه است — عوضش کنید و «▶ اجرا» بزنید.'); ta.focus(); ta.setSelectionRange(0, 0); ta.scrollTop = 0; }
+        } }));
+        say('ok', '✓ کد خوانده شد — اجزا و مقدارهای قابل‌تغییر پایین آمده‌اند.');
+        impBox.scrollIntoView?.({ block: 'nearest' });
+      } catch (e) { say('err', '✗ خواندن کد نشد: ' + e.message); }
+    }, 30);
+  }
 
   const opts = { replace: true, from: 'start', behind: false };
   const say = (cls, text) => { msg.className = 'msg ' + cls; msg.textContent = text; };
@@ -68,6 +94,11 @@ export function openScriptSheet(mp) {
 
   function run(dry = false) {
     const info = ctxInfo();
+    const kind = detectFormat(ta.value, '');
+    if (VIDEO_CODE.has(kind)) {          // کد ویدیو چسبانده شده، نه موشن‌اسکریپت
+      showImport([{ name: kind === 'html' ? 'code.html' : /python|moviepy|manim/.test(kind) ? 'code.py' : 'code.js', text: ta.value }]);
+      return;
+    }
     const res = runScript(ta.value, info);
     if (!res.ok) {
       say('err', '✗ ' + (res.line ? `خط ${faN(res.line)}: ` : '') + res.error);
@@ -127,6 +158,7 @@ export function openScriptSheet(mp) {
         h('div', { class: 'spacer' }), h('button', { class: 'icon sm', onclick: () => sheet.remove(), title: 'بستن' }, '✕')),
       h('div', { class: 'frow btns' }, samples,
         h('button', { class: 'btn sm ghost', onclick: () => { file.value = ''; file.click(); } }, '📂 باز کردن فایل'),
+        h('button', { class: 'btn sm ghost', title: 'کد JS/HTML بوم یا پایتون (MoviePy، Manim) که با آن ویدیو ساخته شده — می‌شود چند فایل را با هم انتخاب کرد', onclick: () => { file.value = ''; file.click(); } }, '🧩 وارد کردن کد ویدیو (JS/HTML/Python)'),
         h('button', { class: 'btn sm ghost', title: 'از لایه‌های فعلی پروژه کد بساز', onclick: () => {
           const Ls = host.getLayers();
           if (!Ls.length) { say('warn', 'پروژه هنوز لایه‌ای ندارد.'); return; }
@@ -153,7 +185,7 @@ export function openScriptSheet(mp) {
           h('button', { class: 'btn primary', onclick: () => run(false) }, '▶ اجرا و ساخت لایه‌ها'),
           h('button', { class: 'btn sm ghost', onclick: () => run(true) }, '✓ فقط بررسی'),
           undoBtn),
-        msg, out, help, file)));
+        msg, impBox, out, help, file)));
   document.body.append(sheet);
   setTimeout(() => sheet.classList.add('in'), 0);
   say('', 'Ctrl+Enter = اجرا. هر صحنه و المان بعد از اجرا یک لایهٔ قابل ویرایش می‌شود.');

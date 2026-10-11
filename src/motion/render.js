@@ -62,9 +62,11 @@ function textMetrics(ctx, L, P) {
   return m;
 }
 
+const isLtr = str => !/[\u0590-\u08FF\uFB1D-\uFEFF]/.test(str) && /[A-Za-z0-9]/.test(str);
 function drawText(ctx, st) {
   const { L, P, mods } = st;
   const m = textMetrics(ctx, L, P);
+  const ltr = isLtr(String(L.data.str ?? ''));   // متن لاتین چپ‌به‌چپ کشیده شود (Hello! نه !Hello)
   const fam = fontFamily(L.data.font);
   const align = L.data.align || 'center';
 
@@ -80,7 +82,7 @@ function drawText(ctx, st) {
   }
 
   ctx.font = `${P.size}px "${fam}"`;
-  ctx.direction = 'rtl';
+  ctx.direction = ltr ? 'ltr' : 'rtl';
   ctx.textBaseline = 'middle';
   if ('letterSpacing' in ctx) ctx.letterSpacing = `${P.spacing}px`;
   ctx.lineJoin = 'round';
@@ -123,12 +125,12 @@ function drawText(ctx, st) {
 
     if (perWord) {
       // کلمه‌به‌کلمه: کلمه‌ها جدا کشیده می‌شوند تا اتصال حروف فارسی نشکند
-      let x = right;
+      let x = ltr ? right - ln.w : right;
       const span = Math.min(1, 2.6 / Math.max(1, nWords));
       for (const w of ln.words) {
         const idx = wi++;
-        const cx = x - w.w / 2;
-        x -= w.w + ln.space;
+        const cx = ltr ? x + w.w / 2 : x - w.w / 2;
+        x += ltr ? w.w + ln.space : -(w.w + ln.space);
         if (budget <= 0) continue;
         budget -= w.s.length + 1;
         let a = 1, dx = 0, dy = 0, s = 1, rot = 0;
@@ -179,8 +181,8 @@ function drawText(ctx, st) {
     if (budget < s.length) s = s.slice(0, Math.max(0, budget));
     budget -= ln.s.length;
     if (!s) return;
-    ctx.textAlign = 'right';
-    solidText(ctx, s, right, y, P.strokeW > 0);
+    ctx.textAlign = ltr ? 'left' : 'right';
+    solidText(ctx, s, ltr ? right - ln.w : right, y, P.strokeW > 0);
   });
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
 }

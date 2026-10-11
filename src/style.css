@@ -641,3 +641,31 @@ textarea.code.script{min-height:46vh;direction:ltr;text-align:left;font-size:12.
 .elsw{display:flex;flex-direction:column;gap:3px}
 .elsw small{font-size:10.5px;color:var(--dim)}
 .note.warn{color:var(--warn)}
+
+/* ── وارد کردن کد ویدیو ───────────────────────────── */
+.impbox:empty{display:none}
+.impcard{display:flex;flex-direction:column;gap:9px;margin:8px 0;padding:10px 12px;background:var(--surf2);
+  border:1px solid #2C3446;border-radius:14px}
+.impcard .ihd{display:flex;align-items:center;gap:9px}
+.impcard .ihd .iic{font-size:24px;line-height:1}
+.impcard .ihd b{font-size:13px;color:var(--ink);direction:ltr;unicode-bidi:isolate}
+.impcard .ihd small{font-size:11px;color:var(--dim)}
+.impcard .inote{font-size:11.5px;color:var(--ink2)}
+.impcard .isec{display:flex;flex-direction:column;gap:6px}
+.impcard .ist{font-size:12px;color:var(--ink2);cursor:default}
+.impcard details.isec>summary.ist{cursor:pointer}
+.impcard .iscenes{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:7px}
+.impcard .iscene{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:6px;display:flex;flex-direction:column;gap:5px;min-width:0}
+.impcard .ithumb{width:100%;height:auto;aspect-ratio:16/9;border-radius:6px;background:#000;display:block}
+.impcard .iscene .sh{display:flex;align-items:baseline;gap:6px}
+.impcard .iscene .sh b{font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impcard .iscene .sh small{font-size:10.5px;color:var(--dim);margin-inline-start:auto}
+.impcard .echip.sm{padding:2px 7px;font-size:10.5px;cursor:default;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impcard .itw{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:5px 10px;padding:4px 0}
+.impcard .itg{grid-column:1/-1;font-size:11px;color:var(--warn);border-bottom:1px solid var(--line);padding:3px 0}
+.impcard .itrow{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink2);min-width:0}
+.impcard .itrow span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impcard .itrow input{width:118px;font-size:12px;padding:4px 6px}
+.impcard .itrow input[type=color]{width:42px;height:26px;padding:0 2px}
+.impcard .inotes{font-size:11.5px;color:var(--warn);gap:3px;white-space:pre-line}
+.impcard .itrow input[type=text],.impcard .itrow input[type=number]{background:var(--surf);color:var(--ink);border:1px solid var(--line);border-radius:8px}

@@ -1,0 +1,75 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#222">
+<canvas id="c" width="1920" height="1080"></canvas>
+<script type="module">
+import { runScript, scriptToLayers, layersToScript } from '../src/motion/scenescript.js';
+import { SAMPLE_SCRIPTS } from '../src/motion/samplescript.js';
+import { importCode } from '../src/motion/importers/index.js';
+import { MotionRenderer } from '../src/motion/render.js';
+import { frameEnv } from '../src/motion/evaluate.js';
+import { swapElement, findTweaks, setTweak, ELEMENT_KINDS, makeElementLayer, elementParams } from '../src/motion/elements.js';
+const BEAT = 60 / 128, beats = []; for (let i = 0; i < 40; i++) beats.push(+(i * BEAT).toFixed(5));
+const bi = t => { let r = -1; for (let i = 0; i < beats.length; i++) if (beats[i] <= t) r = i; return r; };
+const song = { beats, kick: t => { const b = bi(t); const sb = b < 0 ? 9 : t - beats[b]; return sb < 0.4 ? Math.exp(-sb * 9) : 0; },
+  rms: () => 0.6, beatI: bi, beatEnv: t => { const b = bi(t); const sb = b < 0 ? 9 : t - beats[b]; return sb < 0.3 ? (1 - sb / 0.3) ** 2 : 0; }, lines: [], activeLine: () => -1 };
+const out = { errs: [], warns: [] };
+const MR = new MotionRenderer();
+window.build = (name, W, H) => {
+  const res = runScript(SAMPLE_SCRIPTS[name], { W, H, bpm: 120 });
+  if (!res.ok) { out.errs.push(name + ': ' + res.error + ' @' + res.line); return null; }
+  const { layers, warnings } = scriptToLayers(res, { W, H });
+  out.warns.push(...res.warnings, ...warnings);
+  return { res, layers };
+};
+window.imp = async (path, W, H, values) => {
+  const text = await (await fetch(path)).text();
+  const r = importCode(text, { name: path.split('/').pop(), values });
+  window.R = r;
+  if (!r.script) return { kind: r.kind, err: r.error, warnings: r.warnings };
+  const res = runScript(r.script, { W, H, bpm: 120 });
+  if (!res.ok) return { kind: r.kind, scriptErr: res.error, line: res.line, lineText: r.script.split('\n')[res.line - 1]?.slice(0, 200) };
+  const { layers, warnings } = scriptToLayers(res, { W, H });
+  window.LAY = layers;
+  return { kind: r.kind, n: layers.length, len: res.length, scenes: res.scenes.map(s => s.name + ' ' + s.t0.toFixed(2)), warnings: [...r.warnings, ...res.warnings, ...warnings], found: r.found, tweaks: r.tweaks.length, scriptLen: r.script.length };
+};
+window.sheet = (layers, W, H, times, cols = 4) => {
+  const c = document.getElementById('c'); const tw = 480, th = Math.round(480 * H / W);
+  c.width = tw * cols; c.height = th * Math.ceil(times.length / cols);
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, c.width, c.height);
+  times.forEach((t, i) => {
+    ctx.save(); ctx.translate((i % cols) * tw, Math.floor(i / cols) * th);
+    ctx.beginPath(); ctx.rect(0, 0, tw, th); ctx.clip(); ctx.scale(tw / W, th / H);
+    const env = { ...frameEnv(song, t, W, H), song, acc: '#E4142A', fx: {}, lineText: '' };
+    try { MR.draw(ctx, layers, t, env, { behind: true }); MR.draw(ctx, layers, t, env, { behind: false }); } catch (e) { out.errs.push('draw ' + t + ': ' + e.message); }
+    ctx.restore();
+    ctx.fillStyle = '#fff'; ctx.font = '14px monospace'; ctx.fillText(t.toFixed(2), (i % cols) * tw + 6, Math.floor(i / cols) * th + 16);
+  });
+  for (const [id, e] of MR.errors) out.errs.push('layer ' + (layers.find(L => L.id === id)?.name) + ': ' + e);
+};
+window.roundtrip = (layers, W, H) => {
+  const src = layersToScript(layers, { W, H, bpm: 128 });
+  const res = runScript(src, { W, H });
+  if (!res.ok) return { ok: false, err: res.error, line: res.line, src };
+  const b = scriptToLayers(res, { W, H }).layers;
+  const sig = Ls => Ls.map(L => [L.type, L.data.el?.kind || L.data.kind || '', L.t0.toFixed(2), L.t1.toFixed(2), Math.round(L.props.x?.v || 0), Math.round(L.props.y?.v || 0), L.props.c1?.v || L.props.fill?.v || ''].join('|')).sort();
+  const A = sig(layers), B = sig(b);
+  const diff = A.filter((x, i) => x !== B[i]);
+  return { ok: true, n: [A.length, B.length], diff: diff.slice(0, 8), B: B.filter((x, i) => x !== A[i]).slice(0, 8), src: src.slice(0, 1500) };
+};
+window.unit = () => {
+  const r = [];
+  const L = makeElementLayer('vortex', { n: 1234, c1: '#112233' }, 0, 2, 1920, 1080);
+  r.push(['make', L.data.el.p.n === 1234 && L.props.c1.v === '#112233']);
+  swapElement(L, 'starfield', 1920, 1080);
+  r.push(['swap', L.data.el.kind === 'starfield' && L.props.c1.v === '#112233' && L.data.el.p.n === 1234 && L.data.code.includes('starfield')]);
+  swapElement(L, 'swarmText', 1920, 1080);
+  r.push(['swap2', elementParams(L).text === 'MOTION' && L.props.h.v === 1080]);
+  const code = "const count = 12;   // تعداد [1..50]\nlet sp = 0.5; // سرعت\nconst col = '#FF0000';\nconst t = 'hi'\n";
+  const tw = findTweaks(code);
+  r.push(['tweaks', tw.length === 4 && tw[0].max === 50 && tw[0].label === 'تعداد' && tw[2].type === 'color']);
+  r.push(['setTweak', setTweak(code, tw[0], 30).split('\n')[0] === 'const count = 30;   // تعداد [1..50]']);
+  const bad = runScript("tempo(120)\nscene('a', 1,\n  foo())", {});
+  r.push(['errline', !bad.ok && bad.line, bad.error]);
+  return r;
+};
+window.out = out; window.ready = true;
+</script>
