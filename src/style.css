@@ -684,3 +684,5 @@ textarea.code.script{min-height:46vh;direction:ltr;text-align:left;font-size:12.
 /* پنجرهٔ «پروژه از کد ویدیو» */
 .cpsheet .sheetbox{max-width:620px}
 .cpsheet .cpauto{font-size:11px;color:var(--dim);margin:-2px 0 4px}
+.cpsheet .impcard .btns{position:sticky;bottom:-20px;z-index:2;background:var(--surf2);
+  margin:0 -12px -10px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}

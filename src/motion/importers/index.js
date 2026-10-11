@@ -4,6 +4,7 @@ import { emitScript } from './emit.js';
 import { Interp } from './pyinterp.js';
 import { moviepyModules, moviepyModel } from './moviepy.js';
 import { manimModules, runManimScenes, manimModel } from './manim.js';
+import { fallbackModel } from './fallback.js';
 
 /**
  * «وارد کردن کد ویدیو»
@@ -205,7 +206,7 @@ function pythonOther(src, name) {
   const warnings = [];
   const frameLibs = libs.filter(l => /^(PIL|cv2|imageio|matplotlib|pygame|cairo|skia|numpy|ffmpeg|subprocess)$/.test(l));
   if (files.some(f => /\.(html?|js)$/i.test(f))) warnings.push('این اسکریپت فایل‌های وب را کنار هم می‌گذارد (مثل build.py). خود فایل HTML یا JS نهایی را وارد کنید تا ویدیو خوانده شود؛ فایل‌های لازم پایین آمده‌اند.');
-  if (frameLibs.length) warnings.push(`کتابخانه‌های ${frameLibs.join('، ')} فریم‌به‌فریم تصویر می‌سازند و هنوز قابل‌تبدیل نیستند؛ مقدارهای بالای فایل قابل‌تغییرند و کد تغییریافته را می‌شود دانلود کرد.`);
+  if (frameLibs.length) warnings.push(`کتابخانه‌های ${frameLibs.join('، ')} فریم‌به‌فریم تصویر می‌سازند و مستقیم اجرا نمی‌شوند؛ مقدارهای بالای فایل قابل‌تغییرند و کد تغییریافته را می‌شود دانلود کرد.`);
   if (!warnings.length) warnings.push('کتابخانهٔ ویدیوی شناخته‌شده‌ای (moviepy یا manim) در این فایل نیست.');
   return { kind: 'python', script: null, error: null, warnings, tweaks: pyTweaks(src), files, libs, scenes: [], found: [], unknown: libs.filter(l => !/^(re|os|sys|math|json|pathlib|random|time|itertools|functools|collections|subprocess|shutil|glob|argparse)$/.test(l)), media: files.filter(f => /\.(png|jpe?g|gif|webp|svg|mp4|webm|mov)$/i.test(f)).map(file => ({ kind: 'فایل', file })), audio: files.filter(f => /\.(mp3|wav|ogg)$/i.test(f)), source: src };
 }
@@ -308,6 +309,17 @@ export function importCode(text, { name = 'code', values = null } = {}) {
   else if (kind === 'html' || kind === 'canvas') r = convertCanvas(kind, text, name, values);
   else r = { kind, script: null, error: 'نوع این کد شناخته نشد (JS بوم، HTML، MoviePy یا Manim).', warnings: [], tweaks: [], scenes: [], found: [], unknown: [], media: [], audio: [], source: text };
   r.name = name; r.label = FORMATS[kind].label; r.ic = FORMATS[kind].ic;
+  if (!r.script && String(text || '').trim()) {          // قابل اجرا نبود ← برداشت ساده تا بشود پروژه ساخت
+    let M = null;
+    try { M = fallbackModel(text, r, { name, values }); } catch (e) { console.warn('fallback', e); }
+    if (M && M.items.length) {
+      r.script = emitScript(M); r.model = M; r.fallback = true;
+      r.scenes = modelScenes(M); r.found = modelFound(M); r.duration = M.duration;
+      if (!r.media?.length) r.media = M.media;
+      r.warnings = [...(r.warnings || []), 'برای ساخت پروژه، متن‌ها، رنگ‌ها، اندازهٔ قاب و تصویرهای همین کد برداشته شد (همه پایین قابل‌تغییرند).'];
+      if (r.error) { r.warnings.unshift(r.error); r.error = null; }
+    }
+  }
   if (kind === 'python' && values) r.source = applySourceTweaks(text, r.tweaks, values);
   return r;
 }
