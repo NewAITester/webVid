@@ -4,7 +4,7 @@ import { SAMPLE_SCRIPTS } from '../motion/samplescript.js';
 import { ELEMENT_KINDS } from '../motion/elements.js';
 import { LAYER_TYPES } from '../motion/schema.js';
 import { importCard } from './importpanel.js';
-import { detectFormat } from '../motion/importers/index.js';
+import { detectFormat, probeMotion } from '../motion/importers/index.js';
 
 /**
  * پنجرهٔ «📜 موشن‌اسکریپت»
@@ -95,7 +95,7 @@ export function openScriptSheet(mp) {
   function run(dry = false) {
     const info = ctxInfo();
     const kind = detectFormat(ta.value, '');
-    if (VIDEO_CODE.has(kind)) {          // کد ویدیو چسبانده شده، نه موشن‌اسکریپت
+    if (VIDEO_CODE.has(kind) && !probeMotion(ta.value)?.res) {          // کد ویدیو چسبانده شده، نه موشن‌اسکریپت
       showImport([{ name: kind === 'html' ? 'code.html' : /python|moviepy|manim/.test(kind) ? 'code.py' : 'code.js', text: ta.value }]);
       return;
     }

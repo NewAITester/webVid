@@ -30,7 +30,7 @@ import { IDLE_FX, IDLE_IDS, drawIdle, idleWindow, IDLE_DEFAULT_OPT } from './eng
 import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
 import { openCodeProjectSheet } from './ui/codeproject.js';
-import { detectFormat } from './motion/importers/index.js';
+import { detectFormat, probeMotion } from './motion/importers/index.js';
 
 import { $, $$, faN } from './ui/dom.js';
 const BASE = import.meta.env.BASE_URL;
@@ -2269,7 +2269,7 @@ async function doImport(text, name = '') {
     let kind = 'motion'; try { kind = detectFormat(t, name); } catch { /* */ }
     // کد بوم فقط وقتی «برنامهٔ کامل» است (بوم خودش را می‌سازد / حلقهٔ فریم دارد)؛ وگرنه همان «لایهٔ کد» قدیمی
     const fullCanvas = /getContext\s*\(|requestAnimationFrame|\bdocument\s*\.|\bfunction\s+render\s*\(/.test(t);
-    if (VIDEO_CODE.has(kind) && (kind !== 'canvas' || fullCanvas)) { $('#imSheet').classList.add('hidden'); openCodeProject([{ name: name || (kind === 'html' ? 'code.html' : /py|manim|moviepy/.test(kind) ? 'code.py' : 'code.js'), text }]); return; }
+    if ((VIDEO_CODE.has(kind) && (kind !== 'canvas' || fullCanvas)) || probeMotion(t)?.res) { $('#imSheet').classList.add('hidden'); openCodeProject([{ name: name || (kind === 'html' ? 'code.html' : /py|manim|moviepy/.test(kind) ? 'code.py' : 'code.js'), text }]); return; }
   }
   try {
     const { proj, media, what } = await projectFromText(text, { look: DEFAULT_LOOK });

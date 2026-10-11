@@ -5,6 +5,8 @@ import { Interp } from './pyinterp.js';
 import { moviepyModules, moviepyModel } from './moviepy.js';
 import { manimModules, runManimScenes, manimModel } from './manim.js';
 import { fallbackModel } from './fallback.js';
+import { runScript, scriptToLayers } from '../scenescript.js';
+import { ELEMENT_KINDS } from '../elements.js';
 
 /**
  * «وارد کردن کد ویدیو»
@@ -300,15 +302,50 @@ function convertCanvas(kind, text, name, values) {
  * @param {string} text  کد
  * @param {object} o  { name, values }  values: مقدارهای تازهٔ tweaks (اختیاری)
  */
+/**
+ * آیا این متن «موشن‌اسکریپتِ خود برنامه» است؟ (واقعاً اجرا می‌شود و لایه می‌سازد)
+ * موشن‌اسکریپت لازم نیست scene() داشته باشد — مثلاً فقط text()/bg()/overlay() یا المان‌ها.
+ */
+export function probeMotion(text) {
+  try {
+    const res = runScript(String(text || ''), { W: 1920, H: 1080, bpm: 120 });
+    if (!res.ok) return res.line ? { err: res.error, line: res.line } : null;
+    const { layers } = scriptToLayers(res, { W: 1920, H: 1080 });
+    return layers.length ? { res, n: layers.length, types: layers.map(L => L.type) } : null;
+  } catch { return null; }
+}
+function motionResult(text, P) {
+  const cnt = {};
+  for (const t of P?.types || []) cnt[t] = (cnt[t] || 0) + 1;
+  return {
+    kind: 'motion', script: text, warnings: [], tweaks: [], unknown: [], media: [], audio: [], source: text,
+    duration: P?.res.length || 0,
+    scenes: (P?.res.scenes || []).map(sc => ({ name: sc.name, t0: sc.t0, t1: sc.t1, chips: (sc.items || []).slice(0, 10).map(it => `• ${it.name || it.kind || it.type}`) })),
+    found: P ? Object.entries(cnt).map(([k, n]) => ({ ic: '📜', label: `لایهٔ ${k}`, n })) : [],
+  };
+}
+
 export function importCode(text, { name = 'code', values = null } = {}) {
-  const kind = detectFormat(text, name);
+  let kind = detectFormat(text, name);
+  // کد JS که به‌عنوان «بوم» یا «ناشناخته» تشخیص داده شده ولی در واقع موشن‌اسکریپت است ← همان‌طور که هست
+  let P = null;
+  if (kind === 'motion' || kind === 'unknown' || (kind === 'canvas' && !/getContext\s*\(|requestAnimationFrame|\bdocument\s*\./.test(text))) {
+    P = probeMotion(text);
+    if (P?.res) kind = 'motion';
+  }
   let r;
-  if (kind === 'motion') r = { kind, script: text, warnings: [], tweaks: [], scenes: [], found: [], unknown: [], media: [], audio: [], source: text };
+  if (kind === 'motion') r = motionResult(text, P);
   else if (kind === 'moviepy' || kind === 'manim') r = convertPython(kind, text, name, values);
   else if (kind === 'python') r = pythonOther(text, name);
   else if (kind === 'html' || kind === 'canvas') r = convertCanvas(kind, text, name, values);
   else r = { kind, script: null, error: 'نوع این کد شناخته نشد (JS بوم، HTML، MoviePy یا Manim).', warnings: [], tweaks: [], scenes: [], found: [], unknown: [], media: [], audio: [], source: text };
   r.name = name; r.label = FORMATS[kind].label; r.ic = FORMATS[kind].ic;
+  // شبیه موشن‌اسکریپت ولی خطا دارد ← خود خطا را نشان بده، نه برداشت تقریبی
+  const looksMotion = () => new RegExp(`^\\s*(scene|overlay|transition|tempo|${Object.keys(ELEMENT_KINDS).join('|')})\\s*\\(`, 'm').test(text);
+  if (!r.script && kind === 'unknown' && P?.err && looksMotion()) {
+    r.error = `این کد شبیه موشن‌اسکریپت است ولی در خط ${P.line} خطا دارد: ${P.err}`;
+    return r;
+  }
   if (!r.script && String(text || '').trim()) {          // قابل اجرا نبود ← برداشت ساده تا بشود پروژه ساخت
     let M = null;
     try { M = fallbackModel(text, r, { name, values }); } catch (e) { console.warn('fallback', e); }
