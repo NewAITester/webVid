@@ -6,8 +6,11 @@ import { drawLyrics } from './lyricbody.js';
 import { STYLE_FN, sMirror } from './styles.js';
 import { TEXT_FX } from './textfx.js';
 import { TEXT_FX2 } from './textfx2.js';
+import { TEXT_FX3, mixFn, mixMode } from './textfx3.js';
 
-const ALLFX = { ...TEXT_FX, ...TEXT_FX2 };
+const ALLFX = { ...TEXT_FX, ...TEXT_FX2, ...TEXT_FX3 };
+/** تابع سبک: آماده‌ها + سبک‌های دلخواه کاربر (mx:…) */
+const fxOf = st => ALLFX[st] || mixFn(st);
 import { applyOverrides, hitWord } from './overrides.js';
 import { drawLayers, hitLayer, outlineLayer } from './textlayers.js';
 import { place, modeFor } from './layout.js';
@@ -263,11 +266,12 @@ export class Renderer {
       beatGrid(ctx, song, t, kick, 10);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
       lyr(c => this.customSet?.get(+style.slice(3))?.draw(c, song, t, acc, kick, this.overrides));
-    } else if (ALLFX[style]) {
+    } else if (fxOf(style)) {
       // سبک‌های متنی تازه: پس‌زمینهٔ ساده‌تر، بدون متن لغزان
+      const fn = fxOf(style);
       beatGrid(ctx, song, t, kick, 10);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
-      lyr(c => ALLFX[style](c, song, t, acc, kick, this.overrides));
+      lyr(c => fn(c, song, t, acc, kick, this.overrides));
     } else if (style !== 'none') {
       beatGrid(ctx, song, t, kick, 8);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
@@ -480,9 +484,9 @@ export class Renderer {
       }
     } else if (style === 'mirror') {
       out.push(...applyOverrides(place(ctx, song.lines[cur], 'giant'), this.overrides));
-    } else if (ALLFX[style] || String(style).startsWith('cf:')) {
+    } else if (fxOf(style) || String(style).startsWith('cf:')) {
       const line = song.lines[cur];
-      const mode = style === 'punch' ? 'chorus' : 'pre';
+      const mode = style === 'punch' ? 'chorus' : mixMode(style);
       out.push(...applyOverrides(place(ctx, line, modeFor(line, mode)), this.overrides));
     }
     // ترنسفرم تنظیم خط (اندازه و جابه‌جایی) را روی کادرها هم اعمال کن،

@@ -24,6 +24,7 @@ import * as OPS from './motion/ops.js';
 import { MotionPanel } from './ui/motionpanel.js';
 import { FFmpegPanel } from './ui/ffmpegpanel.js';
 import { Lessons } from './ui/lessons.js';
+import { MG_PRESETS, MG_LABELS, MIX, MIX_OPTS, MIX_DEFAULT, setMixes, mixOf } from './engine/textfx3.js';
 import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
 
@@ -59,6 +60,7 @@ const DEFAULT_LOOK = () => ({
   grain: 0.024, bloom: 0.55, chroma: 1.0, furniture: true, accents: {},
   fx: { lyric: [], screen: [] },   // افکت‌های تصویری روی همهٔ شعرها / کل ویدیو
   lyricFont: null,                 // فونت شعر (شناسهٔ فونت کاربر) یا null = اصلی
+  mixes: [],                       // سبک‌های موشن‌گرافی دلخواه کاربر [{id,name,o}]
 });
 let look = DEFAULT_LOOK();
 
@@ -187,6 +189,7 @@ function applyLook() {
   R.chroma = look.chroma;
   R.showFurniture = look.furniture;
   R.globalFx = look.fx;
+  setMixes(look.mixes || (look.mixes = []));
   if ((look.lyricFont || null) !== curLyricFont) {
     curLyricFont = look.lyricFont || null;
     setLyricFont(curLyricFont).then(() => { clearLayoutCache(); clearGlyphCache(); draw(); });
@@ -248,7 +251,7 @@ function loop() {
 }
 function play() {
   if (app.playing || !app.song) return;
-  POOL.stop(); POOL2.stop();
+  POOL.stop(); POOL2.stop(); POOL3.stop();
   app.playing = true;
   R.playing = true;
   $('#play').textContent = '❚❚';
@@ -305,7 +308,7 @@ function go(name, toggle = false) {
   if (toggle && app.pane === name && $('#panes').classList.contains('open')) {
     closePane(); return;
   }
-  if (name !== 'fx') POOL.stop();
+  if (name !== 'fx') { POOL.stop(); POOL3.stop(); }
   if (name !== 'clip') POOL2.stop();
   app.pane = name;
   $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
@@ -331,7 +334,7 @@ function go(name, toggle = false) {
 $$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go, true); });
 
 function closePane() {
-  POOL.stop(); POOL2.stop();
+  POOL.stop(); POOL2.stop(); POOL3.stop();
   $('#panes').classList.remove('open');
   $$('#nav button').forEach(b => b.classList.remove('on'));
   app.pane = null;
@@ -397,15 +400,22 @@ function buildStrip() {
 }
 
 /* ── ویرایش بخش‌ها ───────────────────────────────────────── */
+const MINE = 'سبک‌های من';
 const FX_CATS = {
+  'موشن‌گرافی': MG_PRESETS.map(p => p.id),
   'پایه':    ['verse', 'chorus', 'pre', 'cold'],
   'حرکتی':   ['type', 'karaoke', 'wave', 'punch', 'split', 'stack'],
   'نمایشی':  ['neon', 'sh3d', 'slide', 'drop', 'shake', 'wipe', 'focus', 'breath', 'flip', 'underline', 'spot'],
   'بی‌کلام': ['intro', 'inst_a', 'inst_b', 'inst_c', 'mirror', 'end'],
+  [MINE]: [],
 };
+const mixIds = () => (look.mixes || []).map(m => 'mx:' + m.id);
+const catIds = c => (c === MINE ? mixIds() : FX_CATS[c] || []);
 const STYLES = Object.values(FX_CATS).flat();
 const styleLabel = id => String(id).startsWith('cf:')
-  ? (CSET.get(+id.slice(3))?.name || 'سفارشی') : (SECTION_NAMES[id] || id);
+  ? (CSET.get(+id.slice(3))?.name || 'سفارشی')
+  : String(id).startsWith('mx:') ? ('★ ' + (MIX.get(id.slice(3))?.name || 'سبک من'))
+  : (MG_LABELS[id] || SECTION_NAMES[id] || id);
 
 /** جدول پیش‌فرض بخش‌ها برای پروژهٔ فعلی */
 function defaultSections() {
@@ -1488,7 +1498,7 @@ $('#syncUndo').onclick = () => { syncTimes.pop(); $('#syncTap').textContent = '�
 $('#syncRestart').onclick = () => { syncTimes = []; $('#syncTap').textContent = 'ثبت این خط'; seek(0); renderSync(); };
 
 /* ── گالری افکت با پیش‌نمایش زنده ────────────────────────── */
-let fxCat = 'حرکتی';
+let fxCat = 'موشن‌گرافی';
 function buildFxCats() {
   const host = $('#fxCats');
   host.innerHTML = '';
@@ -1518,9 +1528,10 @@ function fxPreviewTime() {
 
 const POOL = new PreviewPool();      // گالری تب افکت
 const POOL2 = new PreviewPool();     // گالری کوچک داخل تنظیمات خط
+const POOL3 = new PreviewPool();     // پیش‌نمایش سازندهٔ سبک دلخواه
 
 /** همهٔ سبک‌های قابل انتخاب، شامل افکت‌های سفارشی */
-const allStyles = () => Object.values(FX_CATS).flat().concat(CSET.styles().map(x => x.id));
+const allStyles = () => Object.values(FX_CATS).flat().concat(mixIds(), CSET.styles().map(x => x.id));
 
 /** یک کارت پیش‌نمایش می‌سازد و به استخر اضافه می‌کند */
 function fxCard(pool, id, active, accent, onPick) {
@@ -1547,14 +1558,147 @@ function buildFxGrid() {
   const sec = sections()[i];
   $('#fxFor').textContent = sec ? `بخش ${faN(i + 1)}` : '—';
   const acc = sec ? sec[3] : C.CRIMSON;
-  for (const id of (FX_CATS[fxCat] || [])) {
+  for (const id of catIds(fxCat)) {
     host.append(fxCard(POOL, id, sec?.[2], acc, pick => {
       if (!sec) return;
       sec[2] = pick; saveState(); TL.draw(); buildStrip(); buildFxGrid(); draw();
     }));
   }
+  if (fxCat === MINE && !mixIds().length) {
+    const p = document.createElement('p');
+    p.className = 'note';
+    p.textContent = 'هنوز سبکی نساخته‌اید. پایین «＋ سبک دلخواه» را بزنید، یا یکی از سبک‌های «موشن‌گرافی» را انتخاب و «سفارشی کن» را بزنید.';
+    host.append(p);
+  }
   POOL.observe($('#panes'));
   POOL.start(fxPreviewTime());
+  buildMixBox(sec, acc);
+}
+
+/* ── سازندهٔ سبک موشن‌گرافی دلخواه ─────────────────────────── */
+let mixEdit = null;              // شناسهٔ سبک در حال ویرایش
+function newMix(from, name) {
+  const id = uid('mx');
+  const m = { id: String(id), name, o: { ...MIX_DEFAULT, ...(from || {}) } };
+  (look.mixes ||= []).push(m);
+  setMixes(look.mixes);
+  return m;
+}
+function buildMixBox(sec, acc) {
+  const host = $('#mxBox');
+  if (!host) return;
+  POOL3.clear();
+  host.innerHTML = '';
+  const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+  const cur = sec?.[2];
+  const head = el('div', 'phead', 'سبک دلخواه');
+  head.style.marginTop = '14px';
+  head.append(el('div', 'spacer'));
+  const curIsMg = cur && (MG_LABELS[cur] || String(cur).startsWith('mx:'));
+  if (curIsMg && !String(cur).startsWith('mx:')) {
+    const b = el('button', 'btn sm', '✎ سفارشی کن');
+    b.title = 'یک نسخه از همین سبک بسازید و هر چیزش را عوض کنید';
+    b.onclick = () => {
+      const m = newMix(mixOf(cur), MG_LABELS[cur] + ' (من)');
+      sec[2] = 'mx:' + m.id; mixEdit = m.id; fxCat = MINE;
+      saveState(); TL.draw(); buildStrip(); buildFxCats(); buildFxGrid(); draw();
+    };
+    head.append(b);
+  }
+  const add = el('button', 'btn sm ghost', '＋ سبک دلخواه');
+  add.onclick = () => {
+    const m = newMix(null, 'سبک ' + faN((look.mixes?.length || 0) + 1));
+    if (sec) sec[2] = 'mx:' + m.id;
+    mixEdit = m.id; fxCat = MINE;
+    saveState(); TL.draw(); buildStrip(); buildFxCats(); buildFxGrid(); draw();
+  };
+  head.append(add);
+  host.append(head);
+
+  const editId = String(cur || '').startsWith('mx:') ? cur.slice(3) : (MIX.has(mixEdit) ? mixEdit : null);
+  const m = editId && (look.mixes || []).find(x => String(x.id) === editId);
+  if (!m) {
+    host.append(el('p', 'note', 'سبک خودتان را بسازید: نوع ورود کلمه‌ها، تأکید روی کلمهٔ فعال، تزئین، سایه، پالت رنگ، کجی و تپش با ضرب را انتخاب کنید. '
+      + 'ساده‌ترین راه: یک سبک «موشن‌گرافی» را انتخاب کنید و «✎ سفارشی کن» را بزنید.'));
+    return;
+  }
+  m.o = { ...MIX_DEFAULT, ...(m.o || {}) };
+  const commit = (rebuild = false) => {
+    setMixes(look.mixes); saveState(); draw();
+    if (rebuild) buildFxGrid();
+  };
+  const top = el('div', 'mxtop');
+  const prev = fxCard(POOL3, 'mx:' + m.id, null, acc, () => {});
+  prev.classList.add('mxprev');
+  const meta = el('div', 'mxmeta');
+  const nm = el('input', 'txt'); nm.value = m.name;
+  nm.oninput = () => { m.name = nm.value; commit(); };
+  const row = el('div', 'frow btns');
+  const use = el('button', 'btn sm' + (cur === 'mx:' + m.id ? ' primary' : ''), cur === 'mx:' + m.id ? '✓ روی این بخش' : 'روی این بخش');
+  use.onclick = () => { if (sec) { sec[2] = 'mx:' + m.id; saveState(); TL.draw(); buildStrip(); buildFxGrid(); draw(); } };
+  const all = el('button', 'btn sm ghost', 'روی همهٔ بخش‌های با شعر');
+  all.onclick = () => {
+    for (const s2 of sections()) if (!['intro', 'inst_a', 'inst_b', 'inst_c', 'end', 'none'].includes(s2[2])) s2[2] = 'mx:' + m.id;
+    saveState(); TL.draw(); buildStrip(); buildFxGrid(); draw();
+  };
+  const dup = el('button', 'btn sm ghost', 'کپی');
+  dup.onclick = () => { const c = newMix(m.o, m.name + ' ۲'); mixEdit = c.id; if (sec) sec[2] = 'mx:' + c.id; saveState(); buildFxGrid(); draw(); };
+  const rnd = el('button', 'btn sm ghost', '🎲 شانسی');
+  rnd.title = 'ترکیب تصادفی — تا وقتی خوشتان بیاید بزنید';
+  rnd.onclick = () => {
+    for (const d of MIX_OPTS) if (d.ch && d.k !== 'layout') m.o[d.k] = d.ch[Math.floor(Math.random() * d.ch.length)][0];
+    m.o.tilt = Math.round((Math.random() - 0.5) * 12); m.o.beat = +(Math.random() * 1.6).toFixed(1);
+    commit(true);
+  };
+  const del = el('button', 'btn sm ghost danger', 'حذف');
+  del.onclick = () => {
+    if (!confirm('این سبک حذف شود؟ بخش‌هایی که از آن استفاده می‌کنند به «بند» برمی‌گردند.')) return;
+    look.mixes = look.mixes.filter(x => x !== m);
+    for (const s2 of sections()) if (s2[2] === 'mx:' + m.id) s2[2] = 'verse';
+    for (const f of Object.values(lineFx)) if (f?.style === 'mx:' + m.id) delete f.style;
+    mixEdit = null; setMixes(look.mixes); saveState(); TL.draw(); buildStrip(); buildFxGrid(); draw();
+  };
+  row.append(use, all, dup, rnd, del);
+  meta.append(nm, row);
+  top.append(prev, meta);
+  host.append(top);
+
+  const form = el('div', 'mxform');
+  for (const d of MIX_OPTS) {
+    const fr = el('div', 'mxrow');
+    fr.append(el('label', '', d.label));
+    if (d.ch) {
+      const chips = el('div', 'chips');
+      for (const [v, lb] of d.ch) {
+        const c = el('button', 'chip' + (m.o[d.k] === v ? ' on' : ''), lb);
+        c.onclick = () => { m.o[d.k] = v; chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c)); commit(); };
+        chips.append(c);
+      }
+      fr.append(chips);
+    } else if (d.color) {
+      const inp = el('input'); inp.type = 'color';
+      inp.value = /^#[0-9a-f]{6}$/i.test(m.o[d.k]) ? m.o[d.k] : (d.k === 'hi' ? (acc || '#E4142A') : '#F6F3EC');
+      inp.oninput = () => { m.o[d.k] = inp.value; if (d.k === 'text') m.o.palette = 'custom'; commit(); };
+      fr.append(inp);
+      if (d.k === 'hi') {
+        const r = el('button', 'btn sm ghost', 'رنگ بخش');
+        r.title = d.note || '';
+        r.onclick = () => { m.o.hi = ''; commit(true); };
+        fr.append(r);
+      }
+    } else {
+      const inp = el('input', 'rng'); inp.type = 'range';
+      inp.min = d.min; inp.max = d.max; inp.step = d.step; inp.value = m.o[d.k];
+      const v = el('span', 'pill', faN(m.o[d.k]) + (d.unit || ''));
+      inp.oninput = () => { m.o[d.k] = +inp.value; v.textContent = faN(+inp.value) + (d.unit || ''); commit(); };
+      fr.classList.add('slider');
+      fr.append(inp, v);
+    }
+    form.append(fr);
+  }
+  host.append(form);
+  POOL3.observe($('#panes'));
+  POOL3.start(fxPreviewTime());
 }
 
 function buildCfList() {

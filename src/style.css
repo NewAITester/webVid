@@ -554,3 +554,21 @@ canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto
 .vfxbox{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
 #imSheet textarea.code{min-height:150px;margin:8px 0}
 #lkFont .frow{margin-bottom:6px}
+
+/* ── سازندهٔ سبک موشن‌گرافی ── */
+.mxtop{display:flex;gap:10px;align-items:flex-start;margin:6px 0 10px}
+.mxprev{flex:0 0 auto;width:96px;pointer-events:none}
+.mxprev canvas{width:100%;height:auto;display:block}
+.mxmeta{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.mxmeta .frow.btns{flex-wrap:wrap;gap:5px}
+.mxform{display:flex;flex-direction:column;gap:9px}
+.mxrow{display:flex;flex-direction:column;gap:5px}
+.mxrow>label{font-size:12px;color:var(--dim)}
+.mxrow.slider{flex-direction:row;align-items:center;gap:8px}
+.mxrow.slider>label{flex:0 0 110px}
+.mxrow.slider .rng{flex:1}
+.mxrow input[type=color]{width:46px;height:30px;border:none;background:none;padding:0}
+.mxrow:has(input[type=color]){flex-direction:row;align-items:center;gap:8px}
+.mxrow:has(input[type=color])>label{flex:0 0 110px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.btn.danger{color:#FF6B6B}
