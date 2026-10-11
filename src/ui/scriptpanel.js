@@ -50,7 +50,7 @@ export function openScriptSheet(mp) {
     say('', '🧩 در حال خواندن کد…');
     setTimeout(() => {
       try {
-        impBox.append(importCard({ host, files, say, onScript: (script, build) => {
+        impBox.append(importCard({ host, files, say, meta: () => ({ title: host.title?.() || '', artist: host.artist?.() || '', tg: host.tg?.() || '' }), onScript: (script, build) => {
           ta.value = script; ta.dispatchEvent(new Event('input'));
           if (build) run(false);
           else { say('ok', '✓ کد تبدیل‌شده در کادر اسکریپت است؛ هر خط یک لایه است — عوضش کنید و «▶ اجرا» بزنید.'); ta.focus(); ta.setSelectionRange(0, 0); ta.scrollTop = 0; }

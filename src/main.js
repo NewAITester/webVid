@@ -29,6 +29,8 @@ import { DRAW } from './engine/draw.js';
 import { IDLE_FX, IDLE_IDS, drawIdle, idleWindow, IDLE_DEFAULT_OPT } from './engine/idlefx.js';
 import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
+import { openCodeProjectSheet } from './ui/codeproject.js';
+import { detectFormat } from './motion/importers/index.js';
 
 import { $, $$, faN } from './ui/dom.js';
 const BASE = import.meta.env.BASE_URL;
@@ -2172,6 +2174,8 @@ const MP = new MotionPanel($('#mpRoot'), {
     return m > 0.2 && m < 2 ? Math.round(600 / m) / 10 : 120;
   },
   title: () => app.song?.title || '',
+  artist: () => app.song?.artist || '',
+  tg: () => app.song?.tg || '',
   saveFile: (blob, name) => saveFile(blob, name),
   isPaneOpen: () => app.pane === 'layers' && $('#panes').classList.contains('open'),
   playRange,
@@ -2219,15 +2223,54 @@ $('#imFileBtn').onclick = () => $('#imFile').click();
 $('#imFile').onchange = async e => {
   const f = e.target.files?.[0]; if (!f) return;
   $('#imMsg').textContent = 'در حال خواندن…';
-  await doImport(await f.text());
+  await doImport(await f.text(), f.name);
   e.target.value = '';
 };
 $('#imPaste').onclick = async () => {
   try { $('#imText').value = await navigator.clipboard.readText(); } catch { $('#imMsg').textContent = 'اجازهٔ خواندن کلیپ‌بورد داده نشد — دستی بچسبانید.'; }
 };
 $('#imGo').onclick = () => doImport($('#imText').value);
-async function doImport(text) {
+/* ── پروژه از کد ویدیو (JS/HTML بوم، پایتون MoviePy/Manim، موشن‌اسکریپت) ── */
+const VIDEO_CODE = new Set(['canvas', 'html', 'moviepy', 'manim', 'python']);
+function openCodeProject(files) {
+  openCodeProjectSheet({
+    files, aspects: ASPECTS, host: MP?.host,
+    defaults: { artist: app.song?.artist || '', tg: app.song?.tg || '' },
+    onCreate: async r => {
+      const app_ = r.extras.mode === 'app';
+      const lk = app_ && r.extras.look ? DEFAULT_LOOK() : { ...DEFAULT_LOOK(), grain: 0, bloom: 0, chroma: 0, furniture: false };
+      const proj = {
+        id: 'p' + Date.now(), name: r.name, title: r.title, artist: r.artist, tg: r.tg, aspect: r.aspect,
+        audio: null, lrc: '', analysis: null, duration: 0, sections: null, length: r.length,
+        look: lk, overrides: {}, custom: null, lineFx: {}, texts: [], layers: r.layers,
+        fromCode: { kind: r.kind, mode: r.extras.mode }, createdAt: Date.now(),
+      };
+      await Library.put(proj);
+      $('#imSheet').classList.add('hidden');
+      await openProject(proj.id);
+      screen('editor'); closePane();
+      if (app_ && r.extras.song) { syncProject(); $('#pjSheet').classList.remove('hidden'); }
+      const w = r.warnings.length ? `\n⚠ ${faN(r.warnings.length)} هشدار — جزئیات در «📜 موشن‌اسکریپت».` : '';
+      setTimeout(() => alert(`✓ پروژه از کد ساخته شد: ${faN(r.scenes)} صحنه، ${faN(r.layers.length)} لایه، ${faN(r.length)} ثانیه`
+        + (app_ ? ' — به‌همراه افزودنی‌های برنامه' : ' — فقط اجزای خود کد') + '.\nهمه‌چیز در زبانهٔ لایه‌ها قابل‌تغییر است.' + w), 60);
+    },
+  });
+}
+$('#codeProj')?.addEventListener('click', () => $('#codeFile').click());
+$('#codeFile')?.addEventListener('change', async e => {
+  const fs = [...(e.target.files || [])]; e.target.value = '';
+  if (!fs.length) return;
+  openCodeProject(await Promise.all(fs.map(async f => ({ name: f.name, text: await f.text() }))));
+});
+async function doImport(text, name = '') {
   const msg = $('#imMsg');
+  const t = String(text || '').trim();
+  if (t && !/^[\[{]/.test(t) && !/^\[\d+:\d+/m.test(t)) {
+    let kind = 'motion'; try { kind = detectFormat(t, name); } catch { /* */ }
+    // کد بوم فقط وقتی «برنامهٔ کامل» است (بوم خودش را می‌سازد / حلقهٔ فریم دارد)؛ وگرنه همان «لایهٔ کد» قدیمی
+    const fullCanvas = /getContext\s*\(|requestAnimationFrame|\bdocument\s*\.|\bfunction\s+render\s*\(/.test(t);
+    if (VIDEO_CODE.has(kind) && (kind !== 'canvas' || fullCanvas)) { $('#imSheet').classList.add('hidden'); openCodeProject([{ name: name || (kind === 'html' ? 'code.html' : /py|manim|moviepy/.test(kind) ? 'code.py' : 'code.js'), text }]); return; }
+  }
   try {
     const { proj, media, what } = await projectFromText(text, { look: DEFAULT_LOOK });
     await Library.put(proj);

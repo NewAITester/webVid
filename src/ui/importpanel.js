@@ -1,5 +1,6 @@
 import { h, faN } from './dom.js';
 import { importCode, detectFormat, pickMain, synthAudio, FORMATS } from '../motion/importers/index.js';
+import { EXTRAS, defaultExtras, applyExtras } from '../motion/importers/extras.js';
 
 /**
  * کارت «🧩 وارد کردن کد ویدیو» داخل پنجرهٔ موشن‌اسکریپت
@@ -13,15 +14,48 @@ const fmt = s => faN((+s).toFixed(2).replace(/\.?0+$/, ''));
 export const isVideoCode = (text, name = '') => detectFormat(text, name) !== 'motion';
 
 /**
- * @param {object} o  { host, files:[{name,text}], onScript(script, build:boolean), say(cls,msg) }
+ * قبل از ساخت می‌پرسد: «فقط اجزای خود کد» یا «کد + چیزهایی از خود برنامه».
+ * @param {object} o  { host, files:[{name,text}], onScript(script, build:boolean, info), say(cls,msg),
+ *                      project:boolean (ساخت پروژهٔ تازه), meta:()=>({title,artist,tg,accent}), onResult(R) }
  * @returns {HTMLElement}
  */
-export function importCard({ host, files, onScript, say }) {
+export function importCard({ host, files, onScript, say, project = false, meta = () => ({}), onResult = null }) {
   const main = pickMain(files);
   const others = files.filter(f => f.name !== main.name);
   const values = {};
-  let R = null, busy = 0, tweakEl = null;   // فهرست مقدارها یک‌بار ساخته می‌شود تا تایپ قطع نشود
+  let R = null, busy = 0, tweakEl = null, modeEl = null;   // فهرست مقدارها یک‌بار ساخته می‌شود تا تایپ قطع نشود
   const card = h('div', { class: 'impcard' });
+  const extras = defaultExtras(project);
+  const finalScript = () => applyExtras(R.script, extras, { scenes: R.scenes, duration: R.duration, ...meta() });
+  const info = () => ({ R, extras: { ...extras }, name: main.name });
+
+  /** پرسش «پروژه با این کد چطور ساخته شود؟» — یک‌بار ساخته می‌شود */
+  function modeBox() {
+    if (modeEl) return modeEl;
+    const opts = h('div', { class: 'imxopts' }), grp = 'imx' + Math.random().toString(36).slice(2, 7);
+    const radio = (id, ic, title, desc) => h('label', { class: 'imxr' + (extras.mode === id ? ' on' : '') },
+      h('input', { type: 'radio', name: grp, checked: extras.mode === id, onchange: () => { extras.mode = id; sync(); } }),
+      h('div', {}, h('b', {}, `${ic} ${title}`), h('small', {}, desc)));
+    const rows = [
+      radio('pure', '🧩', 'فقط اجزای خود کد', 'فقط المان‌ها، اجزا و نوشته‌های همین کد ساخته می‌شوند (همه قابل‌تغییر) — بدون هیچ اضافه‌ای از برنامه.'),
+      radio('app', '✨', 'کد + چیزهایی از خود برنامه', 'اجزای کد، به‌علاوهٔ مواردی که پایین انتخاب می‌کنید (گذار، عنوان، کانال، …).'),
+    ];
+    const list = EXTRAS.filter(x => project || !x.project);
+    for (const x of list) {
+      const row = h('label', { class: 'imxo' },
+        h('input', { type: 'checkbox', checked: !!extras[x.id], onchange: e => { extras[x.id] = e.target.checked; } }),
+        h('span', {}, x.label));
+      if (x.pick) row.append(h('select', { onchange: e => { extras.transKind = e.target.value; } },
+        ...x.pick.map(([v, l]) => h('option', { value: v, selected: extras.transKind === v }, l))));
+      opts.append(row);
+    }
+    function sync() {
+      rows.forEach((r, i) => r.classList.toggle('on', (i === 0 ? 'pure' : 'app') === extras.mode));
+      opts.classList.toggle('hidden', extras.mode !== 'app');
+    }
+    sync();
+    return (modeEl = h('div', { class: 'isec imx' }, h('div', { class: 'ist' }, '❓ ' + (project ? 'پروژه با این کد چطور ساخته شود؟' : 'با این کد چطور ساخته شود؟')), ...rows, opts));
+  }
 
   const save = (data, name, type) => {
     const blob = data instanceof Blob ? data : new Blob([data], { type });
@@ -36,6 +70,7 @@ export function importCard({ host, files, onScript, say }) {
     catch (e) { R = { kind: 'unknown', ic: '⚠', label: 'خطا', error: e.message, warnings: [], tweaks: [], scenes: [], found: [], unknown: [], media: [], audio: [] }; }
     R.ms = Math.round(performance.now() - t0);
     paint();
+    try { onResult?.(R); } catch { /* */ }
   }
 
   const thumbs = new Map();          // OffscreenCanvas ← <canvas> (یک‌بار برای هر صحنه)
@@ -102,11 +137,11 @@ export function importCard({ host, files, onScript, say }) {
     if (notes.length) card.append(h('div', { class: 'isec inotes' }, ...notes.map(n => h('div', {}, '⚠ ' + n))));
 
     // دکمه‌ها
+    if (R.script) card.append(modeBox());
     const btns = h('div', { class: 'frow btns' });
     if (R.script) {
-      btns.append(
-        h('button', { class: 'btn primary', onclick: () => onScript(R.script, true) }, '▶ همین الان بساز'),
-        h('button', { class: 'btn sm ghost', title: 'کد تبدیل‌شده در کادر اسکریپت قرار می‌گیرد تا دستی ویرایشش کنید', onclick: () => onScript(R.script, false) }, '← انتقال به موشن‌اسکریپت'));
+      btns.append(h('button', { class: 'btn primary', onclick: () => onScript(finalScript(), true, info()) }, project ? '✓ ساخت پروژه و باز کردن' : '▶ همین الان بساز'));
+      if (!project) btns.append(h('button', { class: 'btn sm ghost', title: 'کد تبدیل‌شده در کادر اسکریپت قرار می‌گیرد تا دستی ویرایشش کنید', onclick: () => onScript(finalScript(), false, info()) }, '← انتقال به موشن‌اسکریپت'));
     }
     if (R.tweaks?.length) btns.append(h('button', { class: 'btn sm ghost', title: 'همان کد اصلی، با مقدارهای تازه', onclick: () => save(R.source, modName(main.name), 'text/plain') }, '⬇ کد اصلیِ تغییریافته'));
     if (R.hasAudio && R.canvas) btns.append(h('button', { class: 'btn sm ghost', onclick: async e => {
