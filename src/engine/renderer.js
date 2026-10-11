@@ -7,6 +7,7 @@ import { STYLE_FN, sMirror } from './styles.js';
 import { TEXT_FX } from './textfx.js';
 import { TEXT_FX2 } from './textfx2.js';
 import { TEXT_FX3, mixFn, mixMode, mixOf, drawMixBg } from './textfx3.js';
+import { drawIdle } from './idlefx.js';
 
 const ALLFX = { ...TEXT_FX, ...TEXT_FX2, ...TEXT_FX3 };
 /** تابع سبک: آماده‌ها + سبک‌های دلخواه کاربر (mx:…) */
@@ -84,6 +85,28 @@ export class Renderer {
   }
 
   /** افکت‌های ارزیابی‌شدهٔ این لحظه برای «شعر» و «کل صفحه» */
+  /** نقشهٔ پنهان/نمایانِ کلمه‌های نخوانده برای خط فعلی و همسایه‌ها.
+      lineFx[i].ghost = 'show'|'hide'؛ lineFx[i].gw = {شمارهٔ کلمه: 'show'|'hide'} */
+  _ghostMap(song, cur) {
+    const lf = this.lineFx;
+    if (!lf || cur < 0) return null;
+    let m = null;
+    for (const i of [cur + 1, cur - 1, cur]) {          // خط فعلی آخر، تا بر همنام‌ها غلبه کند
+      const f = lf[i], L = song.lines[i];
+      if (!f || !L || (!f.ghost && !f.gw)) continue;
+      m ||= new Map();
+      if (f.ghost) {
+        const h = f.ghost === 'hide';
+        m.set(L.text || L.words.map(w => w.text).join(' '), h);
+        for (const w of L.words) m.set(w.text, h);
+      }
+      if (f.gw) for (const [j, v] of Object.entries(f.gw)) {
+        const w = L.words[+j]; if (w && v) m.set(w.text, v === 'hide');
+      }
+    }
+    return m;
+  }
+
   _vfxAt(t, sec, curLine, env) {
     const out = { lyric: [], screen: [] };
     const add = (set, id, t0, t1) => {
@@ -231,6 +254,7 @@ export class Renderer {
     // پیش‌نمایش کم‌رنگ کلمه‌ها: تنظیم بخش، وگرنه تنظیم کل ویدیو
     const ng = this.soloStyle ? undefined : sec[4]?.noGhost;
     DRAW.noGhost = ng === undefined || ng === null ? DRAW.global : !!ng;
+    DRAW.gtext = this.soloStyle ? null : this._ghostMap(song, curLine >= 0 ? curLine : song.activeLine(t + 1));
 
     // استایل ویدیو: پس‌زمینهٔ متحرک خود سبک (زیر همه‌چیز)
     // پس‌زمینه از «استایل ویدیو»ی بخش می‌آید (sec[4].bg) و با عوض کردن
@@ -295,6 +319,12 @@ export class Renderer {
       });
     }
     ctx.restore();
+
+    /* ۳٫۵) بین‌خوانی: وقتی شعری خوانده نمی‌شود، روی هر سبکی سوار می‌شود (بیرون از دوربین و تنظیم خط) */
+    if (!this.soloStyle || this.idlePreview) {
+      const ids = sec[4]?.idle ?? this.idle;
+      if (ids?.length) drawIdle(ctx, song, t, acc, kick, ids, this.idleOpt, this.idlePreview ? 1 : null);
+    }
 
     /* لایه‌های متن آزاد — بیرون از ترنسفرم دوربین، چون جایشان را
        خودتان تعیین کرده‌اید و نباید با لرزش ضرب تکان بخورند. */

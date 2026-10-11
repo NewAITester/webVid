@@ -595,3 +595,22 @@ canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto
 .fold[open]>summary::before{transform:rotate(-90deg)}
 .fold>summary .dim{font-size:11px}
 .fold>*:not(summary){margin:0 10px 10px}
+
+/* ابزار بالای گالری: جست‌وجو + شانسی */
+.fxtools{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.fxtools input{flex:1;min-width:0}
+.fxcard{position:relative}
+.fxcard .fav{position:absolute;top:3px;inset-inline-start:3px;width:24px;height:24px;border-radius:50%;
+  border:none;background:rgba(0,0,0,.45);color:#fff;font-size:13px;line-height:24px;padding:0;cursor:pointer;opacity:.55}
+.fxcard:hover .fav,.fxcard .fav.on{opacity:1}
+.fxcard .fav.on{color:#FFD447}
+.fold>summary .pill.sm{margin-inline-start:auto;font-size:10.5px;padding:2px 8px}
+.idgrid{margin:8px 0}
+/* کم‌رنگیِ تک‌کلمه */
+.ghostbox{margin:10px 0;padding:8px;border:1px dashed var(--line);border-radius:10px}
+.gwords{display:flex;flex-wrap:wrap;gap:5px;direction:rtl}
+.gw{padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);
+  font-family:inherit;font-size:13px;cursor:pointer}
+.gw.hide{border-color:var(--red);color:var(--dim);text-decoration:line-through}
+.gw.show{border-color:#3FB37F;color:#7FE0B2}
+.gw.inherit.off{opacity:.5}

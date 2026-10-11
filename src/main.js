@@ -26,6 +26,7 @@ import { FFmpegPanel } from './ui/ffmpegpanel.js';
 import { Lessons } from './ui/lessons.js';
 import { MG_PRESETS, VIDEO_PRESETS, MG_LABELS, MIX, MIX_OPTS, MIX_DEFAULT, setMixes, mixOf, clearMixCache } from './engine/textfx3.js';
 import { DRAW } from './engine/draw.js';
+import { IDLE_FX, IDLE_IDS, drawIdle, idleWindow, IDLE_DEFAULT_OPT } from './engine/idlefx.js';
 import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
 
@@ -63,6 +64,8 @@ const DEFAULT_LOOK = () => ({
   lyricFont: null,                 // فونت شعر (شناسهٔ فونت کاربر) یا null = اصلی
   mixes: [],                       // سبک‌های موشن‌گرافی دلخواه کاربر [{id,name,o}]
   noGhost: false,                  // پیش‌نمایش کم‌رنگ کلمه‌ها قبل از خوانده شدن پنهان شود
+  idle: [],                        // افکت‌های بین‌خوانی (وقتی آواز نیست) — چندتا با هم
+  idleOpt: { ...IDLE_DEFAULT_OPT },
 });
 let look = DEFAULT_LOOK();
 
@@ -193,6 +196,8 @@ function applyLook() {
   R.globalFx = look.fx;
   setMixes(look.mixes || (look.mixes = []));
   DRAW.global = !!look.noGhost;
+  R.idle = look.idle || (look.idle = []);
+  R.idleOpt = look.idleOpt || (look.idleOpt = { ...IDLE_DEFAULT_OPT });
   if ((look.lyricFont || null) !== curLyricFont) {
     curLyricFont = look.lyricFont || null;
     setLyricFont(curLyricFont).then(() => { clearLayoutCache(); clearGlyphCache(); clearMixCache(); draw(); });
@@ -266,7 +271,7 @@ function pause() {
   app.playing = false;
   R.playing = false;
   MEDIA.pauseAll();
-  if (app.pane === 'fx') POOL.start(fxPreviewTime(sections()[styleSecIndex()]));
+  if (app.pane === 'fx') { POOL.start(fxPreviewTime(sections()[styleSecIndex()])); startIdleAnim(); }
   if (app.pane === 'clip') POOL2.start(app.t);
   $('#play').textContent = '▶';
   rangeEnd = null;
@@ -413,8 +418,19 @@ const FX_CATS = {
   'بی‌کلام': ['intro', 'inst_a', 'inst_b', 'inst_c', 'mirror', 'end'],
   [MINE]: [],
 };
+const FAV = '⭐ پسندیده‌ها';
+let favs = (() => { try { return JSON.parse(localStorage.getItem('fxFav') || '[]'); } catch { return []; } })();
+const saveFavs = () => { try { localStorage.setItem('fxFav', JSON.stringify(favs)); } catch { /* حافظهٔ پر */ } };
+let fxQuery = '';
 const mixIds = () => (look.mixes || []).map(m => 'mx:' + m.id);
-const catIds = c => (c === MINE ? mixIds() : FX_CATS[c] || []);
+const catIds = c => {
+  if (fxQuery) {
+    const q = fxQuery.trim();
+    return [...new Set(allStyles())].filter(id => styleLabel(id).includes(q) || String(id).includes(q));
+  }
+  if (c === FAV) return favs.filter(id => allStyles().includes(id));
+  return c === MINE ? mixIds() : FX_CATS[c] || [];
+};
 const STYLES = Object.values(FX_CATS).flat();
 const styleLabel = id => String(id).startsWith('cf:')
   ? (CSET.get(+id.slice(3))?.name || 'سفارشی')
@@ -678,6 +694,7 @@ function buildClipPanel() {
       v => String(v), v => { fx.dx = v; upd(); })));
     host.append(row('عمودی', ...slider(-400, 400, 2, fx.dy || 0,
       v => String(v), v => { fx.dy = v; upd(); })));
+    if (L) ghostBox(host, fx, L, upd);
     if (L) vfxBox(host, fx.vfx || (fx.vfx = { lyric: [], screen: [] }), 'lfx' + p.i,
       app.song.lineStart(p.i), app.song.lineOut(p.i), 'همین خط');
     return;
@@ -766,6 +783,21 @@ function buildClipPanel() {
     saveState(); draw();
   };
   host.append(row('کلمه‌های نخوانده', gs));
+  const is = document.createElement('select');
+  const iv = s[4]?.idle;
+  for (const [v, lb] of [['', 'مثل کل ویدیو'], ['off', 'خاموش در این بخش'], ['own', 'ویژهٔ این بخش…']]) {
+    const o = document.createElement('option'); o.value = v; o.textContent = lb;
+    if ((v === '' && !Array.isArray(iv)) || (v === 'off' && Array.isArray(iv) && !iv.length) || (v === 'own' && iv?.length)) o.selected = true;
+    is.append(o);
+  }
+  is.onchange = () => {
+    s[4] ||= { lyric: [], screen: [] };
+    if (is.value === '') delete s[4].idle;
+    else if (is.value === 'off') s[4].idle = [];
+    else { s[4].idle = (look.idle || []).slice(); go('fx'); setTimeout(() => { const f = $('#idFold'); if (f) { f.open = true; f.scrollIntoView({ block: 'nearest' }); } }, 60); }
+    saveState(); draw();
+  };
+  host.append(row('بین‌خوانی', is));
   vfxBox(host, s[4] || (s[4] = { lyric: [], screen: [] }), 'sfx' + s[0], s[0], s[1], 'همین بخش');
 }
 
@@ -1563,14 +1595,26 @@ let fxCat = 'استایل ویدیو';
 function buildFxCats() {
   const host = $('#fxCats');
   host.innerHTML = '';
-  for (const c of Object.keys(FX_CATS)) {
+  for (const c of [FAV, ...Object.keys(FX_CATS)]) {
+    if (c === FAV && !favs.length && fxCat !== FAV) continue;
     const b = document.createElement('button');
-    b.className = 'chip' + (c === fxCat ? ' on' : '');
+    b.className = 'chip' + (c === fxCat && !fxQuery ? ' on' : '');
     b.textContent = c;
-    b.onclick = () => { fxCat = c; buildFxCats(); buildFxGrid(); };
+    b.onclick = () => { fxCat = c; fxQuery = ''; const q = $('#fxSearch'); if (q) q.value = ''; buildFxCats(); buildFxGrid(); };
     host.append(b);
   }
 }
+$('#fxSearch')?.addEventListener('input', e => { fxQuery = e.target.value; buildFxCats(); buildFxGrid(); });
+/* 🎲 شانسی: یک استایل ویدیو + یک سبک متن تصادفی برای بخش انتخاب‌شده */
+$('#fxRand')?.addEventListener('click', () => {
+  const sec = sections()[styleSecIndex()];
+  if (!sec) return;
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const vs = pick(FX_CATS['استایل ویدیو']);
+  applySecStyle(sec, vs);
+  if (Math.random() < 0.6) applySecStyle(sec, pick(FX_CATS['موشن‌گرافی']));
+  buildFxGrid();
+});
 /** لحظه‌ای که پیش‌نمایش افکت واقعاً چیزی نشان می‌دهد.
     اگر همین الان خطی فعال نیست، به نزدیک‌ترین خط می‌پریم — وگرنه
     همهٔ کارت‌ها سیاه درمی‌آیند و مقایسه ممکن نیست. */
@@ -1611,6 +1655,22 @@ function fxCard(pool, id, active, accent, onPick, bg = null) {
   lb.className = 'fl'; lb.textContent = styleLabel(id);
   el.append(c, lb);
   el.onclick = () => onPick(id);
+  if (pool === POOL) {
+    const st = document.createElement('button');
+    st.className = 'fav' + (favs.includes(id) ? ' on' : '');
+    st.textContent = favs.includes(id) ? '★' : '☆';
+    st.title = 'پسندیده';
+    st.onclick = ev => {
+      ev.stopPropagation();
+      const k = favs.indexOf(id);
+      if (k >= 0) favs.splice(k, 1); else favs.push(id);
+      saveFavs();
+      st.classList.toggle('on', k < 0); st.textContent = k < 0 ? '★' : '☆';
+      buildFxCats();
+      if (fxCat === FAV && k >= 0) buildFxGrid();
+    };
+    el.append(st);
+  }
   pool.add({ canvas: c, style: id, song: app.song, accent, customSet: CSET, bg: bg && !hasOwnBg(id) ? bg : null });
   return el;
 }
@@ -1653,7 +1713,11 @@ function buildFxGrid() {
       applySecStyle(sec, pick); buildFxGrid();
     }, bgNow && bgNow !== 'none' ? bgNow : null));
   }
-  if (fxCat === MINE && !mixIds().length) {
+  if (fxQuery && !catIds(fxCat).length) {
+    const p = document.createElement('p'); p.className = 'note';
+    p.textContent = 'سبکی با این نام پیدا نشد.'; host.append(p);
+  }
+  if (!fxQuery && fxCat === MINE && !mixIds().length) {
     const p = document.createElement('p');
     p.className = 'note';
     p.textContent = 'هنوز سبکی نساخته‌اید. پایین «＋ سبک دلخواه» را بزنید، یا یکی از سبک‌های «موشن‌گرافی» را انتخاب و «سفارشی کن» را بزنید.';
@@ -1662,6 +1726,170 @@ function buildFxGrid() {
   POOL.observe($('#panes'));
   POOL.start(fxPreviewTime(sec));
   buildMixBox(sec, acc);
+  buildIdleBox(sec, acc); updIdleSum();
+}
+
+/* ── کم‌رنگیِ کلمه‌های نخوانده برای یک خط و تک‌تک کلمه‌هایش ──
+   lineFx[i].ghost = 'show'|'hide' (خالی = مثل بخش)
+   lineFx[i].gw = { شمارهٔ کلمه: 'show'|'hide' } */
+function ghostBox(host, fx, L, upd) {
+  const box = document.createElement('div');
+  box.className = 'ghostbox';
+  const sel = document.createElement('select');
+  for (const [v, lb] of [['', 'مثل بخش / کل ویدیو'], ['show', 'نشان بده'], ['hide', 'پنهان کن']]) {
+    const o = document.createElement('option'); o.value = v; o.textContent = lb;
+    if ((fx.ghost || '') === v) o.selected = true;
+    sel.append(o);
+  }
+  sel.onchange = () => { if (sel.value) fx.ghost = sel.value; else delete fx.ghost; upd(); paint(); };
+  box.append(row('کم‌رنگِ نخوانده', sel));
+  const hint = document.createElement('p');
+  hint.className = 'note';
+  hint.textContent = 'تک‌کلمه: روی هر کلمه بزنید تا بین «مثل خط» ← «پنهان» ← «نمایان» عوض شود.';
+  const words = document.createElement('div');
+  words.className = 'gwords';
+  const paint = () => {
+    words.innerHTML = '';
+    const lineHide = fx.ghost ? fx.ghost === 'hide' : null;
+    L.words.forEach((w, j) => {
+      const v = fx.gw?.[j] || '';
+      const b = document.createElement('button');
+      b.className = 'gw ' + (v || 'inherit');
+      const eff = v ? v === 'hide' : lineHide;
+      b.textContent = w.text;
+      b.title = v === 'hide' ? 'پنهان' : v === 'show' ? 'نمایان' : 'مثل خط';
+      if (eff === true) b.classList.add('off');
+      b.onclick = () => {
+        const nx = v === '' ? 'hide' : v === 'hide' ? 'show' : '';
+        fx.gw ||= {};
+        if (nx) fx.gw[j] = nx; else delete fx.gw[j];
+        if (!Object.keys(fx.gw).length) delete fx.gw;
+        upd(); paint();
+      };
+      words.append(b);
+    });
+    if (fx.gw) {
+      const clr = document.createElement('button');
+      clr.className = 'btn sm ghost'; clr.textContent = 'پاک کردن تک‌کلمه‌ها';
+      clr.onclick = () => { delete fx.gw; upd(); paint(); };
+      words.append(clr);
+    }
+  };
+  paint();
+  box.append(hint, words);
+  host.append(box);
+}
+
+/* ── بین‌خوانی: افکت‌هایی که وقتی آواز نیست می‌آیند ─────────── */
+let idleScope = 'all';           // 'all' = کل ویدیو، 'sec' = بخش انتخاب‌شده
+let idRaf = 0, idCards = [], idT0 = 0;
+function idleTarget(sec) {
+  if (idleScope === 'sec' && sec) {
+    sec[4] ||= { lyric: [], screen: [] };
+    if (!Array.isArray(sec[4].idle)) sec[4].idle = (look.idle || []).slice();
+    return sec[4].idle;
+  }
+  return look.idle || (look.idle = []);
+}
+/** شروع بازهٔ بی‌کلام بعدی (برای پیش‌نمایش در صحنهٔ اصلی) */
+function nextIdleAt(from) {
+  const sg = app.song; if (!sg) return null;
+  const mg = look.idleOpt?.minGap ?? 3;
+  for (let t = Math.max(0, from); t < app.duration; t += 0.25) {
+    if (idleWindow(sg, t, mg).k > 0.95) return t;
+  }
+  for (let t = 0; t < from; t += 0.25) if (idleWindow(sg, t, mg).k > 0.95) return t;
+  return null;
+}
+function idleAnim(now) {
+  const f = $('#idFold');
+  if (!f?.open || app.pane !== 'fx' || app.playing || !app.song || !idCards.length) { idRaf = 0; return; }
+  idRaf = requestAnimationFrame(idleAnim);
+  if (now - (idleAnim.last || 0) < 40) return;      // حدود ۲۵ فریم؛ کارت‌ها کوچک‌اند
+  idleAnim.last = now;
+  const sg = app.song;
+  const t = idT0 + ((now / 1000) % 8);
+  const { W: dw } = stageDims();
+  const kick = sg.kick(t);
+  for (const { c, id } of idCards) {
+    const x = c.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.fillStyle = '#0E0E12'; x.fillRect(0, 0, c.width, c.height);
+    x.setTransform(c.width / dw, 0, 0, c.width / dw, 0, 0);
+    try { drawIdle(x, sg, t, idleAcc, kick, [id], { amt: 1 }, 1); } catch (e) { /* کارت خراب نباید بقیه را بخواباند */ }
+  }
+}
+let idleAcc = C.CRIMSON;
+function startIdleAnim() { if (!idRaf) idRaf = requestAnimationFrame(idleAnim); }
+$('#idFold')?.addEventListener('toggle', startIdleAnim);
+
+function buildIdleBox(sec, acc) {
+  const host = $('#idBox');
+  if (!host) return;
+  host.innerHTML = '';
+  idCards = [];
+  idleAcc = /^#[0-9a-f]{6}$/i.test(look.idleOpt?.color || '') ? look.idleOpt.color : acc;
+  // زمان نمونه برای انرژی صدا: وسط آهنگ
+  idT0 = Math.max(0, (app.duration || 10) * 0.4);
+  // با عوض شدن بخش: اگر بخش تنظیم خودش را دارد همان را نشان بده، وگرنه کل ویدیو
+  const sk = sec ? sec[0] : null;
+  if (sk !== buildIdleBox.sk) { buildIdleBox.sk = sk; idleScope = sec && Array.isArray(sec[4]?.idle) ? 'sec' : 'all'; }
+  const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+  const note = el('p', 'note', 'وقتی آهنگ خوانده نمی‌شود (اینترو، بین دو خط، سولو، پایان) این‌ها نرم می‌آیند و روی هر استایل ویدیو و سبک متنی سوار می‌شوند. چندتا را با هم روشن کنید.');
+  const scope = el('div', 'frow btns');
+  for (const [v, lb] of [['all', 'کل ویدیو'], ['sec', sec ? `فقط بخش ${faN(styleSecIndex() + 1)}` : 'فقط این بخش']]) {
+    const b = el('button', 'chip' + (idleScope === v ? ' on' : ''), lb);
+    b.onclick = () => { idleScope = v; buildIdleBox(sec, acc); };
+    scope.append(b);
+  }
+  if (sec && Array.isArray(sec[4]?.idle)) {
+    const r = el('button', 'btn sm ghost', '↺ این بخش مثل کل ویدیو');
+    r.onclick = () => { delete sec[4].idle; idleScope = 'all'; saveState(); draw(); buildIdleBox(sec, acc); };
+    scope.append(r);
+  }
+  const list = idleScope === 'sec' && sec ? (Array.isArray(sec[4]?.idle) ? sec[4].idle : (look.idle || [])) : (look.idle || []);
+  const grid = el('div', 'fxgrid idgrid');
+  const { W: dw, H: dh } = stageDims();
+  const tw = dh > dw ? 72 : 132;
+  for (const id of IDLE_IDS) {
+    const fx = IDLE_FX[id];
+    const card = el('div', 'fxcard' + (list.includes(id) ? ' on' : ''));
+    const c = el('canvas'); c.width = tw; c.height = Math.round(tw * dh / dw);
+    const lb = el('div', 'fl', (list.includes(id) ? '✓ ' : '') + fx.label);
+    card.append(c, lb);
+    card.onclick = () => {
+      const tg = idleTarget(sec);
+      const k = tg.indexOf(id);
+      if (k >= 0) tg.splice(k, 1); else tg.push(id);
+      saveState(); draw(); buildIdleBox(sec, acc); updIdleSum();
+    };
+    idCards.push({ c, id });
+    grid.append(card);
+  }
+  const o = look.idleOpt || (look.idleOpt = { ...IDLE_DEFAULT_OPT });
+  const opts = el('div', 'form');
+  opts.append(row('شدت', ...slider(20, 150, 5, Math.round((o.amt ?? 1) * 100), v => v + '٪', v => { o.amt = v / 100; saveState(); draw(); })));
+  opts.append(row('کمترین فاصله', ...slider(15, 100, 5, Math.round((o.minGap ?? 3) * 10), v => faN((v / 10).toFixed(1)) + ' ثانیه', v => { o.minGap = v / 10; saveState(); draw(); })));
+  const cr = el('div', 'frow');
+  const own = el('input'); own.type = 'checkbox'; own.checked = !!o.color;
+  const col = el('input'); col.type = 'color'; col.value = o.color || acc; col.disabled = !o.color;
+  own.onchange = () => { o.color = own.checked ? col.value : ''; col.disabled = !own.checked; saveState(); draw(); buildIdleBox(sec, acc); };
+  col.oninput = () => { o.color = col.value; idleAcc = col.value; saveState(); draw(); };
+  const lab = el('label', 'dim'); lab.style.fontSize = '12px'; lab.append(own, document.createTextNode(' رنگ جدا (وگرنه رنگ تأکید بخش)'));
+  cr.append(lab, col);
+  opts.append(cr);
+  const pv = el('button', 'btn sm', '▶ دیدن در اولین جای بی‌کلام');
+  pv.onclick = () => {
+    const t = nextIdleAt(app.t + 0.3);
+    if (t == null) { alert('فاصلهٔ بی‌کلامی به این بلندی پیدا نشد — «کمترین فاصله» را کم کنید'); return; }
+    seek(t); play();
+  };
+  host.append(note, scope, grid, opts, pv);
+  startIdleAnim();
+}
+function updIdleSum() {
+  const n = (look.idle || []).length;
+  const b = $('#idCount'); if (b) b.textContent = n ? `${faN(n)} روشن` : 'خاموش';
 }
 
 /* ── سازندهٔ سبک موشن‌گرافی دلخواه ─────────────────────────── */
@@ -2065,6 +2293,12 @@ window.addEventListener('keydown', e => {
     if (d) { e.preventDefault(); OV.nudge(R.selected, d[0], d[1]); OV.save(); draw(); return; }
   }
   if (e.code === 'Space') { e.preventDefault(); toggle(); }
+  // [ و ] : پرش به خط قبلی/بعدی شعر
+  if ((e.code === 'BracketLeft' || e.code === 'BracketRight') && app.song?.lines.length) {
+    const ls = app.song.lines.map(l => l.words[0].t);
+    const t = e.code === 'BracketRight' ? ls.find(x => x > app.t + 0.05) : [...ls].reverse().find(x => x < app.t - 0.3);
+    if (t !== undefined) { e.preventDefault(); seek(Math.max(0, t - 0.25)); }
+  }
   if (e.code === 'ArrowRight') seek(app.t + (e.shiftKey ? 5 : 1 / 60));
   if (e.code === 'ArrowLeft') seek(app.t - (e.shiftKey ? 5 : 1 / 60));
 });

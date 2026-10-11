@@ -9,7 +9,13 @@ import { solidText } from '../motion/solidtext.js';
  * کشیده نشوند. global از «کل ویدیو» می‌آید و رندرکننده هر فریم آن را
  * با تنظیم بخش فعلی جایگزین می‌کند.
  */
-export const DRAW = { noGhost: false, global: false, raw: false };
+export const DRAW = { noGhost: false, global: false, raw: false, gtext: null };
+/* gtext: Map(متن کلمه یا خط ← پنهان؟) برای تنظیم تک‌خط و تک‌کلمه؛
+   رندرکننده هر فریم برای خط‌های دور و بر نشانگر می‌سازدش. */
+export function ghostHidden(s) {
+  const h = DRAW.gtext?.get(s);
+  return h === undefined ? DRAW.noGhost : h;
+}
 /* raw: برای کپی‌های تزئینی (هاله، تاری، سایه) — سریع، بدون بوم کمکی */
 const fillT = (ctx, s, x, y) => (DRAW.raw ? ctx.fillText(s, x, y) : solidText(ctx, s, x, y));
 const GHOSTS = new Set([C.GHOST, '#8E8E96']);
@@ -75,7 +81,7 @@ function inkOffset(ctx, s, size, family) {
 export function textFa(ctx, s, x, y, size, color, a = 1,
                        family = FONTS.black, align = 'center', baseline = 'mid') {
   if (a <= 0.004 || !s) return;
-  if (DRAW.noGhost && GHOSTS.has(color)) return;
+  if (GHOSTS.has(color) && ghostHidden(s)) return;
   ctx.save();
   ctx.direction = 'rtl';
   ctx.textAlign = align;

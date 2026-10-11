@@ -185,8 +185,16 @@
       <label class="frow ghosttog"><input id="fxGhost" type="checkbox" checked> نمایش کم‌رنگ کلمه‌ها قبل از خوانده شدن
         <span class="dim">(خاموش = هر کلمه فقط وقتی خوانده شد دیده شود)</span></label>
       <div class="fxbg" id="fxBg"></div>
-      <div class="frow btns" id="fxCats"></div>
+      <div class="fxtools">
+        <input id="fxSearch" type="search" class="txt" placeholder="🔍 جست‌وجوی سبک…" autocomplete="off">
+        <button id="fxRand" class="btn sm" title="یک استایل ویدیو و سبک متن تصادفی برای همین بخش">🎲 شانسی</button>
+      </div>
+      <div class="frow btns fxcats" id="fxCats"></div>
       <div id="fxGrid" class="fxgrid"></div>
+      <details id="idFold" class="fold">
+        <summary>🎵 بین‌خوانی <span class="dim">(وقتی آواز نیست)</span><span class="pill sm" id="idCount">خاموش</span></summary>
+        <div id="idBox"></div>
+      </details>
       <details id="mxFold" class="fold">
         <summary>🎛 ساخت سبک دلخواه <span class="dim">(ترکیب ورود، حرکت، پس‌زمینه…)</span></summary>
         <div id="mxBox" class="mxbox"></div>

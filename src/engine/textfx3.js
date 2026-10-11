@@ -1,7 +1,7 @@
 import { W, H, C, S, SF } from './song.js';
 import { clamp, ease, hash, hexToRgb } from './core.js';
 import { place, modeFor } from './layout.js';
-import { textFa, outlineTextFa, DRAW } from './draw.js';
+import { textFa, outlineTextFa, DRAW, ghostHidden } from './draw.js';
 import { applyOverrides } from './overrides.js';
 import { FONTS, font } from './text.js';
 
@@ -249,8 +249,8 @@ function sprite(ctx, s, size, col, o, acc) {
   const g = c.getContext('2d');
   g.scale(k, k);
   const cx = cw / k / 2, cy = ch / k / 2;
-  const prevRaw = DRAW.raw, prevNg = DRAW.noGhost;
-  DRAW.raw = true; DRAW.noGhost = false;
+  const prevRaw = DRAW.raw, prevNg = DRAW.noGhost, prevGt = DRAW.gtext;
+  DRAW.raw = true; DRAW.noGhost = false; DRAW.gtext = null;
   if (o.shadow === 'hard') textFa(g, s, cx + 6 * sc * (size / 90), cy + 6 * sc * (size / 90), size, okHex(o.hi) ? '#000000' : mix2(acc, '#000000', 0.35), 0.95);
   else if (o.shadow === 'long') for (let q = 10; q >= 1; q--) textFa(g, s, cx + q * 2.2 * sc, cy + q * 2.2 * sc, size, '#000000', 0.09);
   g.save();
@@ -259,7 +259,7 @@ function sprite(ctx, s, size, col, o, acc) {
   textFa(g, s, cx, cy, size, col, 1);
   if (o.shadow === 'neon') { g.shadowBlur = 10 * sc * k; textFa(g, s, cx, cy, size, '#FFFFFF', 0.55); }
   g.restore();
-  DRAW.raw = prevRaw; DRAW.noGhost = prevNg;
+  DRAW.raw = prevRaw; DRAW.noGhost = prevNg; DRAW.gtext = prevGt;
   e = { c, w: cw / k, h: ch / k };
   _spr.set(key, e);
   if (_spr.size > 160) _spr.delete(_spr.keys().next().value);
@@ -415,7 +415,9 @@ function decoHit(ctx, o, it, dt, col, i) {
 /* ── موتور اصلی ─────────────────────────────────────────────── */
 export function drawMix(ctx, song, t, acc, kick, ov, o0) {
   const o = { ...MIX_DEFAULT, ...o0 };
-  if (DRAW.noGhost) o.ghost = 0;
+  // پیدایی کلمهٔ نخوانده، جدا برای هر کلمه (تنظیم بخش ← خط ← کلمه)
+  const g0 = +o.ghost || 0;
+  const gOf = w => (ghostHidden(w) ? 0 : g0 > 0 ? g0 : DRAW.gtext?.get(w) === false ? 0.35 : 0);
   const cur = song.activeLine(t);
   if (cur < 0) return;
   const L = song.lines[cur];
@@ -493,12 +495,13 @@ export function drawMix(ctx, song, t, acc, kick, ov, o0) {
 
   list.forEach((it, j) => {
     const i = idx[j];
+    const gh = gOf(it.word);
     const k = (t - wt(it, i)) / dur;
-    if (k <= 0 && (o.reveal === 'timed' || o.ghost <= 0)) {
-      if (o.reveal === 'timed' && o.ghost > 0 && o.layout !== 'solo' && o.enter !== 'type') {
+    if (k <= 0 && (o.reveal === 'timed' || gh <= 0)) {
+      if (o.reveal === 'timed' && gh > 0 && o.layout !== 'solo' && o.enter !== 'type') {
         // پیش‌نمایش کم‌رنگ کلمه‌های بعدی
         ctx.save(); ctx.translate(it.cx, it.cy);
-        textFa(ctx, it.word, 0, 0, it.size, C.GHOST, o.ghost * 0.8 * clamp((t - t0 + 0.5) / 0.3) * (1 - exK));
+        textFa(ctx, it.word, 0, 0, it.size, C.GHOST, gh * 0.8 * clamp((t - t0 + 0.5) / 0.3) * (1 - exK));
         ctx.restore();
       }
       return;
@@ -512,8 +515,8 @@ export function drawMix(ctx, song, t, acc, kick, ov, o0) {
     if (it.key && sung) col = hi;
     if (o.emph === 'color' && sung && (active || o.palette === 'mono')) col = active ? hi : col;
     // کلمهٔ نخوانده در حالت «کل خط با هم» کم‌رنگ است؛ در حالت «سر وقت» تازه دارد می‌آید
-    if (!sung && o.reveal === 'all' && o.ghost <= 0) return;
-    let a = en.a * ex.a * (sung || o.reveal === 'timed' ? 1 : Math.max(0.12, o.ghost));
+    if (!sung && o.reveal === 'all' && gh <= 0) return;
+    let a = en.a * ex.a * (sung || o.reveal === 'timed' ? 1 : Math.max(0.12, gh));
 
     ctx.save();
     ctx.translate(it.cx + en.dx + ex.dx, it.cy + en.dy + ex.dy);
