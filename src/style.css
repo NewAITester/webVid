@@ -539,3 +539,18 @@ canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto
 .lic.t-text{color:#FFD86B}.lic.t-shape{color:#FF6B81}.lic.t-image,.lic.t-video{color:#5FD3C8}
 .lic.t-spectrum{color:#9B8CFF}.lic.t-code{color:#5FD38D}.lic.t-adjust{color:#E8B339}.lic.t-null{color:var(--dim)}
 .pane .note a{color:var(--ink);text-decoration:underline dotted}
+
+/* ── round 2: subnav, layer stack drag, vfx boxes ── */
+.subnav{display:flex;gap:4px;padding:3px;margin:0 0 10px;background:#07080B;border:1px solid var(--line);border-radius:12px}
+.subnav button{flex:1;padding:7px 4px;border:none;border-radius:9px;background:transparent;color:var(--dim);
+  font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.subnav button.on{background:var(--surf2);color:var(--ink)}
+.grip{cursor:grab;color:var(--dim);padding:0 2px;font-size:13px;letter-spacing:-2px;touch-action:none;user-select:none}
+.lrow.dragging{opacity:.6;outline:1px dashed var(--red)}
+.lrow.dropmark{box-shadow:inset 0 2px 0 var(--red)}
+.lrow.lyric{background:#14111A;border:1px dashed #3A3350}
+.lrow.lyric b{color:#C9BFFF}
+.lic.t-lyric{color:#C9BFFF;background:#1E1830}
+.vfxbox{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+#imSheet textarea.code{min-height:150px;margin:8px 0}
+#lkFont .frow{margin-bottom:6px}

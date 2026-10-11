@@ -15,6 +15,10 @@ import { CODE_LAYER_DEFAULT, CODE_SNIPPETS } from '../motion/codeapi.js';
 import { FONT_CHOICES } from '../motion/render.js';
 import { frameEnv } from '../motion/evaluate.js';
 import * as M from '../motion/mat.js';
+import { pickFontFile, userFonts, removeFont } from '../motion/fonts.js';
+
+/** نشانهٔ ردیف «شعر» در ترتیب لایه‌ها */
+const LYRIC = { lyric: true };
 
 /**
  * پنل «لایه‌ها» — قلب ویرایش حرکتی
@@ -223,28 +227,104 @@ export class MotionPanel {
           + 'با دکمهٔ ◆ کنار هر ویژگی «کی‌فریم» بگذارید تا حرکت کند.')));
       return;
     }
+    // ترتیب نمایش: بالاترین لایه بالا. ردیف «شعر» خودش یک طبقه است؛
+    // لایه‌های بالای آن روی شعر کشیده می‌شوند و پایینی‌ها زیر شعر.
     const list = h('div', { class: 'llist' });
-    const arr = this.layers;
-    for (let i = arr.length - 1; i >= 0; i--) {
-      const L = arr[i];
+    const D = this._stack();
+    D.forEach((L, k) => {
+      if (L === LYRIC) {
+        list.append(h('div', { class: 'lrow lyric', title: 'شعر و پس‌زمینهٔ آهنگ' },
+          h('span', { class: 'lic t-lyric' }, '♪'),
+          h('span', { class: 'lnm' }, 'شعر آهنگ', h('small', {}, 'لایه‌های بالای این ردیف روی شعرند، پایینی‌ها پشت شعر')),
+          h('button', { class: 'btn sm ghost', onclick: () => this.host.openLyricFx?.() }, '✦ افکت شعر')));
+        return;
+      }
       const on = this.host.getTime() >= L.t0 && this.host.getTime() < L.t1;
+      const grip = h('span', { class: 'grip', title: 'برای جابه‌جایی بکشید' }, '⋮⋮');
       const row = h('div', { class: 'lrow' + (on ? ' live' : '') + (L.visible === false ? ' off' : ''),
-        onclick: () => { this.host.select(L.id); this.render(); } },
+        onclick: e => { if (e.target.closest('.grip,.ib')) return; this.host.select(L.id); this.render(); } },
+        grip,
         h('span', { class: 'lic t-' + L.type, title: LAYER_TYPES[L.type].label }, LAYER_TYPES[L.type].icon),
         h('span', { class: 'lnm' }, L.name,
           h('small', {}, LAYER_TYPES[L.type].label + (L.effects.length ? ` · ${faN(L.effects.length)} افکت` : '')
-            + (L.behind ? ' · پشت شعر' : '')),
+            + ` · ${faN(L.t0.toFixed(1))}–${faN(L.t1.toFixed(1))}ث`),
           hasAnyKeys(L) ? h('em', { class: 'kf' }, ' ◆') : null),
-        h('span', { class: 'ltm' }, `${L.t0.toFixed(1)}–${L.t1.toFixed(1)}`),
         iconBtn(L.visible === false ? '◌' : '👁', 'نمایش', () => { L.visible = L.visible === false; this.changed(true); }),
         iconBtn(L.locked ? '🔒' : '🔓', 'قفل', () => { L.locked = !L.locked; this.changed(true); }),
-        iconBtn('↑', 'بالاتر', () => { if (i < arr.length - 1) { [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]]; this.changed(true); } }),
-        iconBtn('↓', 'پایین‌تر', () => { if (i > 0) { [arr[i], arr[i - 1]] = [arr[i - 1], arr[i]]; this.changed(true); } }),
+        iconBtn('↑', 'یک طبقه بالاتر', () => this._moveTo(L, k - 1)),
+        iconBtn('↓', 'یک طبقه پایین‌تر', () => this._moveTo(L, k + 1)),
       );
+      row.dataset.k = k;
+      this._dragRow(grip, row, list, L);
       list.append(row);
-    }
+    });
     R.append(list);
-    R.append(h('p', { class: 'note' }, 'بالاترین ردیف روی همه کشیده می‌شود. روی هر ردیف بزنید تا تنظیماتش باز شود.'));
+    R.append(h('p', { class: 'note' }, 'بالاترین ردیف روی همه است. با ⋮⋮ بکشید یا با ↑↓ جابه‌جا کنید — می‌شود لایه را از روی شعر به زیر شعر برد. روی هر ردیف بزنید تا تنظیماتش باز شود.'));
+  }
+
+  /** ترتیب نمایش: [لایه‌های روی شعر (بالا به پایین)، شعر، لایه‌های زیر شعر] */
+  _stack() {
+    const arr = this.layers;
+    const front = arr.filter(L => !L.behind).reverse();
+    const back = arr.filter(L => L.behind).reverse();
+    return [...front, LYRIC, ...back];
+  }
+  /** لایه را به جای k در ترتیب نمایش ببر و آرایهٔ اصلی را از نو بساز */
+  _moveTo(L, k) {
+    const D = this._stack();
+    const i = D.indexOf(L);
+    k = Math.max(0, Math.min(D.length - 1, k));
+    if (i < 0 || k === i) return;
+    D.splice(i, 1); D.splice(k, 0, L);
+    const li = D.indexOf(LYRIC);
+    const order = [];
+    D.forEach((x, j) => { if (x !== LYRIC) { x.behind = j > li; order.push(x); } });
+    order.reverse();
+    this.layers.splice(0, this.layers.length, ...order);
+    this.changed(true);
+  }
+  /** کشیدن ردیف با انگشت (روی گوشی هم کار می‌کند) */
+  _dragRow(grip, row, list, L) {
+    grip.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      grip.setPointerCapture?.(e.pointerId);
+      const rows = [...list.children];
+      const tops = rows.map(r => r.getBoundingClientRect());
+      const y0 = e.clientY;
+      row.classList.add('dragging');
+      let target = +row.dataset.k;
+      const mv = ev => {
+        const dy = ev.clientY - y0;
+        row.style.transform = `translateY(${dy}px)`;
+        const cy = ev.clientY;
+        target = tops.findIndex(r => cy < r.top + r.height / 2);
+        if (target < 0) target = rows.length - 1;
+        rows.forEach((r, j) => r.classList.toggle('dropmark', j === target && r !== row));
+      };
+      const up = () => {
+        grip.removeEventListener('pointermove', mv);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        row.classList.remove('dragging'); row.style.transform = '';
+        rows.forEach(r => r.classList.remove('dropmark'));
+        this._moveTo(L, target);
+      };
+      grip.addEventListener('pointermove', mv);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+    });
+  }
+
+  /**
+   * ویرایشگر افکت برای چیزی جز لایه (شعر، کل صفحه) — همان گالری و کارت‌ها.
+   * @param {HTMLElement} box
+   * @param {{id,t0,t1,effects}} target   شیء شبه‌لایه
+   * @param {()=>void} onChange          ذخیره، کشیدن و ساختن دوبارهٔ همین جعبه
+   */
+  fxEditor(box, target, onChange) {
+    target.type ||= 'adjust';
+    target.props ||= {};
+    this._tabFx(target, box, { onChange, kinds: ['filter', 'move'] });
   }
 
   /* ── نمای بازرس ─────────────────────────────────────────── */
@@ -505,7 +585,11 @@ export class MotionPanel {
         oninput: () => { D.str = ta.value; this.host.draw(); this.host.save(); } });
       body.append(ta);
       body.append(h('div', { class: 'frow btns' },
-        select(FONT_CHOICES.map(f => [f[0], f[2]]), D.font, v => { D.font = v; this.changed(); }),
+        select(FONT_CHOICES.map(f => [f[0], f[2]]), D.font, v => { D.font = v; this.changed(true); }),
+        h('button', { class: 'btn sm ghost', title: 'فایل ttf / otf / woff از گوشی', onclick: async () => {
+          const id = await pickFontFile();
+          if (id) { D.font = id; this.changed(true); }
+        } }, '＋ فونت'),
         ...[['right', 'راست'], ['center', 'وسط'], ['left', 'چپ']].map(([v, lb]) =>
           h('button', { class: 'chip' + (D.align === v ? ' on' : ''), onclick: () => { D.align = v; this.changed(true); } }, lb))));
       this._props(L, body, ['size', 'fill', 'stroke', 'strokeW', 'spacing', 'lineH', 'reveal']);
@@ -646,12 +730,13 @@ export class MotionPanel {
   }
 
   /* ── زبانهٔ «افکت»: افکت‌های فعلی + ظاهر آماده + گالری ───── */
-  _tabFx(L, body) {
+  _tabFx(L, body, opt = {}) {
+    const ch = opt.onChange || (() => this.changed(true));
     body.append(h('div', { class: 'shead sm' }, `افکت‌های این لایه (${faN(L.effects.length)})`,
       h('div', { class: 'spacer' }),
       L.effects.length ? h('button', { class: 'btn sm ghost', onclick: () => {
         if (!confirm('همهٔ افکت‌های این لایه پاک شود؟')) return;
-        L.effects = []; this.changed(true);
+        L.effects = []; ch();
       } }, 'پاک کردن همه') : null));
     if (!L.effects.length) body.append(h('p', { class: 'note' }, 'هنوز افکتی ندارد. از «ظاهر آماده» یا گالری پایین یکی بزنید.'));
     L.effects.forEach((fx, i) => {
@@ -661,10 +746,10 @@ export class MotionPanel {
           h('span', { class: 'fxi' }, E.ic || '✦'),
           h('span', { class: 'fxn' + (fx.on ? '' : ' off') }, E.label),
           h('span', { class: 'spacer' }),
-          iconBtn(fx.on ? '●' : '○', 'روشن/خاموش', ev => { ev.preventDefault(); fx.on = !fx.on; this.changed(true); }),
-          iconBtn('↑', 'بالاتر', ev => { ev.preventDefault(); if (i > 0) { [L.effects[i - 1], L.effects[i]] = [L.effects[i], L.effects[i - 1]]; this.changed(true); } }),
-          iconBtn('↓', 'پایین‌تر', ev => { ev.preventDefault(); if (i < L.effects.length - 1) { [L.effects[i + 1], L.effects[i]] = [L.effects[i], L.effects[i + 1]]; this.changed(true); } }),
-          iconBtn('✕', 'حذف', ev => { ev.preventDefault(); L.effects.splice(i, 1); this.changed(true); }),
+          iconBtn(fx.on ? '●' : '○', 'روشن/خاموش', ev => { ev.preventDefault(); fx.on = !fx.on; ch(); }),
+          iconBtn('↑', 'بالاتر', ev => { ev.preventDefault(); if (i > 0) { [L.effects[i - 1], L.effects[i]] = [L.effects[i], L.effects[i - 1]]; ch(); } }),
+          iconBtn('↓', 'پایین‌تر', ev => { ev.preventDefault(); if (i < L.effects.length - 1) { [L.effects[i + 1], L.effects[i]] = [L.effects[i], L.effects[i + 1]]; ch(); } }),
+          iconBtn('✕', 'حذف', ev => { ev.preventDefault(); L.effects.splice(i, 1); ch(); }),
         ));
       card.addEventListener('toggle', () => { if (card.open) this._openFx = fx.id; });
       if (E.desc) card.append(h('p', { class: 'note' }, E.desc));
@@ -672,15 +757,15 @@ export class MotionPanel {
       body.append(card);
     });
 
-    if (L.type !== 'null') {
+    if (L.type !== 'null' && !opt.noLooks) {
       body.append(h('div', { class: 'shead sm' }, 'ظاهر آماده — چند افکت با هم'));
       body.append(this._strip(LOOKS.map(lk => this._thumbBtn(
         thumb('look:' + lk.id, () => [applyLook(sampleImage(), lk)]), lk.label, false,
-        () => { applyLook(L, lk); this.changed(true); }))));
+        () => { applyLook(L, lk); ch(); }))));
     }
 
     body.append(h('div', { class: 'shead sm' }, 'افزودن افکت'));
-    const avail = effectsFor(L.type);
+    const avail = effectsFor(L.type).filter(([, E]) => !opt.kinds || opt.kinds.includes(E.kind));
     const cats = EFFECT_CATS.filter(([c]) => avail.some(([, E]) => E.cat === c));
     if (!cats.some(([c]) => c === this.fxCat)) this.fxCat = cats[0]?.[0];
     const grid = h('div', { class: 'fxgal' });
@@ -699,7 +784,7 @@ export class MotionPanel {
             return [S];
           });
         grid.append(h('button', { class: 'fxt', title: E.desc || E.label, onclick: () => {
-          const fx = newEffect(k); L.effects.push(fx); this._openFx = fx.id; this.changed(true);
+          const fx = newEffect(k); L.effects.push(fx); this._openFx = fx.id; ch();
         } }, sample || h('i', {}, E.ic || '✦'), h('b', {}, E.label), h('small', {}, E.desc || '')));
       }
     };

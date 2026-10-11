@@ -13,7 +13,8 @@ import { drawLayers, hitLayer, outlineLayer } from './textlayers.js';
 import { place, modeFor } from './layout.js';
 import { TOOLBOX } from './custom.js';
 import { MotionRenderer } from '../motion/render.js';
-import { frameEnv } from '../motion/evaluate.js';
+import { frameEnv, evalEffects, moveMods } from '../motion/evaluate.js';
+import { combine } from '../motion/animate.js';
 
 const TEXTUAL = new Set(['verse', 'chorus', 'pre', 'cold']);
 
@@ -70,6 +71,101 @@ export class Renderer {
     this.playing = false;       // برای هم‌زمانی ویدیوها
     this.exporting = false;
     this.frameDur = 1 / 60;     // برای تاری حرکت
+
+    /* افکت‌های تصویری روی شعر و کل صفحه — همان افکت‌های لایه‌ها.
+       هر مجموعه: { lyric: [افکت…], screen: [افکت…] }
+         globalFx   کل پروژه (زبانهٔ «کل ویدیو»)
+         بخش‌ها     خانهٔ پنجم جدول بخش: sec[4]
+         خط‌ها      lineFx[i].vfx                                  */
+    this.globalFx = null;
+  }
+
+  /** افکت‌های ارزیابی‌شدهٔ این لحظه برای «شعر» و «کل صفحه» */
+  _vfxAt(t, sec, curLine, env) {
+    const out = { lyric: [], screen: [] };
+    const add = (set, id, t0, t1) => {
+      if (!set) return;
+      for (const k of ['lyric', 'screen']) {
+        const list = set[k];
+        if (!list?.length) continue;
+        const L = { id, effects: list, t0, t1 };
+        out[k].push(...evalEffects(L, Math.max(0, t - t0), { ...env, dur: Math.max(0.01, t1 - t0) }));
+      }
+    };
+    add(this.globalFx, 'gfx', 0, this.song?.duration || 1e4);
+    if (sec?.[4]) add(sec[4], 'sfx' + sec[0], sec[0], sec[1]);
+    const lv = curLine >= 0 ? this.lineFx?.[curLine]?.vfx : null;
+    if (lv && this.song) add(lv, 'lfx' + curLine, this.song.lineStart(curLine), this.song.lineOut(curLine));
+    return out;
+  }
+
+  /**
+   * fn(ctx) را با افکت‌ها می‌کشد: افکت‌های حرکتی با ترنسفرم دور وسط قاب،
+   * افکت‌های تصویری روی یک بوم جدا و بعد ترکیب با بوم اصلی.
+   */
+  _withFx(ctx, fxs, t, env, fn) {
+    if (!fxs?.length) { fn(ctx); return; }
+    const mv = combine(...moveMods(fxs, t, env));
+    const filters = fxs.filter(f => f.kind === 'filter');
+    ctx.save();
+    if (mv.dx || mv.dy || mv.rot || mv.s !== 1 || mv.sx !== 1 || mv.sy !== 1) {
+      const U = Math.min(W, H);
+      ctx.translate(W / 2 + mv.dx * U, H / 2 + mv.dy * U);
+      ctx.rotate((mv.rot * Math.PI) / 180);
+      ctx.scale(mv.s * mv.sx, mv.s * mv.sy);
+      ctx.translate(-W / 2, -H / 2);
+    }
+    ctx.globalAlpha *= clamp(mv.a, 0, 1);
+    if (!filters.length) { fn(ctx); ctx.restore(); return; }
+    const cv = ctx.canvas;
+    const buf = this._scratch('_vfxBuf', cv.width, cv.height);
+    const bx = buf.getContext('2d');
+    bx.setTransform(1, 0, 0, 1, 0, 0);
+    bx.globalAlpha = 1; bx.globalCompositeOperation = 'source-over'; bx.filter = 'none';
+    bx.clearRect(0, 0, cv.width, cv.height);
+    const m = ctx.getTransform();
+    bx.setTransform(m);
+    bx.globalAlpha = ctx.globalAlpha;
+    fn(bx);
+    const px = Math.hypot(m.a, m.b) || 1;
+    const res = this.motion._filters(buf, { fx: filters, mods: { blur: 0 }, L: { type: 'adjust' } }, px, env, null);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(res, 0, 0);
+    ctx.restore();
+  }
+
+  /** افکت روی کل تصویر کشیده‌شده تا اینجا */
+  _screenFx(ctx, fxs, t, env) {
+    if (!fxs?.length) return;
+    const cv = ctx.canvas, w = cv.width, h = cv.height;
+    const snap = this._scratch('_scrSnap', w, h);
+    const sx = snap.getContext('2d');
+    sx.setTransform(1, 0, 0, 1, 0, 0); sx.globalAlpha = 1; sx.globalCompositeOperation = 'copy';
+    sx.drawImage(cv, 0, 0); sx.globalCompositeOperation = 'source-over';
+    const m = ctx.getTransform(), px = Math.hypot(m.a, m.b) || 1;
+    const filters = fxs.filter(f => f.kind === 'filter');
+    const res = filters.length
+      ? this.motion._filters(snap, { fx: filters, mods: { blur: 0 }, L: { type: 'adjust' } }, px, env, null) : snap;
+    const mv = combine(...moveMods(fxs, t, env));
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    const moved = mv.dx || mv.dy || mv.rot || mv.s !== 1 || mv.sx !== 1 || mv.sy !== 1;
+    if (moved) {
+      ctx.fillStyle = C.BG; ctx.fillRect(0, 0, w, h);
+      const U = Math.min(W, H) * px;
+      ctx.translate(w / 2 + mv.dx * U, h / 2 + mv.dy * U);
+      ctx.rotate((mv.rot * Math.PI) / 180);
+      ctx.scale(mv.s * mv.sx, mv.s * mv.sy);
+      ctx.translate(-w / 2, -h / 2);
+    }
+    if (moved || res !== snap) {
+      if (!moved) ctx.clearRect(0, 0, w, h);
+      ctx.globalAlpha = clamp(mv.a, 0, 1);
+      ctx.drawImage(res, 0, 0);
+    }
+    ctx.restore();
   }
 
   /** محیط لحظه‌ای لایه‌های حرکتی — یک‌بار در هر فریم */
@@ -131,6 +227,9 @@ export class Renderer {
 
     /* لایه‌های حرکتیِ «پشت شعر» — قبل از دوربین، پس با ضرب نمی‌لرزند */
     const menv = this.layers?.length ? this.motionEnv(t, acc) : null;
+    const venv = menv || this.motionEnv(t, acc);
+    const vfx = this._vfxAt(t, this.soloStyle ? null : sec, curLine, venv);
+    const lyr = fn => this._withFx(ctx, vfx.lyric, t, venv, fn);
     if (menv) this.motion.draw(ctx, this.layers, t, menv, { behind: true, media: this.media });
 
     /* ۲) دوربین */
@@ -159,21 +258,23 @@ export class Renderer {
         beatGrid(ctx, song, t, kick, 10);
       }
       if (this.showFurniture) furniture(ctx, song, t, acc, invert);
-      drawLyrics(ctx, song, t, style, acc, invert, this.overrides);
+      lyr(c => drawLyrics(c, song, t, style, acc, invert, this.overrides));
     } else if (String(style).startsWith('cf:')) {
       beatGrid(ctx, song, t, kick, 10);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
-      this.customSet?.get(+style.slice(3))?.draw(ctx, song, t, acc, kick, this.overrides);
+      lyr(c => this.customSet?.get(+style.slice(3))?.draw(c, song, t, acc, kick, this.overrides));
     } else if (ALLFX[style]) {
       // سبک‌های متنی تازه: پس‌زمینهٔ ساده‌تر، بدون متن لغزان
       beatGrid(ctx, song, t, kick, 10);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
-      ALLFX[style](ctx, song, t, acc, kick, this.overrides);
+      lyr(c => ALLFX[style](c, song, t, acc, kick, this.overrides));
     } else if (style !== 'none') {
       beatGrid(ctx, song, t, kick, 8);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
-      if (style === 'mirror') sMirror(ctx, song, t, acc, kick, this.overrides);
-      else STYLE_FN[style]?.(ctx, song, t, acc, kick, sec);
+      lyr(c => {
+        if (style === 'mirror') sMirror(c, song, t, acc, kick, this.overrides);
+        else STYLE_FN[style]?.(c, song, t, acc, kick, sec);
+      });
     }
     ctx.restore();
 
@@ -181,6 +282,7 @@ export class Renderer {
        خودتان تعیین کرده‌اید و نباید با لرزش ضرب تکان بخورند. */
     drawLayers(ctx, this.texts, t, acc);
     if (menv) this.motion.draw(ctx, this.layers, t, menv, { behind: false, media: this.media });
+    if (vfx.screen.length) this._screenFx(ctx, vfx.screen, t, venv);
     if (this.editMode) {
       ctx.save();
       ctx.translate(W / 2 + sx, H / 2 + sy); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);

@@ -62,7 +62,7 @@ export function evalEffects(L, lt, env) {
 }
 
 /** تغییردهندهٔ افکت‌های حرکتی */
-function moveMods(fxs, lt, env) {
+export function moveMods(fxs, lt, env) {
   const parts = [];
   const U = Math.max(1, Math.min(env.W || 1080, env.H || 1080));
   for (const f of fxs) {

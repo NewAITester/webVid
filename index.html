@@ -58,6 +58,7 @@
     </div>
     <div id="projList" class="cards"></div>
     <button id="newProj" class="btn primary wide big">+ پروژهٔ جدید</button>
+    <button id="importBtn" class="btn ghost wide">📥 وارد کردن پروژه یا کد</button>
   </div>
 </section>
 
@@ -130,6 +131,11 @@
 
     <!-- شعر -->
     <section class="pane" data-pane="lyrics">
+      <div class="subnav">
+        <button data-goto="lyrics">✎ متن و زمان</button>
+        <button data-goto="fx">♪ سبک نمایش</button>
+        <button data-goto="words">✥ جای کلمات</button>
+      </div>
       <div class="phead">شعر<div class="spacer"></div>
         <button id="secAuto" class="btn sm ghost">چیدمان خودکار</button>
         <button id="lyWrite" class="btn sm ghost on">نوشتن</button>
@@ -164,6 +170,11 @@
 
     <!-- گالری افکت -->
     <section class="pane" data-pane="fx">
+      <div class="subnav">
+        <button data-goto="lyrics">✎ متن و زمان</button>
+        <button data-goto="fx">♪ سبک نمایش</button>
+        <button data-goto="words">✥ جای کلمات</button>
+      </div>
       <div class="phead">سبک نمایش شعر<div class="spacer"></div>
         <span class="pill" id="fxFor">—</span></div>
       <p class="note">اینجا انتخاب می‌کنید شعرِ <b>بخشی که الان در آن هستید</b> چطور
@@ -178,6 +189,11 @@
     </section>
 
     <section class="pane" data-pane="words">
+      <div class="subnav">
+        <button data-goto="lyrics">✎ متن و زمان</button>
+        <button data-goto="fx">♪ سبک نمایش</button>
+        <button data-goto="words">✥ جای کلمات</button>
+      </div>
       <div class="phead">جابه‌جایی کلمات<div class="spacer"></div>
         <span class="pill" id="edCount">۰</span></div>
       <p class="note" id="edHint">روی یک کلمه بکشید تا جابه‌جا شود.</p>
@@ -196,8 +212,8 @@
     </section>
 
     <section class="pane" data-pane="look">
-      <div class="phead">رنگ و حس کلی ویدیو</div>
-      <p class="note">این‌ها روی کل ویدیو اثر دارند. برای افکت روی یک لایهٔ خاص به «◧ لایه‌ها» بروید.</p>
+      <div class="phead">کل ویدیو</div>
+      <p class="note">این‌ها روی کل ویدیو اثر دارند. برای افکت فقط روی یک بخش یا یک خط، روی آن در تایم‌لاین بزنید؛ برای یک لایهٔ خاص به «◧ لایه‌ها» بروید.</p>
       <div class="form">
         <div class="frow"><label>رنگ تأکید</label>
           <input id="lkAccent" type="color" value="#E4142A">
@@ -215,6 +231,9 @@
           <div class="spacer"></div>
           <button id="lkReset" class="btn sm ghost">پیش‌فرض</button></div>
       </div>
+      <div class="shead sm">فونت شعر</div>
+      <div id="lkFont"></div>
+      <div id="lkFx"></div>
     </section>
 
     <section class="pane" data-pane="code">
@@ -268,9 +287,7 @@
   <nav class="nav" id="nav">
     <button data-go="lyrics" class="on" title="نوشتن و هم‌زمان کردن شعر"><i>✎</i><b>شعر</b></button>
     <button data-go="layers" title="متن، عکس، شکل و افکت‌های شما"><i>◧</i><b>لایه‌ها</b></button>
-    <button data-go="fx" title="انیمیشن نمایش شعر در هر بخش آهنگ"><i>♪</i><b>سبک شعر</b></button>
-    <button data-go="words" title="جابه‌جا کردن کلمه‌های شعر روی تصویر"><i>✥</i><b>جای کلمات</b></button>
-    <button data-go="look" title="رنگ تأکید، دانه و درخشش کل ویدیو"><i>◐</i><b>رنگ کلی</b></button>
+    <button data-go="look" title="رنگ، فونت شعر و افکت روی کل ویدیو"><i>◐</i><b>کل ویدیو</b></button>
     <button data-go="export" title="ساخت فایل ویدیو"><i>↓</i><b>خروجی</b></button>
   </nav>
 </section>
@@ -302,6 +319,24 @@
   </div>
 </div>
 
+<div id="imSheet" class="sheet hidden">
+  <div class="sheetbox">
+    <div class="shead">وارد کردن پروژه یا کد<div class="spacer"></div><button id="imX" class="icon">×</button></div>
+    <div class="form">
+      <p class="note">یکی از این‌ها را بدهید: فایل کامل پروژه (.json)، کد پروژه که کپی کرده‌اید،
+        فهرست لایه‌ها (JSON)، شعر زمان‌دار (LRC) یا کد جاوااسکریپت یک لایهٔ کدی.</p>
+      <div class="frow btns">
+        <button id="imFileBtn" class="btn sm">📂 انتخاب فایل</button>
+        <input id="imFile" type="file" accept=".json,.txt,.lrc,.js,application/json,text/plain" class="hidden">
+        <button id="imPaste" class="btn sm ghost">📋 چسباندن</button>
+      </div>
+      <textarea id="imText" class="code" spellcheck="false" dir="ltr" placeholder="کد یا متن را اینجا بچسبانید…"></textarea>
+      <button id="imGo" class="btn primary wide big">بساز و باز کن</button>
+      <div id="imMsg" class="msg"></div>
+    </div>
+  </div>
+</div>
+
 <div id="pjSheet" class="sheet hidden">
   <div class="sheetbox">
     <div class="shead">تنظیمات پروژه<div class="spacer"></div><button id="pjX" class="icon">×</button></div>
@@ -319,6 +354,12 @@
       <div class="frow" id="pjLenRow"><label>طول (بی‌صدا)</label>
         <input id="pjLen" type="number" min="1" max="600" step="1" value="15"><span class="dim">ثانیه</span></div>
       <button id="pjSave" class="btn primary wide">ذخیره</button>
+      <div class="shead sm">فایل پروژه</div>
+      <p class="note">کل پروژه (شعر، زمان‌ها، لایه‌ها، افکت‌ها و فایل‌ها) در یک فایل؛ بعداً از صفحهٔ اول «وارد کردن» بزنید.</p>
+      <div class="frow btns">
+        <button id="pjExport" class="btn sm">📤 ذخیرهٔ فایل کامل پروژه</button>
+        <button id="pjCopy" class="btn sm ghost">📋 کپی کد پروژه</button>
+      </div>
       <div id="pjMsg" class="msg"></div>
     </div>
   </div>

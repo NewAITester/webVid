@@ -24,6 +24,8 @@ import * as OPS from './motion/ops.js';
 import { MotionPanel } from './ui/motionpanel.js';
 import { FFmpegPanel } from './ui/ffmpegpanel.js';
 import { Lessons } from './ui/lessons.js';
+import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
+import { buildProjectFile, projectFromText } from './ui/projectio.js';
 
 import { $, $$, faN } from './ui/dom.js';
 const BASE = import.meta.env.BASE_URL;
@@ -55,6 +57,8 @@ const app = {
    می‌کردند. */
 const DEFAULT_LOOK = () => ({
   grain: 0.024, bloom: 0.55, chroma: 1.0, furniture: true, accents: {},
+  fx: { lyric: [], screen: [] },   // افکت‌های تصویری روی همهٔ شعرها / کل ویدیو
+  lyricFont: null,                 // فونت شعر (شناسهٔ فونت کاربر) یا null = اصلی
 });
 let look = DEFAULT_LOOK();
 
@@ -96,7 +100,8 @@ const currentPayload = () => ({ look, overrides: OV.map, sections: R.sections,
 
 /** حالت را روی برنامه بنشان (هنگام باز کردن پروژه و واگرد) */
 function loadPayload(st) {
-  look = Object.assign(DEFAULT_LOOK(), st.look || {});
+  look = Object.assign(DEFAULT_LOOK(), JSON.parse(JSON.stringify(st.look || {})));
+  look.fx = { lyric: [], screen: [], ...(look.fx || {}) };
   OV.setMap(JSON.parse(JSON.stringify(st.overrides || {})), saveState);
   if (st.sections?.length) {
     R.sections = st.sections.map(x => x.slice());
@@ -106,7 +111,7 @@ function loadPayload(st) {
   cfIdx = Math.min(cfIdx, Math.max(0, CSET.count - 1));
   lineFx = JSON.parse(JSON.stringify(st.lineFx || {}));
   texts = JSON.parse(JSON.stringify(st.texts || []));
-  layers = (JSON.parse(JSON.stringify(st.layers || []))).map(normalizeLayer);
+  layers = (JSON.parse(JSON.stringify(st.layers || []))).map(normalizeLayer).filter(Boolean);
   R.lineFx = lineFx; R.texts = texts; R.layers = layers;
   if (selLayerId && !layers.some(L => L.id === selLayerId)) selLayerId = null;
   R.selLayer = selLayerId;
@@ -174,12 +179,18 @@ async function persist() {
   }
 }
 const saveLook = saveState;
+let curLyricFont = null;
 
 function applyLook() {
   R.grain = look.grain;
   R.bloom = look.bloom;
   R.chroma = look.chroma;
   R.showFurniture = look.furniture;
+  R.globalFx = look.fx;
+  if ((look.lyricFont || null) !== curLyricFont) {
+    curLyricFont = look.lyricFont || null;
+    setLyricFont(curLyricFont).then(() => { clearLayoutCache(); clearGlyphCache(); draw(); });
+  }
   // رنگ‌های تأکید قدیمی فقط وقتی اعمال شوند که جدول بخش ذخیره نشده باشد؛
   // وگرنه رنگ هر بخش داخل خود جدول است و شماره‌ها ممکن است جابه‌جا شده باشند.
   if (!look.accents || !Object.keys(look.accents).length) return;
@@ -298,14 +309,17 @@ function go(name, toggle = false) {
   if (name !== 'clip') POOL2.stop();
   app.pane = name;
   $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
-  $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
+  // «شعر» یک گروه است: متن و زمان، سبک نمایش، جای کلمات
+  const navOf = { fx: 'lyrics', words: 'lyrics', code: 'lyrics' };
+  $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === (navOf[name] || name)));
+  $$('.subnav button').forEach(b => b.classList.toggle('on', b.dataset.goto === name));
   sizePane();
   $('#panes').classList.add('open');
   R.editMode = name === 'words';
   canvas.classList.toggle('editing', name === 'words');
   draw();
 
-  if (name === 'look') syncLook();
+  if (name === 'look') { syncLook(); buildLookExtras(); }
   if (name === 'words') refreshCount();
   if (name === 'code') syncCode();
   if (name === 'clip') buildClipPanel();
@@ -432,9 +446,9 @@ function sortSections() {
 }
 
 const ACTS = {
-  section: [['fx','✦','افکت'],['color','◐','رنگ'],['setA','⇤','شروع اینجا'],
+  section: [['fx','♪','سبک شعر'],['vfx','✨','افکت تصویری'],['color','◐','رنگ'],['setA','⇤','شروع اینجا'],
             ['setB','⇥','پایان اینجا'],['split','⁄','تقسیم'],['del','🗑','حذف'],['close','✕','بستن']],
-  line:    [['opts','⚙','تنظیمات'],['fx','✦','افکت'],['all','⇈','روی همه'],
+  line:    [['opts','⚙','تنظیمات'],['vfx','✨','افکت تصویری'],['all','⇈','روی همه'],
             ['clear','↺','پیش‌فرض'],['close','✕','بستن']],
   text:    [['opts','⚙','تنظیمات'],['setA','⇤','شروع اینجا'],['setB','⇥','پایان اینجا'],
             ['dup','⧉','تکثیر'],['del','🗑','حذف'],['close','✕','بستن']],
@@ -542,11 +556,12 @@ function clipAct(act) {
   switch (act) {
     case 'close': TL.choose(null); break;
     case 'opts': go('clip'); break;
+    case 'vfx': go('clip'); setTimeout(() => $('#clBody .vfxbox')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60); break;
     case 'fx':
       if (p.kind === 'line') { go('clip'); }
       else go('fx');
       break;
-    case 'color': go('look'); break;
+    case 'color': go('clip'); break;
     case 'all': {
       const src = lineFx[p.i];
       if (!src) return;
@@ -642,6 +657,8 @@ function buildClipPanel() {
       v => String(v), v => { fx.dx = v; upd(); })));
     host.append(row('عمودی', ...slider(-400, 400, 2, fx.dy || 0,
       v => String(v), v => { fx.dy = v; upd(); })));
+    if (L) vfxBox(host, fx.vfx || (fx.vfx = { lyric: [], screen: [] }), 'lfx' + p.i,
+      app.song.lineStart(p.i), app.song.lineOut(p.i), 'همین خط');
     return;
   }
 
@@ -708,8 +725,43 @@ function buildClipPanel() {
   host.append(row('رنگ تأکید', ac));
   const note = document.createElement('p');
   note.className = 'note';
-  note.textContent = 'برای تغییر افکت این بخش، دکمهٔ «افکت» را بزنید.';
+  note.textContent = 'سبک نمایش شعرِ این بخش را با دکمهٔ «♪ سبک شعر» عوض کنید. افکت‌های تصویری (درخشش، VHS، لرزش…) پایین همین صفحه‌اند.';
   host.append(note);
+  vfxBox(host, s[4] || (s[4] = { lyric: [], screen: [] }), 'sfx' + s[0], s[0], s[1], 'همین بخش');
+}
+
+/**
+ * جعبهٔ «افکت تصویری» برای یک بخش، یک خط یا کل پروژه.
+ * set = { lyric:[…], screen:[…] }؛ هر کدام همان افکت‌های لایه‌ها.
+ */
+const vfxTarget = {};
+function vfxBox(host, set, id, t0, t1, scope, rebuild = buildClipPanel) {
+  const box = document.createElement('div');
+  box.className = 'vfxbox';
+  const which = vfxTarget[id] || 'lyric';
+  const head = document.createElement('div');
+  head.className = 'shead sm';
+  head.textContent = `✨ افکت تصویری — ${scope}`;
+  const seg = document.createElement('div');
+  seg.className = 'seg';
+  for (const [k, lb, sub] of [['lyric', 'روی شعر', 'فقط کلمه‌های شعر'], ['screen', 'روی کل تصویر', 'شعر + پس‌زمینه + لایه‌ها']]) {
+    const b = document.createElement('button');
+    b.className = which === k ? 'on' : '';
+    b.innerHTML = '<b></b><small></small>';
+    b.querySelector('b').textContent = lb + (set[k]?.length ? ` (${faN(set[k].length)})` : '');
+    b.querySelector('small').textContent = sub;
+    b.onclick = () => { vfxTarget[id] = k; rebuild(); };
+    seg.append(b);
+  }
+  const body = document.createElement('div');
+  body.className = 'ibody';
+  box.append(head, seg, body);
+  host.append(box);
+  const target = { id, t0, t1, effects: set[which] || (set[which] = []) };
+  MP.fxEditor(body, target, () => {
+    set[which] = target.effects;
+    saveState(); TL.draw(); draw(); rebuild();
+  });
 }
 
 $('#clAll').onclick = () => {
@@ -788,6 +840,43 @@ function curSecIndex() {
   for (let i = 0; i < tbl.length; i++) if (app.t >= tbl[i][0] && app.t < tbl[i][1]) return i;
   return 0;
 }
+/** زبانهٔ «کل ویدیو»: فونت شعر و افکت‌های کل پروژه */
+function buildLookExtras() {
+  const fh = $('#lkFont');
+  fh.innerHTML = '';
+  const sel = document.createElement('select');
+  const opts = [['', 'IRANSansX (اصلی)'], ...userFonts.map(f => [f.id, f.name])];
+  for (const [v, lb] of opts) {
+    const o = document.createElement('option'); o.value = v; o.textContent = lb;
+    if ((look.lyricFont || '') === v) o.selected = true;
+    sel.append(o);
+  }
+  sel.onchange = () => { look.lyricFont = sel.value || null; applyLook(); saveLook(); };
+  const add = document.createElement('button');
+  add.className = 'btn sm ghost'; add.textContent = '＋ افزودن فونت';
+  add.onclick = async () => {
+    const id = await pickFontFile();
+    if (id) { look.lyricFont = id.slice(2); applyLook(); saveLook(); buildLookExtras(); }
+  };
+  const del = document.createElement('button');
+  del.className = 'btn sm ghost'; del.textContent = 'حذف این فونت';
+  del.disabled = !look.lyricFont;
+  del.onclick = async () => {
+    if (!look.lyricFont || !confirm('این فونت از برنامه حذف شود؟')) return;
+    await removeFont(look.lyricFont); look.lyricFont = null; applyLook(); saveLook(); buildLookExtras();
+  };
+  const r = document.createElement('div'); r.className = 'frow btns';
+  r.append(sel, add, del);
+  fh.append(r);
+  const n = document.createElement('p'); n.className = 'note';
+  n.textContent = 'فونت ttf، otf یا woff از گوشی. یک بار که اضافه کنید، در همهٔ پروژه‌ها و در فهرست فونت لایه‌های متن هم هست.';
+  fh.append(n);
+
+  const xh = $('#lkFx');
+  xh.innerHTML = '';
+  vfxBox(xh, look.fx, 'gfx', 0, app.duration || 1e4, 'کل پروژه', buildLookExtras);
+}
+
 function syncLook() {
   $('#lkGrain').value = Math.round(look.grain * 1000);
   $('#lkBloom').value = Math.round(look.bloom * 100);
@@ -1604,6 +1693,7 @@ const MP = new MotionPanel($('#mpRoot'), {
   playRange,
   openLearn: () => { lessonReturn = 'editor'; screen('learn'); },
   openPane: () => go('layers'),
+  openLyricFx: () => { go('look'); setTimeout(() => $('#lkFx')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60); },
   // کارهای «＋ افزودن» که لایهٔ موشن نیستند
   addExtras: () => [
     { ic: '▦', label: 'بخش تازهٔ شعر', desc: 'بخش زیر نشانگر را دو تکه می‌کند', openLayers: false,
@@ -1636,6 +1726,54 @@ const LS = new Lessons({
     MP.render(); saveState(); draw();
   },
 });
+
+/* ── وارد کردن / بیرون دادن پروژه ─────────────────────────── */
+$('#importBtn').onclick = () => { $('#imText').value = ''; $('#imMsg').textContent = ''; $('#imSheet').classList.remove('hidden'); };
+$('#imX').onclick = () => $('#imSheet').classList.add('hidden');
+$('#imSheet').onclick = e => { if (e.target.id === 'imSheet') $('#imSheet').classList.add('hidden'); };
+$('#imFileBtn').onclick = () => $('#imFile').click();
+$('#imFile').onchange = async e => {
+  const f = e.target.files?.[0]; if (!f) return;
+  $('#imMsg').textContent = 'در حال خواندن…';
+  await doImport(await f.text());
+  e.target.value = '';
+};
+$('#imPaste').onclick = async () => {
+  try { $('#imText').value = await navigator.clipboard.readText(); } catch { $('#imMsg').textContent = 'اجازهٔ خواندن کلیپ‌بورد داده نشد — دستی بچسبانید.'; }
+};
+$('#imGo').onclick = () => doImport($('#imText').value);
+async function doImport(text) {
+  const msg = $('#imMsg');
+  try {
+    const { proj, media, what } = await projectFromText(text, { look: DEFAULT_LOOK });
+    await Library.put(proj);
+    for (const m of media) await Library.putMedia({ ...m, projectId: proj.id });
+    $('#imSheet').classList.add('hidden');
+    await openProject(proj.id);
+    screen('editor'); closePane();
+    setTimeout(() => alert('✓ ' + what), 50);
+  } catch (e) {
+    console.warn(e);
+    msg.className = 'msg err';
+    msg.textContent = 'وارد نشد: ' + (e.message || e);
+  }
+}
+async function exportProjectFile(withMedia) {
+  const msg = $('#pjMsg');
+  try {
+    msg.className = 'msg'; msg.textContent = 'در حال ساختن فایل…';
+    const meta = await currentMeta();
+    const rec = app.projectId === '__demo' ? null : await Library.get(app.projectId);
+    const media = rec ? await Library.mediaOf(app.projectId) : [];
+    const blob = await buildProjectFile({ meta, rec, state: currentPayload(), media, withMedia });
+    const nm = (meta?.title || meta?.name || 'project').replace(/[\\/:*?"<>|]+/g, '_');
+    if (withMedia) { await saveFile(blob, nm + '.lyricstudio.json'); msg.textContent = '✓ فایل پروژه ذخیره شد'; }
+    else { await navigator.clipboard.writeText(await blob.text()); msg.textContent = '✓ کد پروژه کپی شد (بدون آهنگ و عکس‌ها)'; }
+    msg.className = 'msg ok';
+  } catch (e) { msg.className = 'msg err'; msg.textContent = 'نشد: ' + (e.message || e); }
+}
+$('#pjExport').onclick = () => exportProjectFile(true);
+$('#pjCopy').onclick = () => exportProjectFile(false);
 
 $('#undoBtn').onclick = () => histGo(-1);
 $('#redoBtn').onclick = () => histGo(1);
@@ -1688,6 +1826,7 @@ window.addEventListener('keydown', e => {
 /* ── راه‌اندازی ──────────────────────────────────────────── */
 async function boot() {
   await loadFonts();
+  await loadUserFonts();
   applyLook();
   buildAspectPicker();
   await openProject('__demo');
