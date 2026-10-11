@@ -1,12 +1,12 @@
 import { W, H, C, SECT, S } from './song.js';
 import { clamp, rgba, hash2 } from './core.js';
-import { rect } from './draw.js';
+import { rect, DRAW } from './draw.js';
 import { particles, furniture, bgText, beatGrid } from './field.js';
 import { drawLyrics } from './lyricbody.js';
 import { STYLE_FN, sMirror } from './styles.js';
 import { TEXT_FX } from './textfx.js';
 import { TEXT_FX2 } from './textfx2.js';
-import { TEXT_FX3, mixFn, mixMode } from './textfx3.js';
+import { TEXT_FX3, mixFn, mixMode, mixOf, drawMixBg } from './textfx3.js';
 
 const ALLFX = { ...TEXT_FX, ...TEXT_FX2, ...TEXT_FX3 };
 /** تابع سبک: آماده‌ها + سبک‌های دلخواه کاربر (mx:…) */
@@ -228,6 +228,15 @@ export class Renderer {
       ctx.fillRect(0, 0, W, H);
     }
 
+    // پیش‌نمایش کم‌رنگ کلمه‌ها: تنظیم بخش، وگرنه تنظیم کل ویدیو
+    const ng = this.soloStyle ? undefined : sec[4]?.noGhost;
+    DRAW.noGhost = ng === undefined || ng === null ? DRAW.global : !!ng;
+
+    // استایل ویدیو: پس‌زمینهٔ متحرک خود سبک (زیر همه‌چیز)
+    const mo = mixOf(style);
+    const hasBg = !!(mo?.bg && mo.bg !== 'none');
+    if (hasBg && !invert) drawMixBg(ctx, song, t, acc, kick, mo);
+
     /* لایه‌های حرکتیِ «پشت شعر» — قبل از دوربین، پس با ضرب نمی‌لرزند */
     const menv = this.layers?.length ? this.motionEnv(t, acc) : null;
     const venv = menv || this.motionEnv(t, acc);
@@ -269,7 +278,7 @@ export class Renderer {
     } else if (fxOf(style)) {
       // سبک‌های متنی تازه: پس‌زمینهٔ ساده‌تر، بدون متن لغزان
       const fn = fxOf(style);
-      beatGrid(ctx, song, t, kick, 10);
+      if (!hasBg) beatGrid(ctx, song, t, kick, 10);
       if (this.showFurniture) furniture(ctx, song, t, acc, false);
       lyr(c => fn(c, song, t, acc, kick, this.overrides));
     } else if (style !== 'none') {

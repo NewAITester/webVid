@@ -2,6 +2,15 @@ import { rgba } from './core.js';
 import { font, FONTS } from './text.js';
 import { C } from './song.js';
 
+/**
+ * تنظیم سراسری رسم.
+ * noGhost: کلمه‌هایی که هنوز خوانده نشده‌اند (پیش‌نمایش خاکستری) اصلاً
+ * کشیده نشوند. global از «کل ویدیو» می‌آید و رندرکننده هر فریم آن را
+ * با تنظیم بخش فعلی جایگزین می‌کند.
+ */
+export const DRAW = { noGhost: false, global: false };
+const GHOSTS = new Set([C.GHOST, '#8E8E96']);
+
 /* ── ابزارهای هندسی ─────────────────────────────────────────── */
 
 export function rect(ctx, x, y, w, h, color, a = 1) {
@@ -63,6 +72,7 @@ function inkOffset(ctx, s, size, family) {
 export function textFa(ctx, s, x, y, size, color, a = 1,
                        family = FONTS.black, align = 'center', baseline = 'mid') {
   if (a <= 0.004 || !s) return;
+  if (DRAW.noGhost && GHOSTS.has(color)) return;
   ctx.save();
   ctx.direction = 'rtl';
   ctx.textAlign = align;

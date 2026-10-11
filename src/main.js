@@ -24,7 +24,8 @@ import * as OPS from './motion/ops.js';
 import { MotionPanel } from './ui/motionpanel.js';
 import { FFmpegPanel } from './ui/ffmpegpanel.js';
 import { Lessons } from './ui/lessons.js';
-import { MG_PRESETS, MG_LABELS, MIX, MIX_OPTS, MIX_DEFAULT, setMixes, mixOf } from './engine/textfx3.js';
+import { MG_PRESETS, VIDEO_PRESETS, MG_LABELS, MIX, MIX_OPTS, MIX_DEFAULT, setMixes, mixOf } from './engine/textfx3.js';
+import { DRAW } from './engine/draw.js';
 import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
 
@@ -61,6 +62,7 @@ const DEFAULT_LOOK = () => ({
   fx: { lyric: [], screen: [] },   // افکت‌های تصویری روی همهٔ شعرها / کل ویدیو
   lyricFont: null,                 // فونت شعر (شناسهٔ فونت کاربر) یا null = اصلی
   mixes: [],                       // سبک‌های موشن‌گرافی دلخواه کاربر [{id,name,o}]
+  noGhost: false,                  // پیش‌نمایش کم‌رنگ کلمه‌ها قبل از خوانده شدن پنهان شود
 });
 let look = DEFAULT_LOOK();
 
@@ -190,6 +192,7 @@ function applyLook() {
   R.showFurniture = look.furniture;
   R.globalFx = look.fx;
   setMixes(look.mixes || (look.mixes = []));
+  DRAW.global = !!look.noGhost;
   if ((look.lyricFont || null) !== curLyricFont) {
     curLyricFont = look.lyricFont || null;
     setLyricFont(curLyricFont).then(() => { clearLayoutCache(); clearGlyphCache(); draw(); });
@@ -263,7 +266,7 @@ function pause() {
   app.playing = false;
   R.playing = false;
   MEDIA.pauseAll();
-  if (app.pane === 'fx') POOL.start(fxPreviewTime());
+  if (app.pane === 'fx') POOL.start(fxPreviewTime(sections()[styleSecIndex()]));
   if (app.pane === 'clip') POOL2.start(app.t);
   $('#play').textContent = '▶';
   rangeEnd = null;
@@ -402,7 +405,8 @@ function buildStrip() {
 /* ── ویرایش بخش‌ها ───────────────────────────────────────── */
 const MINE = 'سبک‌های من';
 const FX_CATS = {
-  'موشن‌گرافی': MG_PRESETS.map(p => p.id),
+  'استایل ویدیو': VIDEO_PRESETS.map(p => p.id),
+  'موشن‌گرافی': MG_PRESETS.filter(p => !p.id.startsWith('vs_')).map(p => p.id),
   'پایه':    ['verse', 'chorus', 'pre', 'cold'],
   'حرکتی':   ['type', 'karaoke', 'wave', 'punch', 'split', 'stack'],
   'نمایشی':  ['neon', 'sh3d', 'slide', 'drop', 'shake', 'wipe', 'focus', 'breath', 'flip', 'underline', 'spot'],
@@ -436,7 +440,7 @@ const TL = new Timeline(document.getElementById('tl'), {
   getLineFx: () => lineFx,
   getLayers: () => layers,
   label: id => styleLabel(id),
-  onSelect: p => showClipBar(p),
+  onSelect: p => { showClipBar(p); if (app.pane === 'fx' && p?.kind === 'section') buildFxGrid(); },
   onKey: () => { if (app.pane === 'layers') MP.tick(); },
   onChange: (done) => {
     if (done) {
@@ -735,8 +739,26 @@ function buildClipPanel() {
   host.append(row('رنگ تأکید', ac));
   const note = document.createElement('p');
   note.className = 'note';
-  note.textContent = 'سبک نمایش شعرِ این بخش را با دکمهٔ «♪ سبک شعر» عوض کنید. افکت‌های تصویری (درخشش، VHS، لرزش…) پایین همین صفحه‌اند.';
+  note.textContent = 'سبک این بخش: ' + styleLabel(s[2]) + '. با دکمهٔ زیر عوضش کنید — همهٔ خط‌های شعرِ همین بازه با آن تغییر شکل می‌دهند. افکت‌های تصویری پایین همین صفحه‌اند.';
   host.append(note);
+  const sb = document.createElement('button');
+  sb.className = 'btn sm';
+  sb.textContent = '♪ انتخاب استایل برای همین بخش';
+  sb.onclick = () => go('fx');
+  host.append(sb);
+  const gs = document.createElement('select');
+  const sv = s[4]?.noGhost;
+  for (const [v, lb] of [['', 'مثل کل ویدیو'], ['show', 'نشان بده'], ['hide', 'پنهان کن']]) {
+    const o = document.createElement('option'); o.value = v; o.textContent = lb;
+    if ((sv === true && v === 'hide') || (sv === false && v === 'show') || ((sv === undefined || sv === null) && v === '')) o.selected = true;
+    gs.append(o);
+  }
+  gs.onchange = () => {
+    s[4] ||= { lyric: [], screen: [] };
+    if (gs.value === '') delete s[4].noGhost; else s[4].noGhost = gs.value === 'hide';
+    saveState(); draw();
+  };
+  host.append(row('کلمه‌های نخوانده', gs));
   vfxBox(host, s[4] || (s[4] = { lyric: [], screen: [] }), 'sfx' + s[0], s[0], s[1], 'همین بخش');
 }
 
@@ -845,6 +867,30 @@ $('#secAuto').onclick = () => {
 };
 
 /* ── ظاهر ────────────────────────────────────────────────── */
+/** بخشی که سبک رویش اعمال می‌شود: بخش انتخاب‌شده در تایم‌لاین، وگرنه بخش زیر نشانگر */
+function styleSecIndex() {
+  const p = TL.pick;
+  if (p?.kind === 'section' && sections()[p.i]) return p.i;
+  return curSecIndex();
+}
+/** سبک یک بخش را عوض کن — همهٔ خط‌های داخل آن بازه هم همین سبک را می‌گیرند */
+function applySecStyle(sec, id) {
+  if (!sec) return;
+  sec[2] = id;
+  for (const l of app.song?.lines || []) {
+    const t0 = l.words[0]?.t ?? -1;
+    if (t0 >= sec[0] && t0 < sec[1] && lineFx[l.i]?.style) {
+      delete lineFx[l.i].style;
+      if (!Object.keys(lineFx[l.i]).length) delete lineFx[l.i];
+    }
+  }
+  // اگر نشانگر بیرون این بخش است، ببرش داخل تا تغییر را همان لحظه ببینید
+  if (app.t < sec[0] || app.t >= sec[1]) {
+    const first = (app.song?.lines || []).find(l => l.words[0]?.t >= sec[0] && l.words[0]?.t < sec[1]);
+    seek(first ? first.words[0].t + 0.6 : sec[0] + 0.05);
+  }
+  saveState(); TL.draw(); buildStrip(); draw();
+}
 function curSecIndex() {
   const tbl = sections();
   for (let i = 0; i < tbl.length; i++) if (app.t >= tbl[i][0] && app.t < tbl[i][1]) return i;
@@ -892,6 +938,7 @@ function syncLook() {
   $('#lkBloom').value = Math.round(look.bloom * 100);
   $('#lkChroma').value = Math.round(look.chroma * 10);
   $('#lkFurn').checked = look.furniture;
+  $('#lkGhost').checked = !look.noGhost;
   $('#lkAccent').value = sections()[curSecIndex()]?.[3] || C.CRIMSON;
   $('#lkGrainV').textContent = faN(look.grain.toFixed(3));
   $('#lkBloomV').textContent = faN(look.bloom.toFixed(2));
@@ -900,6 +947,8 @@ function syncLook() {
 $('#lkGrain').oninput = e => { look.grain = +e.target.value / 1000; applyLook(); saveLook(); syncLook(); draw(); };
 $('#lkBloom').oninput = e => { look.bloom = +e.target.value / 100; applyLook(); saveLook(); syncLook(); draw(); };
 $('#lkChroma').oninput = e => { look.chroma = +e.target.value / 10; applyLook(); saveLook(); syncLook(); draw(); };
+$('#lkGhost').onchange = e => { look.noGhost = !e.target.checked; applyLook(); saveLook(); draw(); if (app.pane === 'fx') buildFxGrid(); };
+$('#fxGhost').onchange = e => { look.noGhost = !e.target.checked; applyLook(); saveLook(); draw(); const g = $('#lkGhost'); if (g) g.checked = e.target.checked; };
 $('#lkFurn').onchange = e => { look.furniture = e.target.checked; applyLook(); saveLook(); draw(); };
 $('#lkAccent').oninput = e => {
   const s = sections()[curSecIndex()];
@@ -1498,7 +1547,7 @@ $('#syncUndo').onclick = () => { syncTimes.pop(); $('#syncTap').textContent = '�
 $('#syncRestart').onclick = () => { syncTimes = []; $('#syncTap').textContent = 'ثبت این خط'; seek(0); renderSync(); };
 
 /* ── گالری افکت با پیش‌نمایش زنده ────────────────────────── */
-let fxCat = 'موشن‌گرافی';
+let fxCat = 'استایل ویدیو';
 function buildFxCats() {
   const host = $('#fxCats');
   host.innerHTML = '';
@@ -1513,9 +1562,14 @@ function buildFxCats() {
 /** لحظه‌ای که پیش‌نمایش افکت واقعاً چیزی نشان می‌دهد.
     اگر همین الان خطی فعال نیست، به نزدیک‌ترین خط می‌پریم — وگرنه
     همهٔ کارت‌ها سیاه درمی‌آیند و مقایسه ممکن نیست. */
-function fxPreviewTime() {
+function fxPreviewTime(sec = null) {
   const sg = app.song;
   if (!sg || !sg.lines.length) return app.t;
+  if (sec) {
+    // پیش‌نمایش از خط‌های همان بخش
+    const L = sg.lines.find(l => l.words[0].t >= sec[0] && l.words[0].t < sec[1]);
+    if (L) return sg.lineStart(L.i) + Math.max(0.8, sg.lineOut(L.i) - sg.lineStart(L.i)) * 0.3;
+  }
   if (sg.activeLine(app.t) >= 0) return app.t;
   let best = sg.lines[0], bd = Infinity;
   for (const L of sg.lines) {
@@ -1554,14 +1608,16 @@ function buildFxGrid() {
   POOL.clear();
   host.innerHTML = '';
   if (!app.song) return;
-  const i = curSecIndex();
+  const i = styleSecIndex();
   const sec = sections()[i];
-  $('#fxFor').textContent = sec ? `بخش ${faN(i + 1)}` : '—';
+  $('#fxFor').textContent = sec ? `بخش ${faN(i + 1)} · ${faTime(sec[0])}–${faTime(sec[1])}` : '—';
+  const gh = $('#fxGhost');
+  if (gh) gh.checked = !look.noGhost;
   const acc = sec ? sec[3] : C.CRIMSON;
   for (const id of catIds(fxCat)) {
     host.append(fxCard(POOL, id, sec?.[2], acc, pick => {
       if (!sec) return;
-      sec[2] = pick; saveState(); TL.draw(); buildStrip(); buildFxGrid(); draw();
+      applySecStyle(sec, pick); buildFxGrid();
     }));
   }
   if (fxCat === MINE && !mixIds().length) {
@@ -1571,7 +1627,7 @@ function buildFxGrid() {
     host.append(p);
   }
   POOL.observe($('#panes'));
-  POOL.start(fxPreviewTime());
+  POOL.start(fxPreviewTime(sec));
   buildMixBox(sec, acc);
 }
 
@@ -1600,17 +1656,17 @@ function buildMixBox(sec, acc) {
     b.title = 'یک نسخه از همین سبک بسازید و هر چیزش را عوض کنید';
     b.onclick = () => {
       const m = newMix(mixOf(cur), MG_LABELS[cur] + ' (من)');
-      sec[2] = 'mx:' + m.id; mixEdit = m.id; fxCat = MINE;
-      saveState(); TL.draw(); buildStrip(); buildFxCats(); buildFxGrid(); draw();
+      mixEdit = m.id; fxCat = MINE;
+      applySecStyle(sec, 'mx:' + m.id); buildFxCats(); buildFxGrid();
     };
     head.append(b);
   }
   const add = el('button', 'btn sm ghost', '＋ سبک دلخواه');
   add.onclick = () => {
     const m = newMix(null, 'سبک ' + faN((look.mixes?.length || 0) + 1));
-    if (sec) sec[2] = 'mx:' + m.id;
     mixEdit = m.id; fxCat = MINE;
-    saveState(); TL.draw(); buildStrip(); buildFxCats(); buildFxGrid(); draw();
+    if (sec) applySecStyle(sec, 'mx:' + m.id); else saveState();
+    buildFxCats(); buildFxGrid();
   };
   head.append(add);
   host.append(head);
@@ -1635,7 +1691,7 @@ function buildMixBox(sec, acc) {
   nm.oninput = () => { m.name = nm.value; commit(); };
   const row = el('div', 'frow btns');
   const use = el('button', 'btn sm' + (cur === 'mx:' + m.id ? ' primary' : ''), cur === 'mx:' + m.id ? '✓ روی این بخش' : 'روی این بخش');
-  use.onclick = () => { if (sec) { sec[2] = 'mx:' + m.id; saveState(); TL.draw(); buildStrip(); buildFxGrid(); draw(); } };
+  use.onclick = () => { if (sec) { applySecStyle(sec, 'mx:' + m.id); buildFxGrid(); } };
   const all = el('button', 'btn sm ghost', 'روی همهٔ بخش‌های با شعر');
   all.onclick = () => {
     for (const s2 of sections()) if (!['intro', 'inst_a', 'inst_b', 'inst_c', 'end', 'none'].includes(s2[2])) s2[2] = 'mx:' + m.id;
@@ -1646,7 +1702,12 @@ function buildMixBox(sec, acc) {
   const rnd = el('button', 'btn sm ghost', '🎲 شانسی');
   rnd.title = 'ترکیب تصادفی — تا وقتی خوشتان بیاید بزنید';
   rnd.onclick = () => {
-    for (const d of MIX_OPTS) if (d.ch && d.k !== 'layout') m.o[d.k] = d.ch[Math.floor(Math.random() * d.ch.length)][0];
+    for (const d of MIX_OPTS) if (d.ch && d.k !== 'layout') {
+      const ch = d.k === 'bg' ? d.ch.filter(c => c[0] !== 'paper') : d.ch;
+      m.o[d.k] = ch[Math.floor(Math.random() * ch.length)][0];
+    }
+    if (m.o.palette === 'custom') m.o.palette = 'mono';
+    m.o.text = '#F6F3EC';
     m.o.tilt = Math.round((Math.random() - 0.5) * 12); m.o.beat = +(Math.random() * 1.6).toFixed(1);
     commit(true);
   };
@@ -1698,13 +1759,13 @@ function buildMixBox(sec, acc) {
   }
   host.append(form);
   POOL3.observe($('#panes'));
-  POOL3.start(fxPreviewTime());
+  POOL3.start(fxPreviewTime(sec));
 }
 
 function buildCfList() {
   const host = $('#cfList');
   host.innerHTML = '';
-  const sec = sections()[curSecIndex()];
+  const sec = sections()[styleSecIndex()];
   CSET.list.forEach((f, i) => {
     const id = `cf:${i}`;
     const row = document.createElement('div');

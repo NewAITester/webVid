@@ -1,7 +1,7 @@
 import { W, H, C, S, SF } from './song.js';
 import { clamp, ease, hash, hexToRgb } from './core.js';
 import { place, modeFor } from './layout.js';
-import { textFa, outlineTextFa } from './draw.js';
+import { textFa, outlineTextFa, DRAW } from './draw.js';
 import { applyOverrides } from './overrides.js';
 import { FONTS, font } from './text.js';
 
@@ -17,6 +17,12 @@ import { FONTS, font } from './text.js';
 
 /* ── تنظیمات قابل انتخاب (برای سازندهٔ سبک) ───────────────── */
 export const MIX_OPTS = [
+  { k: 'bg', label: 'پس‌زمینهٔ ویدیو', ch: [
+    ['none', 'بدون (پس‌زمینهٔ معمول)'], ['grad', 'گرادیان زنده'], ['blobs', 'لکه‌های رنگی'], ['sunburst', 'پرتوهای چرخان'],
+    ['synth', 'سینت‌ویو'], ['lasers', 'لیزر'], ['bokeh', 'بوکه'], ['halftone', 'نقطه‌های کمیک'], ['stripes', 'راه‌راه'],
+    ['stars', 'پرواز در ستاره‌ها'], ['vhs', 'نوار VHS'], ['paper', 'کاغذ روشن'], ['aurora', 'شفق'], ['embers', 'آتش و جرقه']] },
+  { k: 'bgA', label: 'رنگ ۱ پس‌زمینه', color: true },
+  { k: 'bgB', label: 'رنگ ۲ پس‌زمینه', color: true },
   { k: 'enter', label: 'ورود کلمه', ch: [
     ['pop', 'پاپ فنری'], ['rise', 'بالا آمدن'], ['drop', 'افتادن'], ['slide', 'سُر از کنار'],
     ['zoom', 'زوم از جلو'], ['blur', 'از تاری'], ['spin', 'چرخشی'], ['flip', 'ورق خوردن'],
@@ -48,6 +54,7 @@ export const MIX_DEFAULT = {
   enter: 'pop', reveal: 'timed', layout: 'line', emph: 'color', deco: 'none', shadow: 'none',
   palette: 'mono', exit: 'fade', text: '#F6F3EC', hi: '', box: '#F6F3EC',
   tilt: 0, beat: 0.6, speed: 1, size: 1, ghost: 0.35,
+  bg: 'none', bgA: '#120A24', bgB: '#FF2E97',
 };
 
 /* ── سبک‌های آماده ──────────────────────────────────────────── */
@@ -82,6 +89,35 @@ export const MG_PRESETS = [
   P('mg_spin', 'گردباد', 'کلمه‌ها چرخان وارد می‌شوند و پخش می‌شوند',
     { enter: 'spin', emph: 'bounce', palette: 'rainbow', exit: 'scatter', beat: 0.7 }),
 ];
+
+/* استایل‌های کامل ویدیو: پس‌زمینه + رنگ + حرکت شعر با هم */
+export const VIDEO_PRESETS = [
+  P('vs_poppink', 'پاپ صورتی', 'لکه‌های رنگی صورتی و بنفش، کلمه‌های فنری سفید',
+    { bg: 'blobs', bgA: '#FF4FA3', bgB: '#7B2FF7', enter: 'pop', emph: 'scale', shadow: 'hard', text: '#FFFFFF', hi: '#FFE14F', beat: 0.9 }),
+  P('vs_synth', 'سینت‌ویو', 'خورشید و شبکهٔ نئونی دهه هشتاد',
+    { bg: 'synth', bgA: '#1B0636', bgB: '#FF2E97', enter: 'flip', shadow: 'neon', palette: 'ice', hi: '#00F0FF', emph: 'glow', deco: 'bars', beat: 0.8 }),
+  P('vs_street', 'خیابانی', 'راه‌راه زرد و مشکی، هایلایت و کجی هیپ‌هاپ',
+    { bg: 'stripes', bgA: '#111111', bgB: '#FFD400', enter: 'drop', emph: 'marker', hi: '#FFD400', shadow: 'hard', tilt: -6, layout: 'big', beat: 1.5, exit: 'down' }),
+  P('vs_laser', 'لیزر EDM', 'پرتوهای لیزر روی ضرب، زوم انفجاری',
+    { bg: 'lasers', bgA: '#05010F', bgB: '#00F0FF', enter: 'zoom', deco: 'burst', shadow: 'neon', emph: 'glow', palette: 'ice', hi: '#00F0FF', beat: 1.8, speed: 1.4, exit: 'zoom' }),
+  P('vs_comic', 'کمیک پاپ‌آرت', 'پرتوهای زرد و نارنجی، استیکر و سایهٔ تخت',
+    { bg: 'sunburst', bgA: '#FFD400', bgB: '#FF7A00', enter: 'pop', deco: 'sticker', shadow: 'hard', text: '#141414', box: '#FFFFFF', hi: '#E4142A', tilt: -3, emph: 'scale' }),
+  P('vs_dream', 'رؤیایی', 'بوکهٔ صورتی محو و کلمه‌هایی که از تاری می‌آیند',
+    { bg: 'bokeh', bgA: '#1A1033', bgB: '#FFB3C7', hi: '#FFB3C7', enter: 'blur', reveal: 'all', emph: 'glow', shadow: 'soft', palette: 'gold', speed: 0.6, beat: 0.1, exit: 'blur' }),
+  P('vs_vhs', 'VHS رترو', 'نوار ویدیویی قدیمی با خط‌های اسکن و گلیچ',
+    { bg: 'vhs', bgA: '#0B0B12', bgB: '#3BFFB4', enter: 'glitch', deco: 'brackets', emph: 'color', hi: '#3BFFB4', exit: 'scatter', beat: 1 }),
+  P('vs_paper', 'مینیمال کاغذی', 'زمینهٔ روشن، تایپ مشکی و خط زیر قرمز',
+    { bg: 'paper', bgA: '#F2EEE6', bgB: '#E4142A', enter: 'type', emph: 'underline', text: '#151515', hi: '#E4142A', ghost: 0, beat: 0 }),
+  P('vs_space', 'کهکشان', 'پرواز در میان ستاره‌ها، درخشش یخی',
+    { bg: 'stars', bgA: '#02010A', bgB: '#3A1C71', enter: 'rise', emph: 'glow', palette: 'ice', hi: '#9BE7FF', shadow: 'soft', beat: 0.6 }),
+  P('vs_aurora', 'شفق قطبی', 'نوارهای سبز و بنفش روان، آرام و سینمایی',
+    { bg: 'aurora', bgA: '#020814', bgB: '#00FFA3', enter: 'blur', reveal: 'all', emph: 'scale', hi: '#B9FFE6', shadow: 'soft', speed: 0.7, beat: 0.2, exit: 'up' }),
+  P('vs_candy', 'آب‌نباتی', 'نقطه‌های صورتی کمیک، کلمه‌های رنگارنگ پرشی',
+    { bg: 'halftone', bgA: '#FFD6EA', bgB: '#FF5FA8', enter: 'stretch', palette: 'candy', shadow: 'hard', emph: 'bounce', deco: 'confetti', layout: 'big', beat: 1 }),
+  P('vs_fire', 'آتشین', 'گرادیان گدازه و جرقه‌های بالارونده',
+    { bg: 'embers', bgA: '#1A0300', bgB: '#FF4D00', enter: 'rise', emph: 'glow', palette: 'sunset', hi: '#FFC371', shadow: 'soft', beat: 1.1, exit: 'up' }),
+];
+MG_PRESETS.push(...VIDEO_PRESETS);
 export const MG_LABELS = Object.fromEntries(MG_PRESETS.map(p => [p.id, p.name]));
 
 /* ── سبک‌های دلخواه کاربر (ثبت سراسری، تا پیش‌نمایش و خروجی هم ببینند) ── */
@@ -112,6 +148,7 @@ function hsl(h, s, l) {
   return '#' + hx(f(0) * 255) + hx(f(8) * 255) + hx(f(4) * 255);
 }
 const mix2 = (a, b, t) => { const A = hexToRgb(a), B = hexToRgb(b); return '#' + A.map((v, i) => hx(v + (B[i] - v) * t)).join(''); };
+const lum = h => { const [r, g, b] = hexToRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; };
 const okHex = s => typeof s === 'string' && /^#[0-9a-f]{3,6}$/i.test(s);
 const CANDY = ['#FF4FA3', '#4FD1FF', '#FFE14F', '#7CFF6B', '#B98CFF'];
 function wordColor(o, i, n, t, acc) {
@@ -241,6 +278,7 @@ function decoHit(ctx, o, it, dt, col, i) {
 /* ── موتور اصلی ─────────────────────────────────────────────── */
 export function drawMix(ctx, song, t, acc, kick, ov, o0) {
   const o = { ...MIX_DEFAULT, ...o0 };
+  if (DRAW.noGhost) o.ghost = 0;
   const cur = song.activeLine(t);
   if (cur < 0) return;
   const L = song.lines[cur];
@@ -327,6 +365,7 @@ export function drawMix(ctx, song, t, acc, kick, ov, o0) {
     if (it.key && sung) col = hi;
     if (o.emph === 'color' && sung && (active || o.palette === 'mono')) col = active ? hi : col;
     // کلمهٔ نخوانده در حالت «کل خط با هم» کم‌رنگ است؛ در حالت «سر وقت» تازه دارد می‌آید
+    if (!sung && o.reveal === 'all' && o.ghost <= 0) return;
     let a = en.a * ex.a * (sung || o.reveal === 'timed' ? 1 : Math.max(0.12, o.ghost));
 
     ctx.save();
@@ -359,7 +398,7 @@ export function drawMix(ctx, song, t, acc, kick, ov, o0) {
       col = active ? C.BG : col;
     }
     // متن رنگ تأکید روی ماژیک رنگ تأکید دیده نمی‌شود
-    if (o.emph === 'marker' && sung && col === hi) col = C.BONE;
+    if (o.emph === 'marker' && sung && (col === hi || lum(hi) > 0.55)) col = lum(hi) > 0.55 ? '#111111' : C.BONE;
     if (o.emph === 'box' && sung && col === hi) col = C.BONE;
     // ماژیک
     if (o.emph === 'marker' && sung) {
@@ -414,3 +453,209 @@ export function drawMix(ctx, song, t, acc, kick, ov, o0) {
 
 export const TEXT_FX3 = Object.fromEntries(MG_PRESETS.map(p =>
   [p.id, (c, s, t, a, k, ov) => drawMix(c, s, t, a, k, ov, p.o)]));
+
+/* ── پس‌زمینه‌های متحرک «استایل ویدیو» ─────────────────────── */
+const rgbaH = (h, a) => { const [r, g, b] = hexToRgb(h); return `rgba(${r},${g},${b},${a})`; };
+export function drawMixBg(ctx, song, t, acc, kick, o) {
+  const A = okHex(o.bgA) ? o.bgA : '#120A24', B = okHex(o.bgB) ? o.bgB : acc;
+  const sc = S(), D = Math.hypot(W, H);
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = A; ctx.fillRect(0, 0, W, H);
+  switch (o.bg) {
+    case 'grad': {
+      const an = t * 0.25;
+      const g = ctx.createLinearGradient(W / 2 - Math.cos(an) * D / 2, H / 2 - Math.sin(an) * D / 2, W / 2 + Math.cos(an) * D / 2, H / 2 + Math.sin(an) * D / 2);
+      g.addColorStop(0, A); g.addColorStop(1, mix2(B, '#FFFFFF', 0.15 * kick));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      break;
+    }
+    case 'blobs': {
+      const cols = [B, mix2(A, B, 0.5), mix2(A, '#FFFFFF', 0.25), B];
+      for (let i = 0; i < 4; i++) {
+        const x = W * (0.5 + 0.38 * Math.sin(t * (0.21 + i * 0.07) + i * 2.1));
+        const y = H * (0.5 + 0.36 * Math.cos(t * (0.17 + i * 0.05) + i * 1.3));
+        const r = D * (0.32 + 0.06 * Math.sin(t * 0.5 + i)) * (1 + 0.08 * kick);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, rgbaH(cols[i], 0.85)); g.addColorStop(1, rgbaH(cols[i], 0));
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      }
+      break;
+    }
+    case 'sunburst': {
+      const n = 18, rot = t * 0.18;
+      ctx.translate(W / 2, H / 2); ctx.rotate(rot);
+      ctx.fillStyle = B;
+      for (let i = 0; i < n; i += 2) {
+        const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, D, a0, a1); ctx.closePath(); ctx.fill();
+      }
+      ctx.rotate(-rot); ctx.translate(-W / 2, -H / 2);
+      const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, D * 0.6);
+      g.addColorStop(0, `rgba(255,255,255,${0.25 + 0.3 * kick})`); g.addColorStop(1, 'rgba(0,0,0,0.25)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      break;
+    }
+    case 'synth': {
+      const hz = H * 0.6;
+      const sky = ctx.createLinearGradient(0, 0, 0, hz);
+      sky.addColorStop(0, A); sky.addColorStop(1, mix2(A, B, 0.55));
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, W, hz);
+      // خورشید راه‌راه
+      const R = Math.min(W, H) * 0.24 * (1 + 0.03 * kick), cy = hz - R * 0.35;
+      ctx.save(); ctx.beginPath(); ctx.arc(W / 2, cy, R, 0, Math.PI * 2); ctx.clip();
+      const sg = ctx.createLinearGradient(0, cy - R, 0, cy + R);
+      sg.addColorStop(0, '#FFE14F'); sg.addColorStop(1, B);
+      ctx.fillStyle = sg; ctx.fillRect(W / 2 - R, cy - R, R * 2, R * 2);
+      ctx.fillStyle = mix2(A, B, 0.55);
+      for (let i = 0; i < 7; i++) { const y = cy + R * (0.05 + i * 0.14), h = R * (0.02 + i * 0.012); ctx.fillRect(W / 2 - R, y, R * 2, h); }
+      ctx.restore();
+      // زمین و شبکهٔ پرسپکتیو
+      ctx.fillStyle = mix2(A, '#000000', 0.4); ctx.fillRect(0, hz, W, H - hz);
+      ctx.strokeStyle = rgbaH(B, 0.85); ctx.lineWidth = 2.5 * sc;
+      ctx.beginPath();
+      for (let i = -14; i <= 14; i++) { ctx.moveTo(W / 2 + i * W * 0.02, hz); ctx.lineTo(W / 2 + i * W * 0.16, H); }
+      const ph = (t * 0.6) % 1;
+      for (let j = 0; j < 12; j++) { const z = (j + ph) / 12, y = hz + (H - hz) * z * z; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+      ctx.stroke();
+      const hg = ctx.createLinearGradient(0, hz - 30 * sc, 0, hz + 30 * sc);
+      hg.addColorStop(0, rgbaH(B, 0)); hg.addColorStop(0.5, rgbaH(B, 0.6 + 0.4 * kick)); hg.addColorStop(1, rgbaH(B, 0));
+      ctx.fillStyle = hg; ctx.fillRect(0, hz - 30 * sc, W, 60 * sc);
+      break;
+    }
+    case 'lasers': {
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 8; i++) {
+        const an = -Math.PI / 2 + Math.sin(t * (0.6 + i * 0.13) + i * 1.7) * 0.9;
+        const x0 = W * (0.1 + 0.8 * (i / 7)), y0 = H * 1.02;
+        const col = i % 2 ? B : mix2(B, '#FF2E97', 0.7);
+        ctx.strokeStyle = rgbaH(col, 0.35 + 0.55 * kick); ctx.lineWidth = (3 + 9 * kick) * sc;
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + Math.cos(an) * D, y0 + Math.sin(an) * D); ctx.stroke();
+        ctx.strokeStyle = rgbaH(col, 0.12); ctx.lineWidth = 26 * sc;
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      const fl = ctx.createRadialGradient(W / 2, H, 0, W / 2, H, H);
+      fl.addColorStop(0, rgbaH(B, 0.35 * kick)); fl.addColorStop(1, rgbaH(B, 0));
+      ctx.fillStyle = fl; ctx.fillRect(0, 0, W, H);
+      break;
+    }
+    case 'bokeh': {
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, A); g.addColorStop(1, mix2(A, B, 0.25)); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < 26; i++) {
+        const h1 = hash(i * 3.1), h2 = hash(i * 7.7), h3 = hash(i * 1.9);
+        const x = ((h1 * W + t * (12 + h2 * 30) * sc) % (W + 200 * sc)) - 100 * sc;
+        const y = H * (0.1 + 0.8 * h2) + Math.sin(t * 0.4 + i) * 30 * sc;
+        const r = (30 + 110 * h3) * sc * (1 + 0.1 * kick);
+        const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+        const c = i % 3 ? B : '#FFFFFF';
+        rg.addColorStop(0, rgbaH(c, 0.22)); rg.addColorStop(0.7, rgbaH(c, 0.12)); rg.addColorStop(1, rgbaH(c, 0));
+        ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'halftone': {
+      const step = 34 * sc, ph = t * 0.5;
+      ctx.fillStyle = B;
+      for (let y = step / 2; y < H + step; y += step) {
+        for (let x = (Math.floor(y / step) % 2) * step / 2; x < W + step; x += step) {
+          const d = Math.hypot(x - W / 2, y - H / 2) / (D / 2);
+          const r = step * 0.42 * clamp(0.15 + 0.85 * (0.5 + 0.5 * Math.sin(d * 9 - ph * 4)) * (0.6 + 0.4 * d)) * (1 + 0.15 * kick);
+          if (r < 0.6) continue;
+          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      break;
+    }
+    case 'stripes': {
+      const w = 90 * sc, off = (t * 120 * sc) % (w * 2);
+      ctx.translate(W / 2, H / 2); ctx.rotate(-0.5);
+      ctx.fillStyle = B;
+      for (let x = -D - off; x < D; x += w * 2) ctx.fillRect(x, -D, w, D * 2);
+      ctx.rotate(0.5); ctx.translate(-W / 2, -H / 2);
+      ctx.fillStyle = `rgba(0,0,0,${0.55 - 0.25 * kick})`; ctx.fillRect(0, 0, W, H);
+      break;
+    }
+    case 'stars': {
+      const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, D / 2);
+      g.addColorStop(0, mix2(A, B, 0.6)); g.addColorStop(1, A); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      const spd = 0.35 + 0.8 * kick;
+      for (let i = 0; i < 160; i++) {
+        const an = hash(i * 2.3) * Math.PI * 2;
+        const z = (hash(i * 5.1) + t * 0.18 * (1 + hash(i) * 0.5)) % 1;
+        const r0 = z * z * D * 0.6, r1 = r0 + (6 + 40 * z * spd) * sc;
+        ctx.strokeStyle = `rgba(255,255,255,${clamp(z * 1.4)})`; ctx.lineWidth = (1 + 2.5 * z) * sc;
+        ctx.beginPath(); ctx.moveTo(W / 2 + Math.cos(an) * r0, H / 2 + Math.sin(an) * r0);
+        ctx.lineTo(W / 2 + Math.cos(an) * r1, H / 2 + Math.sin(an) * r1); ctx.stroke();
+      }
+      break;
+    }
+    case 'vhs': {
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, A); g.addColorStop(1, mix2(A, B, 0.12)); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(255,255,255,0.035)';
+      for (let y = 0; y < H; y += 4 * sc) ctx.fillRect(0, y, W, 1.5 * sc);
+      const f = Math.floor(t * 12);
+      for (let i = 0; i < 5; i++) {
+        const y = hash(f * 3 + i) * H, h = (2 + hash(f + i * 9) * 14) * sc;
+        ctx.fillStyle = rgbaH(i % 2 ? B : '#FF2E63', 0.08 + 0.2 * kick); ctx.fillRect(0, y, W, h);
+      }
+      const ry = ((t * 0.15) % 1) * (H + 120 * sc) - 60 * sc;
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(0, ry, W, 60 * sc);
+      ctx.font = `${Math.round(34 * SF())}px ui-monospace, monospace`; ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.textAlign = 'left';
+      ctx.fillText('▶ PLAY', 60 * sc, 80 * sc);
+      ctx.fillText(`SP ${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`, 60 * sc, H - 60 * sc);
+      break;
+    }
+    case 'paper': {
+      for (let i = 0; i < 260; i++) {
+        const x = hash(i * 1.7) * W, y = hash(i * 9.3) * H;
+        ctx.fillStyle = `rgba(0,0,0,${0.025 + 0.03 * hash(i * 4.1)})`; ctx.fillRect(x, y, 2 * sc, 2 * sc);
+      }
+      ctx.fillStyle = rgbaH(B, 0.9);
+      ctx.fillRect(W * 0.08, H * 0.08, 60 * sc * (1 + 0.6 * kick), 8 * sc);
+      ctx.fillRect(W * 0.92 - 60 * sc * (1 + 0.6 * kick), H * 0.92, 60 * sc * (1 + 0.6 * kick), 8 * sc);
+      break;
+    }
+    case 'aurora': {
+      ctx.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < 4; k++) {
+        const col = k % 2 ? '#7B61FF' : B;
+        ctx.beginPath();
+        const yb = H * (0.25 + k * 0.1);
+        ctx.moveTo(0, H);
+        for (let x = 0; x <= W; x += W / 40) ctx.lineTo(x, yb + Math.sin(x / W * 6 + t * (0.4 + k * 0.15) + k) * H * 0.08 + Math.sin(x / W * 13 - t * 0.3) * H * 0.03);
+        ctx.lineTo(W, H); ctx.closePath();
+        const g = ctx.createLinearGradient(0, yb - H * 0.1, 0, yb + H * 0.45);
+        g.addColorStop(0, rgbaH(col, 0)); g.addColorStop(0.25, rgbaH(col, 0.22 + 0.15 * kick)); g.addColorStop(1, rgbaH(col, 0));
+        ctx.fillStyle = g; ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'embers': {
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, A); g.addColorStop(0.7, mix2(A, B, 0.35)); g.addColorStop(1, mix2(B, '#FFC371', 0.2 + 0.3 * kick));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 90; i++) {
+        const life = (hash(i * 3.7) + t * (0.12 + 0.12 * hash(i * 1.3))) % 1;
+        const x = hash(i * 8.1) * W + Math.sin(t * 2 + i) * 30 * sc;
+        const y = H * (1.05 - life * 1.1);
+        const r = (1.5 + 4 * hash(i * 2.2)) * sc * (1 - life * 0.6);
+        ctx.fillStyle = rgbaH(i % 3 ? '#FFC371' : B, (1 - life) * 0.9);
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      break;
+    }
+  }
+  // سایه‌گوشهٔ ملایم تا متن جلوتر بنشیند (جز کاغذ)
+  if (o.bg !== 'paper') {
+    const v = ctx.createRadialGradient(W / 2, H / 2, D * 0.25, W / 2, H / 2, D * 0.6);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
+}

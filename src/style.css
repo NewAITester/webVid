@@ -572,3 +572,5 @@ canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto
 .mxrow:has(input[type=color])>label{flex:0 0 110px}
 .chips{display:flex;flex-wrap:wrap;gap:5px}
 .btn.danger{color:#FF6B6B}
+.ghosttog{font-size:12.5px;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.ghosttog .dim{font-size:11px}

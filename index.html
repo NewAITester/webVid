@@ -177,9 +177,11 @@
       </div>
       <div class="phead">سبک نمایش شعر<div class="spacer"></div>
         <span class="pill" id="fxFor">—</span></div>
-      <p class="note">اینجا انتخاب می‌کنید شعرِ <b>بخشی که الان در آن هستید</b> چطور
-        روی تصویر بیاید. برای افکت روی متن، عکس یا شکل خودتان به
+      <p class="note">اینجا انتخاب می‌کنید شعرِ <b>بخشی که در تایم‌لاین انتخاب کرده‌اید</b> (یا بخش زیر نشانگر)
+        چطور روی تصویر بیاید. «استایل ویدیو» پس‌زمینه و رنگ کل تصویر را هم عوض می‌کند. برای افکت روی متن، عکس یا شکل خودتان به
         <a href="#" data-goto="layers">◧ لایه‌ها</a> بروید.</p>
+      <label class="frow ghosttog"><input id="fxGhost" type="checkbox" checked> نمایش کم‌رنگ کلمه‌ها قبل از خوانده شدن
+        <span class="dim">(خاموش = هر کلمه فقط وقتی خوانده شد دیده شود)</span></label>
       <div class="frow btns" id="fxCats"></div>
       <div id="fxGrid" class="fxgrid"></div>
       <div id="mxBox" class="mxbox"></div>
@@ -228,6 +230,7 @@
         <div class="frow slider"><label>انحراف رنگی</label>
           <input id="lkChroma" type="range" min="0" max="40" value="10" class="rng">
           <span class="pill" id="lkChromaV">۱٫۰</span></div>
+        <div class="frow"><label><input id="lkGhost" type="checkbox" checked> نمایش کم‌رنگ کلمه‌های نخوانده</label></div>
         <div class="frow"><label><input id="lkFurn" type="checkbox" checked> اثاثیهٔ قاب</label>
           <div class="spacer"></div>
           <button id="lkReset" class="btn sm ghost">پیش‌فرض</button></div>
