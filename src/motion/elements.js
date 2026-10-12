@@ -24,7 +24,11 @@ const FONT_CSS = {
   fa: '"IRANSansX Black", Vazirmatn, Tahoma, sans-serif',
   en: '"Arial Black", "Helvetica Neue", Arial, sans-serif',
   mono: 'ui-monospace, Menlo, Consolas, monospace',
+  sans: 'Arial, "Helvetica Neue", "Liberation Sans", sans-serif',
 };
+const FONTS2 = [...FONTS, ['sans', 'لاتین ساده (Arial)']];
+const WEIGHTS = [['400', 'معمولی'], ['700', 'ضخیم'], ['900', 'خیلی ضخیم']];
+const EASES = [['outExpo', 'تند ← نرم (expo)'], ['outCubic', 'نرم'], ['outBack', 'با برگشت'], ['outElastic', 'فنری'], ['linear', 'خطی']];
 
 /** نوشتن یک مقدار به شکل کد JS (رنگ‌های لایه به e.c1 / e.c2 وصل می‌شوند) */
 const lit = v => (typeof v === 'string' ? JSON.stringify(v) : Array.isArray(v) ? `[${v.map(lit).join(', ')}]` : String(+v));
@@ -201,6 +205,227 @@ ctx.fillStyle = e.c1; ctx.beginPath(); ctx.rect(-e.w / 2, -e.h / 2, e.w, e.h);
 ctx.arc(0, 0, u * Math.hypot(e.w, e.h) * 0.55 + 1, 0, e.TAU, true); ctx.fill('evenodd');`,
   },
 };
+
+/* ── المان‌های تایپوگرافی و گذار که «تشخیص افکت» از کدهای وارد‌شده هم از آن‌ها استفاده می‌کند ── */
+const fontOf = p => lit(FONT_CSS[p.font] || FONT_CSS.sans);
+const DIRS = { below: [0, 1], above: [0, -1], left: [-1, 0], right: [1, 0], none: [0, 0] };
+Object.assign(ELEMENT_KINDS, {
+  letterRise: {
+    label: 'حروف پله‌ای', ic: '🔠', box: 'full', cat: 'type',
+    desc: 'حروف یکی‌یکی (با فاصلهٔ زمانی) از یک سمت وارد می‌شوند و در پایان خارج می‌شوند؛ با ماسک اختیاری',
+    params: [T('text', 'نوشته', 'SHOWREEL'), C('c1', 'رنگ نوشته', '#FFFFFF'), C('c2', 'رنگ تأکید', '#5E9FE8'),
+      N('accent', 'هر چند حرف یک حرف تأکیدی (۰ = هیچ)', 0, 0, 12, 1), S('font', 'قلم', 'sans', FONTS2), S('weight', 'ضخامت', '700', WEIGHTS),
+      N('size', 'اندازه (نسبت به ارتفاع)', 0.185, 0.01, 1, 0.005), N('track', 'فاصلهٔ حروف (نسبت به اندازه)', 0.07, -0.2, 1, 0.01),
+      S('dir', 'ورود از', 'below', [['below', 'پایین'], ['above', 'بالا'], ['left', 'چپ'], ['right', 'راست'], ['none', 'بدون حرکت']]),
+      N('dist', 'فاصلهٔ ورود (نسبت به اندازه)', 1.3, 0, 5, 0.05), N('inDur', 'مدت ورود هر حرف (ثانیه)', 0.65, 0.05, 4, 0.05),
+      N('stagger', 'فاصلهٔ زمانی حروف (ثانیه)', 0.045, 0, 1, 0.005), N('delay', 'تأخیر شروع (ثانیه)', 0, 0, 20, 0.05), S('ease', 'منحنی', 'outExpo', EASES),
+      S('fade', 'محو هم بشود', 'no', [['no', 'نه'], ['yes', 'بله']]), S('mask', 'ماسک (فقط داخل نوار دیده شود)', 'yes', [['yes', 'بله'], ['no', 'نه']]),
+      S('outDir', 'خروج در پایان', 'above', [['none', 'بدون خروج'], ['above', 'به بالا'], ['below', 'به پایین'], ['left', 'به چپ'], ['right', 'به راست']]),
+      N('outDur', 'مدت خروج (ثانیه)', 0.4, 0.05, 4, 0.05), N('outStagger', 'فاصلهٔ زمانی خروج (ثانیه)', 0.025, 0, 1, 0.005)],
+    code: p => `// حروف پله‌ای: هر حرف با کمی تأخیر نسبت به قبلی وارد می‌شود
+const chars = [...${lit(p.text)}], font = ${fontOf(p)}, W8 = ${lit(p.weight)};
+ctx.save(); ctx.direction = 'ltr'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+ctx.font = W8 + ' 100px ' + font;
+const adv = chars.map(ch => ctx.measureText(ch).width), tr = ${+p.track} * 100;
+const tw = adv.reduce((a, b) => a + b, 0) + tr * Math.max(0, chars.length - 1);
+const size = Math.min(e.h * ${+p.size}, e.w * 0.94 / Math.max(1, tw) * 100), k = size / 100;
+ctx.font = W8 + ' ' + size + 'px ' + font;
+${p.mask === 'yes' ? 'ctx.beginPath(); ctx.rect(-e.w, -size * 0.66, e.w * 2, size * 1.32); ctx.clip();' : ''}
+const [fx, fy] = ${JSON.stringify(DIRS[p.dir] || DIRS.below)}, [gx, gy] = ${JSON.stringify(DIRS[p.outDir] || DIRS.none)};
+const D = ${+p.dist} * size, n = chars.length, exitT = e.dur - ${+p.outDur} - ${+p.outStagger} * Math.max(0, n - 1);
+let x = -tw * k / 2;
+chars.forEach((ch, i) => {
+  const u = e.ease(${lit(p.ease)}, (e.t - ${+p.delay} - i * ${+p.stagger}) / ${+p.inDur});
+  const v = ${p.outDir === 'none' ? '0' : `e.ease('inExpo', (e.t - exitT - i * ${+p.outStagger}) / ${+p.outDur})`};
+  ctx.globalAlpha = ${p.fade === 'yes' ? 'u * (1 - v)' : '1'};
+  ctx.fillStyle = ${+p.accent} > 0 && i % ${+p.accent} === 0 ? e.c2 : e.c1;
+  ctx.fillText(ch, x + (fx * (1 - u) + gx * v) * D, size * 0.36 + (fy * (1 - u) + gy * v) * D);
+  x += (adv[i] + tr) * k;
+});
+ctx.restore();`,
+  },
+  squashText: {
+    label: 'حروف کِشی', ic: '↕', box: 'full', cat: 'type',
+    desc: 'هر حرف از یک خط صاف قد می‌کشد (پله‌ای)؛ با حرکت آرام افقی',
+    params: [T('text', 'نوشته', 'SHAPE'), C('c1', 'رنگ', '#FFFFFF'), S('font', 'قلم', 'sans', FONTS2), S('weight', 'ضخامت', '700', WEIGHTS),
+      N('size', 'اندازه (نسبت به ارتفاع)', 0.43, 0.01, 1.2, 0.005), N('track', 'فاصلهٔ حروف (نسبت به اندازه)', 0, -0.2, 1, 0.01),
+      N('inDur', 'مدت باز شدن هر حرف (ثانیه)', 0.65, 0.05, 4, 0.05), N('stagger', 'فاصلهٔ زمانی حروف (ثانیه)', 0.06, 0, 1, 0.005),
+      N('delay', 'تأخیر شروع (ثانیه)', 0.2, 0, 20, 0.05), N('drift', 'حرکت افقی در کل مدت (نسبت به عرض)', 0.094, -1, 1, 0.005),
+      S('axis', 'جهت کش آمدن', 'y', [['y', 'عمودی'], ['x', 'افقی']]), S('ease', 'منحنی', 'outExpo', EASES)],
+    code: p => `// حروف کشی: هر حرف از صفر قد می‌کشد
+const chars = [...${lit(p.text)}], font = ${fontOf(p)}, W8 = ${lit(p.weight)};
+ctx.save(); ctx.direction = 'ltr'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+ctx.font = W8 + ' 100px ' + font;
+const adv = chars.map(ch => ctx.measureText(ch).width), tr = ${+p.track} * 100;
+const tw = adv.reduce((a, b) => a + b, 0) + tr * Math.max(0, chars.length - 1);
+const size = Math.min(e.h * ${+p.size}, e.w * 0.94 / Math.max(1, tw) * 100), k = size / 100;
+ctx.font = W8 + ' ' + size + 'px ' + font; ctx.fillStyle = e.c1;
+const drift = e.w * ${+p.drift} * (0.5 - e.p);
+let x = -tw * k / 2 + drift;
+chars.forEach((ch, i) => {
+  const u = e.ease(${lit(p.ease)}, (e.t - ${+p.delay} - i * ${+p.stagger}) / ${+p.inDur});
+  const w = adv[i] * k;
+  if (u > 0.001) { ctx.save(); ctx.translate(x + w / 2, 0); ctx.scale(${p.axis === 'x' ? 'u, 1' : '1, u'}); ctx.fillText(ch, -w / 2, size * 0.36); ctx.restore(); }
+  x += (adv[i] + tr) * k;
+});
+ctx.restore();`,
+  },
+  typeOn: {
+    label: 'تایپ با مکان‌نما', ic: '⌨', box: 'full', cat: 'type',
+    desc: 'نوشته حرف‌به‌حرف تایپ می‌شود و مکان‌نما چشمک می‌زند',
+    params: [T('text', 'نوشته', 'MOTION DESIGN — PORTFOLIO 2026'), C('c1', 'رنگ نوشته', '#FFFFFF'), C('c2', 'رنگ مکان‌نما', '#5E9FE8'),
+      S('font', 'قلم', 'mono', FONTS2), N('size', 'اندازه (نسبت به ارتفاع)', 0.022, 0.005, 0.5, 0.001), N('track', 'فاصلهٔ حروف (نسبت به اندازه)', 0.25, -0.2, 2, 0.01),
+      N('op', 'شفافیت', 0.75, 0, 1, 0.01), N('delay', 'شروع تایپ (ثانیه)', 0, 0, 20, 0.05), N('typeDur', 'مدت تایپ (ثانیه)', 0.45, 0.05, 20, 0.05),
+      S('cursor', 'مکان‌نما', 'yes', [['yes', 'دارد'], ['no', 'ندارد']]), N('out', 'محو شدن در پایان (ثانیه، ۰ = نه)', 0.45, 0, 5, 0.05),
+      S('align', 'چینش', 'center', [['center', 'وسط'], ['left', 'چپ'], ['right', 'راست']])],
+    code: p => `// تایپ حرف‌به‌حرف + مکان‌نمای چشمک‌زن
+const chars = [...${lit(p.text)}], font = ${fontOf(p)};
+const size = e.h * ${+p.size}, tr = ${+p.track} * size;
+ctx.save(); ctx.direction = 'ltr'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '400 ' + size + 'px ' + font;
+const adv = chars.map(ch => ctx.measureText(ch).width), xs = [];
+let tw = 0; for (const a of adv) { xs.push(tw); tw += a + tr; } tw -= tr;
+const x0 = ${p.align === 'left' ? '-e.w / 2 + size' : p.align === 'right' ? 'e.w / 2 - size - tw' : '-tw / 2'};
+const u = e.clamp((e.t - ${+p.delay}) / ${+p.typeDur}), n = Math.floor(chars.length * u);
+const fade = ${+p.out} > 0 ? 1 - e.ease('inExpo', (e.t - (e.dur - ${+p.out})) / ${+p.out}) : 1;
+ctx.globalAlpha = ${+p.op} * fade; ctx.fillStyle = e.c1;
+for (let i = 0; i < n; i++) ctx.fillText(chars[i], x0 + xs[i], size * 0.36);
+${p.cursor === 'yes' ? `if (n < chars.length && e.t > ${+p.delay} - 0.2 && Math.floor(e.t * 8) % 2 === 0) { ctx.globalAlpha = fade; ctx.fillStyle = e.c2; ctx.fillRect(x0 + (n < xs.length ? xs[n] : tw), -size * 0.62, size * 0.58, size); }` : ''}
+ctx.restore();`,
+  },
+  scramble: {
+    label: 'رمزگشایی حروف', ic: '🔣', box: 'full', cat: 'type',
+    desc: 'حروف تصادفی یکی‌یکی به نوشتهٔ درست تبدیل می‌شوند (مثل رمزگشا)',
+    params: [T('text', 'نوشته', '01 — INTRO'), C('c1', 'رنگ', '#FFFFFF'), S('font', 'قلم', 'mono', FONTS2),
+      N('size', 'اندازه (نسبت به ارتفاع)', 0.017, 0.005, 0.5, 0.001), N('op', 'شفافیت', 0.85, 0, 1, 0.01),
+      N('delay', 'شروع (ثانیه)', 0, 0, 20, 0.05), N('decodeDur', 'مدت رمزگشایی (ثانیه)', 0.3, 0.05, 10, 0.05),
+      T('glyphs', 'حروف تصادفی', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&/<>'), S('align', 'چینش', 'left', [['left', 'چپ'], ['center', 'وسط'], ['right', 'راست']])],
+    code: p => `// رمزگشایی: حروفِ هنوز‌نرسیده تصادفی‌اند
+const T = [...${lit(p.text)}], G = ${lit(p.glyphs)}, size = e.h * ${+p.size};
+const keep = Math.floor(T.length * e.clamp((e.t - ${+p.delay}) / ${+p.decodeDur})), f = Math.floor(e.t * 30);
+const s = T.map((ch, i) => (i < keep || ch === ' ' ? ch : G[Math.floor(e.random(f * 31 + i * 7.3) * G.length) % G.length])).join('');
+ctx.save(); ctx.direction = 'ltr'; ctx.textBaseline = 'middle'; ctx.textAlign = ${lit(p.align)};
+ctx.font = '400 ' + size + 'px ' + ${fontOf(p)}; ctx.fillStyle = e.c1; ctx.globalAlpha *= ${+p.op};
+ctx.fillText(s, 0, 0);
+ctx.restore();`,
+  },
+  sliceWords: {
+    label: 'کلمه‌های برشی با جعبه', ic: '▤', box: 'full', cat: 'type',
+    desc: 'کلمه‌ها پشت سر هم؛ هر کلمه در سه برش از دو طرف می‌لغزد و جعبهٔ رنگی پشتش باز می‌شود',
+    params: [T('words', 'کلمه‌ها (با ویرگول جدا)', 'TIMING, SPACING, RHYTHM, STORY'), T('colors', 'رنگ جعبه‌ها (با ویرگول)', '#5E9FE8, #DF84A8, #EAC26B, #72BC8F'),
+      C('c1', 'رنگ نوشته', '#111114'), S('font', 'قلم', 'sans', FONTS2), N('size', 'اندازه (نسبت به ارتفاع)', 0.23, 0.02, 1, 0.005),
+      N('per', 'مدت هر کلمه (ثانیه)', 0.5, 0.1, 10, 0.05), T('label', 'نوشتهٔ کوچک بالا', 'THE ART OF'),
+      S('counter', 'شمارنده (۰۱ / ۰۴)', 'yes', [['yes', 'دارد'], ['no', 'ندارد']]), N('slide', 'لغزش برش‌ها (نسبت به عرض)', 0.32, 0, 1, 0.01)],
+    code: p => `// کلمه‌های برشی: سه نوار افقی از دو طرف می‌لغزند، جعبه پشتش باز می‌شود
+const WS = ${lit(p.words)}.split(',').map(s => s.trim()).filter(Boolean), CS = ${lit(p.colors)}.split(',').map(s => s.trim()).filter(Boolean);
+if (WS.length) {
+const per = ${+p.per}, k = Math.min(Math.floor(e.t / per), WS.length - 1), wl = e.t - k * per, word = WS[k];
+const size = e.h * ${+p.size}, font = ${fontOf(p)};
+ctx.save(); ctx.direction = 'ltr'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+ctx.font = '700 ' + size + 'px ' + font;
+const m = ctx.measureText(word), bw = Math.min(e.w * 0.96, m.width + size * 0.56), bh = size * 1.2;
+if (k < WS.length - 1) { const ex = e.ease('inExpo', (wl - per * 0.76) / (per * 0.24)); ctx.scale(1 + ex * 0.35, Math.max(0.001, 1 - ex)); }
+const bp = e.ease('outExpo', wl / (per * 0.48));
+ctx.fillStyle = CS.length ? CS[k % CS.length] : e.c2; ctx.fillRect(-bw / 2, -bh / 2, bw * bp, bh);
+ctx.fillStyle = e.c1; ctx.fillRect(-bw / 2 + bw * bp - size * 0.04, -bh / 2, size * 0.04 * (1 - bp) + 0.5, bh);
+for (let si = 0; si < 3; si++) {
+  const sp = e.ease('outExpo', (wl - per * (0.06 + si * 0.07)) / (per * 0.58));
+  ctx.save(); ctx.beginPath(); ctx.rect(-e.w, -bh / 2 + si * bh / 3, e.w * 2, bh / 3 + 1); ctx.clip();
+  ctx.fillText(word, (1 - sp) * e.w * ${+p.slide} * (si % 2 ? -1 : 1), size * 0.36); ctx.restore();
+}
+ctx.font = '400 ' + size * 0.104 + 'px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left';
+ctx.globalAlpha = e.ease('outCubic', (wl - per * 0.2) / (per * 0.3));
+ctx.fillText(${lit(p.label)}, -bw / 2, -bh / 2 - size * 0.1);
+${p.counter === 'yes' ? `ctx.textAlign = 'right'; ctx.globalAlpha = 1; ctx.fillText('0' + (k + 1) + ' / 0' + WS.length, bw / 2, bh / 2 + size * 0.18);` : ''}
+ctx.restore();
+}`,
+  },
+  ringBurst: {
+    label: 'حلقه‌های انفجاری', ic: '◎', box: 'full', cat: 'shapes',
+    desc: 'چند حلقهٔ رنگی یک‌بار از مرکز باز و محو می‌شوند',
+    params: [C('c1', 'رنگ ۱', '#5E9FE8'), C('c2', 'رنگ ۲', '#DF84A8'), C('c3', 'رنگ ۳', '#EAC26B'),
+      N('n', 'تعداد حلقه', 3, 1, 8, 1), N('delay', 'شروع (ثانیه)', 0.38, 0, 20, 0.05), N('gap', 'فاصلهٔ زمانی حلقه‌ها', 0.08, 0, 1, 0.01),
+      N('ringDur', 'مدت هر حلقه (ثانیه)', 0.92, 0.1, 5, 0.05), N('r', 'شعاع نهایی (نسبت به عرض)', 0.41, 0.05, 1.5, 0.01), N('lw', 'ضخامت اول', 12, 1, 60, 1)],
+    code: p => `// حلقه‌های انفجاری: یک‌بار باز می‌شوند و نازک و محو
+const cols = [e.c1, e.c2, ${lit(p.c3)}], s = e.w / 1920;
+ctx.save();
+for (let i = 0; i < ${+p.n}; i++) {
+  const u = (e.t - ${+p.delay} - i * ${+p.gap}) / ${+p.ringDur};
+  if (u <= 0 || u >= 1) continue;
+  ctx.strokeStyle = cols[i % 3]; ctx.globalAlpha = 1 - u; ctx.lineWidth = (${+p.lw} + (0.5 - ${+p.lw}) * u) * s;
+  ctx.beginPath(); ctx.arc(0, 0, (30 * s) + e.w * ${+p.r} * e.ease('outExpo', u), 0, e.TAU); ctx.stroke();
+}
+ctx.restore();`,
+  },
+  dotSphere: {
+    label: 'کرهٔ نقطه‌ای سه‌بعدی', ic: '🌐', box: 'full', cat: 'shapes',
+    desc: 'کره‌ای از نقطه‌ها که می‌چرخد، عمق دارد و می‌تواند به گره تبدیل شود؛ با حلقه‌های مداری',
+    params: [C('c1', 'رنگ ۱', '#4FB9C9'), C('c2', 'رنگ ۲', '#DF84A8'), N('n', 'تعداد نقطه', 1400, 50, 4000, 10),
+      N('r', 'شعاع (نسبت به ارتفاع)', 0.31, 0.05, 0.6, 0.01), N('spin', 'سرعت چرخش', 1.3, -5, 5, 0.05),
+      N('morph', 'تبدیل به گره در ثانیهٔ (۰ = نه)', 0.65, 0, 30, 0.05), S('rings', 'حلقه‌های مداری', 'yes', [['yes', 'دارد'], ['no', 'ندارد']]),
+      N('dot', 'درشتی نقطه', 1, 0.2, 4, 0.05)],
+    code: p => `// کرهٔ نقطه‌ای: نقطه‌های فیبوناچی، چرخش + پرسپکتیو، رنگ بر اساس ارتفاع
+const N = ${+p.n}, R = e.h * ${+p.r}, t = e.t, hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+const A = hex(e.c1), B = hex(e.c2);
+const sc = e.ease('outBack', t / 0.55) * (1 - e.ease('inExpo', (t - (e.dur - 0.4)) / 0.4));
+const ry = t * ${+p.spin}, rx = 0.35 + 0.25 * Math.sin(t * 1.7), cy = Math.cos(ry), sy = Math.sin(ry), cx = Math.cos(rx), sx = Math.sin(rx);
+const rot = (x, y, z) => { const x2 = x * cy + z * sy, z2 = -x * sy + z * cy; return [x2, y * cx - z2 * sx, y * sx + z2 * cx]; };
+ctx.save();
+${p.rings === 'yes' ? `for (const [ri, tilt, rr] of [[0, 1.2, 1.58], [1, -0.6, 1.82]]) {
+  ctx.beginPath();
+  for (let i = 0; i <= 96; i++) { const a = i / 96 * e.TAU; const [x, y, z] = rot(Math.cos(a) * rr, Math.sin(a) * rr * Math.sin(tilt), Math.sin(a) * rr * Math.cos(tilt)); const k = 3.3 / (3.9 + z); i ? ctx.lineTo(x * R * k * sc, y * R * k * sc) : ctx.moveTo(x * R * k * sc, y * R * k * sc); }
+  ctx.strokeStyle = ri ? e.c2 : e.c1; ctx.globalAlpha = 0.35; ctx.lineWidth = e.h / 680; ctx.stroke();
+}` : ''}
+const P = new Float32Array(N * 4), idx = new Array(N);
+for (let i = 0; i < N; i++) {
+  const ph = Math.acos(1 - 2 * (i + 0.5) / N), th = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+  let x = Math.cos(th) * Math.sin(ph), y = Math.cos(ph), z = Math.sin(th) * Math.sin(ph);
+  const m = ${+p.morph} > 0 ? e.ease('inOutCubic', (t - ${+p.morph} - i / N * 0.35) / 0.7) : 0;
+  if (m > 0) { const u = (i + 0.5) / N * e.TAU, rk = Math.cos(3 * u) + 2.2; x += (rk * Math.cos(2 * u) / 2.9 - x) * m; y += (-Math.sin(3 * u) * 1.2 / 2.9 - y) * m; z += (rk * Math.sin(2 * u) / 2.9 - z) * m; }
+  const [X, Y, Z] = rot(x, y, z); P[i * 4] = X; P[i * 4 + 1] = Y; P[i * 4 + 2] = Z; P[i * 4 + 3] = (Math.cos(ph) + 1) / 2; idx[i] = i;
+}
+idx.sort((a, b) => P[b * 4 + 2] - P[a * 4 + 2]);
+for (const i of idx) {
+  const z = P[i * 4 + 2], k = 3.3 / (3.9 + z), dn = e.clamp((z + 1.27) / 2.54), h = P[i * 4 + 3];
+  ctx.globalAlpha = 0.35 + 0.65 * (1 - dn);
+  ctx.fillStyle = 'rgb(' + A.map((v, j) => Math.round(v + (B[j] - v) * h)).join(',') + ')';
+  ctx.beginPath(); ctx.arc(P[i * 4] * R * k * sc, P[i * 4 + 1] * R * k * sc, (5 - 3.7 * dn) * Math.max(sc, 0.3) * ${+p.dot} * e.h / 1080, 0, e.TAU); ctx.fill();
+}
+ctx.restore();`,
+  },
+  blinds: {
+    label: 'پرده‌های کرکره‌ای', ic: '▥', box: 'full', cat: 'transition', tr: true,
+    desc: 'نوارهای عمودی یکی‌یکی پایین می‌آیند و قاب را می‌پوشانند، بعد کنار می‌روند',
+    params: [C('c1', 'رنگ', '#F2EFE9'), N('n', 'تعداد نوار', 12, 2, 40, 1)],
+    code: p => `// کرکره: نیمهٔ اول می‌پوشاند، نیمهٔ دوم باز می‌کند
+const n = ${+p.n}, bw = e.w / n; ctx.fillStyle = e.c1;
+for (let i = 0; i < n; i++) {
+  const q = e.p < 0.5 ? e.ease('inOutCubic', e.clamp(e.p * 2 * 1.6 - i / n * 0.6)) : 1 - e.ease('inOutCubic', e.clamp((e.p - 0.5) * 2 * 1.6 - i / n * 0.6));
+  const y0 = e.p < 0.5 ? -e.h / 2 : e.h / 2 - e.h * q;
+  ctx.fillRect(-e.w / 2 + i * bw - 1, y0, bw + 2, e.h * q);
+}`,
+  },
+  clockWipe: {
+    label: 'گذار عقربه‌ای', ic: '◔', box: 'full', cat: 'transition', tr: true,
+    desc: 'مثل عقربهٔ ساعت دور می‌زند و قاب را می‌پوشاند و باز می‌کند',
+    params: [C('c1', 'رنگ پوشش', '#0E1A2C'), C('c2', 'رنگ عقربه', '#72BC8F')],
+    code: () => `// عقربه: نیمهٔ اول پوشش دور می‌زند، نیمهٔ دوم از همان جهت باز می‌شود
+const R = Math.hypot(e.w, e.h), a0 = -Math.PI / 2, u = e.ease('inOutCubic', e.p < 0.5 ? e.p * 2 : (e.p - 0.5) * 2);
+const s0 = e.p < 0.5 ? a0 : a0 + e.TAU * u, s1 = e.p < 0.5 ? a0 + e.TAU * u : a0 + e.TAU;
+ctx.fillStyle = e.c1; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, s0, s1); ctx.closePath(); ctx.fill();
+const ah = e.p < 0.5 ? s1 : s0;
+ctx.strokeStyle = e.c2; ctx.lineWidth = e.w / 240; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ah) * R, Math.sin(ah) * R); ctx.stroke();`,
+  },
+  slashWipe: {
+    label: 'گذار مورب', ic: '⟋', box: 'full', cat: 'transition', tr: true,
+    desc: 'یک نوار مورب رنگی از چپ به راست رد می‌شود',
+    params: [C('c1', 'رنگ', '#EAC26B'), C('c2', 'رنگ لبه', '#0A0A0D'), N('ang', 'کجی', 0.28, -1, 1, 0.01)],
+    code: p => `// نوار مورب: لبهٔ جلو قاب را می‌پوشاند، لبهٔ عقب باز می‌کند
+const u = e.ease('inOutCubic', e.p), k = e.h * ${+p.ang}, W2 = e.w / 2, H2 = e.h / 2, span = e.w + Math.abs(k) * 2;
+const lead = -W2 - Math.abs(k) + u * 2 * span, tail = lead - span;
+const band = (a, b, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(a + k, -H2); ctx.lineTo(b + k, -H2); ctx.lineTo(b - k, H2); ctx.lineTo(a - k, H2); ctx.closePath(); ctx.fill(); };
+band(tail, lead, e.c1); band(lead - e.w * 0.02, lead, e.c2);`,
+  },
+});
 
 export const ELEMENT_CATS = [
   ['particles', 'ذرات'], ['type', 'تایپوگرافی'], ['shapes', 'شکل و سه‌بعدی'],

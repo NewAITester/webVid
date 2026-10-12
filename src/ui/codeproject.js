@@ -72,6 +72,7 @@ export function openCodeProjectSheet({ files, aspects, defaults = {}, onCreate, 
         layers, length: Math.max(1, Math.ceil(res.length || R?.duration || 10)), script,
         extras: info?.extras || { mode: 'pure' }, warnings: [...(res.warnings || []), ...(warnings || [])],
         scenes: res.scenes?.length || 0, kind: R?.kind,
+        audioSrc: R?.hasAudio && R?.canvas ? R.canvas : null, srcName: files[0]?.name || '',
       });
       sheet.remove();
     } catch (e) { console.warn(e); say('err', '✗ ' + (e.message || e)); }

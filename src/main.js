@@ -30,7 +30,7 @@ import { IDLE_FX, IDLE_IDS, drawIdle, idleWindow, IDLE_DEFAULT_OPT } from './eng
 import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
 import { openCodeProjectSheet } from './ui/codeproject.js';
-import { detectFormat, probeMotion } from './motion/importers/index.js';
+import { detectFormat, probeMotion, synthAudio } from './motion/importers/index.js';
 
 import { $, $$, faN } from './ui/dom.js';
 const BASE = import.meta.env.BASE_URL;
@@ -1283,10 +1283,24 @@ async function syncProject() {
   $('#pjLenRow').classList.toggle('hidden', !!m.audio || app.projectId === '__demo');
   $('#pjLen').value = Math.round(m.length || 15);
   const demo = app.projectId === '__demo';
+  $('#pjAudioRow').classList.toggle('hidden', !m.audio || demo);
+  $('#pjAudioName').textContent = m.audio ? '🎵 ' + (m.audio.name || 'آهنگ پروژه') : '';
   $('#pjSave').disabled = demo;
   $('#pjSave').textContent = demo ? 'نمونه قابل ویرایش نیست' : 'ذخیره';
   $('#projHead') && ($('#projHead').textContent = m.title || m.name || 'پروژه');
 }
+
+$('#pjNoAudio').onclick = async () => {
+  if (app.projectId === '__demo') return;
+  const p = await Library.get(app.projectId);
+  if (!p?.audio || !confirm('آهنگ از این پروژه حذف شود؟ (لایه‌ها و طول ویدیو می‌مانند)')) return;
+  p.length = Math.max(1, Math.round(p.duration || p.length || 15));
+  p.audio = null; p.analysis = null; p.duration = 0; p.sections = null;
+  await Library.put(p);
+  await openProject(p.id);
+  syncProject();
+  songMsg('آهنگ حذف شد — پروژه حالا بی‌صداست', 'ok');
+};
 
 $('#pjSave').onclick = async () => {
   if (app.projectId === '__demo') return;
@@ -2245,6 +2259,21 @@ function openCodeProject(files) {
         look: lk, overrides: {}, custom: null, lineFx: {}, texts: [], layers: r.layers,
         fromCode: { kind: r.kind, mode: r.extras.mode }, createdAt: Date.now(),
       };
+      // موسیقیِ خود کد (پیش‌فرض روشن) ← آهنگ پروژه
+      let musicNote = '';
+      if (r.extras.music !== false && r.audioSrc) {
+        try {
+          const wav = await synthAudio(r.audioSrc.program, r.audioSrc.T, r.audioSrc.run);
+          if (wav) {
+            const file = new File([wav], (r.srcName || 'code').replace(/\.[^.]+$/, '') + '-music.wav', { type: 'audio/wav' });
+            const buf = await decodeAudioFile(file);
+            proj.analysis = await analyzeBuffer(buf, () => {});
+            proj.audio = file; proj.duration = buf.duration;
+            proj.sections = autoSections(parseLRC(''), buf.duration);
+            musicNote = '\n🎵 موسیقی خود کد هم اضافه شد (برای حذف: «تنظیمات پروژه» ← «🔇 حذف آهنگ»).';
+          }
+        } catch (e) { console.warn(e); musicNote = '\n⚠ موسیقی کد ساخته نشد: ' + (e.message || e); }
+      }
       await Library.put(proj);
       $('#imSheet').classList.add('hidden');
       await openProject(proj.id);
@@ -2252,7 +2281,7 @@ function openCodeProject(files) {
       if (app_ && r.extras.song) { syncProject(); $('#pjSheet').classList.remove('hidden'); }
       const w = r.warnings.length ? `\n⚠ ${faN(r.warnings.length)} هشدار — جزئیات در «📜 موشن‌اسکریپت».` : '';
       setTimeout(() => alert(`✓ پروژه از کد ساخته شد: ${faN(r.scenes)} صحنه، ${faN(r.layers.length)} لایه، ${faN(r.length)} ثانیه`
-        + (app_ ? ' — به‌همراه افزودنی‌های برنامه' : ' — فقط اجزای خود کد') + '.\nهمه‌چیز در زبانهٔ لایه‌ها قابل‌تغییر است.' + w), 60);
+        + (app_ ? ' — به‌همراه افزودنی‌های برنامه' : ' — فقط اجزای خود کد') + '.\nهمه‌چیز در زبانهٔ لایه‌ها قابل‌تغییر است.' + musicNote + w), 60);
     },
   });
 }

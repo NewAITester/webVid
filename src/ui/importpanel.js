@@ -1,6 +1,7 @@
 import { h, faN } from './dom.js';
 import { importCode, detectFormat, pickMain, synthAudio, FORMATS } from '../motion/importers/index.js';
 import { EXTRAS, defaultExtras, applyExtras } from '../motion/importers/extras.js';
+import { detectEffects } from '../motion/importers/effects.js';
 
 /**
  * کارت «🧩 وارد کردن کد ویدیو» داخل پنجرهٔ موشن‌اسکریپت
@@ -26,6 +27,8 @@ export function importCard({ host, files, onScript, say, project = false, meta =
   let R = null, busy = 0, tweakEl = null, modeEl = null;   // فهرست مقدارها یک‌بار ساخته می‌شود تا تایپ قطع نشود
   const card = h('div', { class: 'impcard' });
   const extras = defaultExtras(project);
+  extras.music = true;                                     // موسیقی خود کد (اگر دارد) پیش‌فرض داخل پروژه می‌آید
+  let fx = null, fxGen = 0, fxEl = null;                   // افکت‌های شناسایی‌شده (خودکار، پس‌زمینه)
   const finalScript = () => applyExtras(R.script, extras, { scenes: R.scenes, duration: R.duration, ...meta() });
   const info = () => ({ R, extras: { ...extras }, name: main.name });
 
@@ -69,8 +72,43 @@ export function importCard({ host, files, onScript, say, project = false, meta =
     try { R = importCode(main.text, { name: main.name, values: Object.keys(values).length ? values : null }); }
     catch (e) { R = { kind: 'unknown', ic: '⚠', label: 'خطا', error: e.message, warnings: [], tweaks: [], scenes: [], found: [], unknown: [], media: [], audio: [] }; }
     R.ms = Math.round(performance.now() - t0);
+    fx = null;
     paint();
     try { onResult?.(R); } catch { /* */ }
+    startFx();
+  }
+
+  /** تشخیص خودکار افکت‌ها (فقط کد بوم / pycairo) — بی‌آنکه کارت را قفل کند */
+  function startFx() {
+    const gen = ++fxGen;
+    if (!R?.canvas || !R.scenes?.length || R.error) { fx = null; paintFx(); return; }
+    fx = { busy: true, p: 0 };
+    paintFx();
+    setTimeout(async () => {
+      if (gen !== fxGen) return;
+      try {
+        const res = await detectEffects(R, { name: main.name, isCancelled: () => gen !== fxGen || !card.isConnected,
+          onProgress: p => { if (gen === fxGen) { fx.p = p; paintFx(); } } });
+        if (gen !== fxGen) return;
+        fx = res ? { ...res, busy: false } : null;
+      } catch (e) { if (gen === fxGen) fx = { busy: false, error: e.message }; }
+      paintFx();
+    }, 400);
+  }
+  function paintFx() {
+    if (!fxEl) fxEl = h('div', { class: 'isec ifx' });
+    fxEl.innerHTML = '';
+    fxEl.classList.toggle('hidden', !fx);
+    if (!fx) return;
+    const head = h('div', { class: 'ist' }, '✨ افکت‌های شناسایی‌شده');
+    if (fx.busy) { fxEl.append(head, h('small', { class: 'muted' }, `در حال بررسی فریم‌ها… ${faN(Math.round((fx.p || 0) * 100))}٪`)); return; }
+    if (fx.error || !fx.count) { fxEl.append(head, h('small', { class: 'muted' }, fx.error ? 'تشخیص افکت انجام نشد: ' + fx.error : 'افکت شناخته‌شده‌ای پیدا نشد.')); return; }
+    fxEl.append(head,
+      h('div', { class: 'chips' }, ...fx.A.scenes.flatMap(sc => [...sc.effects.map(e => e.label), ...sc.trans.map(t => 'گذار ' + t.kind)])
+        .filter((v, i, a) => a.indexOf(v) === i).slice(0, 24).map(l => h('span', { class: 'echip sm' }, l))),
+      h('small', { class: 'muted' }, 'خروجی یک «موشن‌اسکریپت» است (با توضیح و JSON برای ایجنت‌ها) — هر وقت خواستید دوباره واردش کنید یا به یک AI بدهید تا عوضش کند.'),
+      h('div', { class: 'frow' }, h('button', { class: 'btn sm', title: 'افکت‌ها به‌صورت المان‌های قابل‌تغییر برنامه — قابل وارد کردن دوباره',
+        onclick: () => save(fx.script, main.name.replace(/\.[^.]+$/, '') + '.effects.motion.js', 'text/javascript') }, `✨ خروجی افکت‌ها (${faN(fx.count)})`)));
   }
 
   const thumbs = new Map();          // OffscreenCanvas ← <canvas> (یک‌بار برای هر صحنه)
@@ -105,10 +143,10 @@ export function importCard({ host, files, onScript, say, project = false, meta =
       h('button', { class: 'icon sm', title: 'بستن', onclick: () => card.remove() }, '✕')));
     if (others.length) card.append(h('div', { class: 'inote' }, `فایل‌های همراه: ${others.map(f => f.name).join('، ')} — «${main.name}» به‌عنوان فایل اصلی خوانده شد` + (main.merged ? ` و ${main.merged.join('، ')} داخلش گذاشته شد.` : '.')));
     if (R.error) card.append(h('div', { class: 'msg err' }, '✗ ' + R.error));
-
-    // اجزای پیدا‌شده
-    if (R.found?.length) card.append(h('div', { class: 'isec' }, h('div', { class: 'ist' }, '🔎 اجزای پیدا‌شده'),
-      h('div', { class: 'chips' }, ...R.found.map(f => h('span', { class: 'echip' }, h('i', {}, f.ic), `${f.label} ×${faN(f.n)}`)))));
+    if (R.script) card.append(modeBox());
+    if (project && R.script && R.hasAudio && R.canvas) card.append(h('div', { class: 'isec imusic' }, h('label', { class: 'imxo' },
+      h('input', { type: 'checkbox', checked: !!extras.music, onchange: e => { extras.music = e.target.checked; } }),
+      h('span', {}, '🎵 موسیقیِ خود کد هم داخل پروژه بیاید (بعداً از «تنظیمات پروژه» ← «🔇 حذف آهنگ» می‌شود برداشتش)'))));
 
     // صحنه‌ها
     if (R.scenes?.length) card.append(h('div', { class: 'isec' }, h('div', { class: 'ist' }, '🎞 صحنه‌ها'),
@@ -136,15 +174,18 @@ export function importCard({ host, files, onScript, say, project = false, meta =
     if (R.files?.length) notes.push(`فایل‌هایی که این کد استفاده می‌کند: ${R.files.join('، ')}`);
     if (notes.length) card.append(h('div', { class: 'isec inotes' }, ...notes.map(n => h('div', {}, '⚠ ' + n))));
 
+    paintFx(); card.append(fxEl);
+
     // دکمه‌ها
-    if (R.script) card.append(modeBox());
     const btns = h('div', { class: 'frow btns' });
     if (R.script) {
       btns.append(h('button', { class: 'btn primary', onclick: () => onScript(finalScript(), true, info()) }, project ? '✓ ساخت پروژه و باز کردن' : '▶ همین الان بساز'));
       if (!project) btns.append(h('button', { class: 'btn sm ghost', title: 'کد تبدیل‌شده در کادر اسکریپت قرار می‌گیرد تا دستی ویرایشش کنید', onclick: () => onScript(finalScript(), false, info()) }, '← انتقال به موشن‌اسکریپت'));
     }
-    if (R.tweaks?.length) btns.append(h('button', { class: 'btn sm ghost', title: 'همان کد اصلی، با مقدارهای تازه', onclick: () => save(R.source, modName(main.name), 'text/plain') }, '⬇ کد اصلیِ تغییریافته'));
-    if (R.hasAudio && R.canvas) btns.append(h('button', { class: 'btn sm ghost', onclick: async e => {
+    const changed = R.source && R.tweaks?.some(t => t.id in values && String(values[t.id]) !== String(t.def ?? t.value));
+    if (changed) btns.append(h('button', { class: 'btn sm ghost', title: 'فایل کد اصلی شما (همان زبان و همان ساختار)، فقط با مقدارهایی که این‌جا عوض کرده‌اید — برای اجرای دوباره در محیط خودش',
+      onclick: () => save(R.source, modName(main.name), 'text/plain') }, '⬇ دانلود کد اصلی با مقدارهای تازه'));
+    if (!project && R.hasAudio && R.canvas) btns.append(h('button', { class: 'btn sm ghost', onclick: async e => {
       const b = e.currentTarget; b.disabled = true; const old = b.textContent; b.textContent = '… در حال ساخت صدا';
       try {
         const wav = await synthAudio(R.canvas.program, R.canvas.T, R.canvas.run);

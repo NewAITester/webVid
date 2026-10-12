@@ -74,6 +74,7 @@ class Pattern {
     try { gr = this.kind === 'linear' ? g.createLinearGradient(a[0], a[1], a[2], a[3]) : g.createRadialGradient(a[0], a[1], Math.max(0, a[2]), a[3], a[4], Math.max(0, a[5])); } catch { return '#000'; }
     const st = this.stops.slice().sort((x, y) => x[0] - y[0]);
     for (const [o, c] of st) try { gr.addColorStop(Math.max(0, Math.min(1, o)), c); } catch { /* */ }
+    try { gr.__stops = st; } catch { /* */ }
     return gr;
   }
 }
