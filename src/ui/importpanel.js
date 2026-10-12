@@ -1,7 +1,7 @@
 import { h, faN } from './dom.js';
 import { importCode, detectFormat, pickMain, synthAudio, FORMATS } from '../motion/importers/index.js';
 import { EXTRAS, defaultExtras, applyExtras } from '../motion/importers/extras.js';
-import { detectEffects } from '../motion/importers/effects.js';
+import { detectEffects, agentBrief } from '../motion/importers/effects.js';
 
 /**
  * کارت «🧩 وارد کردن کد ویدیو» داخل پنجرهٔ موشن‌اسکریپت
@@ -29,7 +29,9 @@ export function importCard({ host, files, onScript, say, project = false, meta =
   const extras = defaultExtras(project);
   extras.music = true;                                     // موسیقی خود کد (اگر دارد) پیش‌فرض داخل پروژه می‌آید
   let fx = null, fxGen = 0, fxEl = null;                   // افکت‌های شناسایی‌شده (خودکار، پس‌زمینه)
-  const finalScript = () => applyExtras(R.script, extras, { scenes: R.scenes, duration: R.duration, ...meta() });
+  const finalScript = () => (extras.mode === 'fx' && fx?.script ? fx.script
+    : applyExtras(R.script, extras, { scenes: R.scenes, duration: R.duration, ...meta() }));
+  let fxRadio = null, modeSync = null;
   const info = () => ({ R, extras: { ...extras }, name: main.name });
 
   /** پرسش «پروژه با این کد چطور ساخته شود؟» — یک‌بار ساخته می‌شود */
@@ -40,9 +42,14 @@ export function importCard({ host, files, onScript, say, project = false, meta =
       h('input', { type: 'radio', name: grp, checked: extras.mode === id, onchange: () => { extras.mode = id; sync(); } }),
       h('div', {}, h('b', {}, `${ic} ${title}`), h('small', {}, desc)));
     const rows = [
-      radio('pure', '🧩', 'فقط اجزای خود کد', 'فقط المان‌ها، اجزا و نوشته‌های همین کد ساخته می‌شوند (همه قابل‌تغییر) — بدون هیچ اضافه‌ای از برنامه.'),
+      radio('pure', '🧩', 'فقط اجزای خود کد', 'فقط المان‌ها، اجزا و نوشته‌های همین کد ساخته می‌شوند — بدون هیچ اضافه‌ای از برنامه.'),
       radio('app', '✨', 'کد + چیزهایی از خود برنامه', 'اجزای کد، به‌علاوهٔ مواردی که پایین انتخاب می‌کنید (گذار، عنوان، کانال، …).'),
     ];
+    if (R.canvas) {
+      rows.push(fxRadio = radio('fx', '✏️', 'نسخهٔ قابل‌ویرایش (افکت‌های شناسایی‌شده)',
+        'به‌جای اجرای کد اصلی، هر افکت (نوشته، ذره، گذار، …) یک لایهٔ جدا با تنظیم‌های نام‌دار می‌شود — همه‌چیز مستقیم قابل‌تغییر است، ولی شبیه‌سازی تقریبی است.'));
+      syncFxRadio();
+    }
     const list = EXTRAS.filter(x => project || !x.project);
     for (const x of list) {
       const row = h('label', { class: 'imxo' },
@@ -53,10 +60,10 @@ export function importCard({ host, files, onScript, say, project = false, meta =
       opts.append(row);
     }
     function sync() {
-      rows.forEach((r, i) => r.classList.toggle('on', (i === 0 ? 'pure' : 'app') === extras.mode));
+      rows.forEach((r, i) => r.classList.toggle('on', ['pure', 'app', 'fx'][i] === extras.mode));
       opts.classList.toggle('hidden', extras.mode !== 'app');
     }
-    sync();
+    sync(); modeSync = sync;
     return (modeEl = h('div', { class: 'isec imx' }, h('div', { class: 'ist' }, '❓ ' + (project ? 'پروژه با این کد چطور ساخته شود؟' : 'با این کد چطور ساخته شود؟')), ...rows, opts));
   }
 
@@ -65,6 +72,7 @@ export function importCard({ host, files, onScript, say, project = false, meta =
     if (host?.saveFile) host.saveFile(blob, name);
     else { const a = h('a', { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
   };
+  const base = () => main.name.replace(/\.[^.]+$/, '');
   const modName = n => { const m = /^(.*?)(\.[^.]+)?$/.exec(n); return `${m[1]}-edited${m[2] || ''}`; };
 
   function convert() {
@@ -95,7 +103,18 @@ export function importCard({ host, files, onScript, say, project = false, meta =
       paintFx();
     }, 400);
   }
+  /** گزینهٔ «نسخهٔ قابل‌ویرایش» فقط وقتی افکت‌ها آماده‌اند */
+  function syncFxRadio() {
+    if (!fxRadio) return;
+    const ready = !!(fx && !fx.busy && fx.count), inp = fxRadio.querySelector('input'), sm = fxRadio.querySelector('small');
+    inp.disabled = !ready && extras.mode !== 'fx';
+    fxRadio.classList.toggle('dis', !ready);
+    if (!sm.dataset.d) sm.dataset.d = sm.textContent;
+    sm.textContent = fx?.busy ? `در حال شناختن افکت‌ها… ${faN(Math.round((fx.p || 0) * 100))}٪` : ready ? sm.dataset.d : 'افکتی شناخته نشد.';
+    if (fx && !fx.busy && !fx.count && extras.mode === 'fx') { extras.mode = 'pure'; const r0 = modeEl?.querySelector('input[type=radio]'); if (r0) r0.checked = true; modeSync?.(); }
+  }
   function paintFx() {
+    syncFxRadio();
     if (!fxEl) fxEl = h('div', { class: 'isec ifx' });
     fxEl.innerHTML = '';
     fxEl.classList.toggle('hidden', !fx);
@@ -106,9 +125,16 @@ export function importCard({ host, files, onScript, say, project = false, meta =
     fxEl.append(head,
       h('div', { class: 'chips' }, ...fx.A.scenes.flatMap(sc => [...sc.effects.map(e => e.label), ...sc.trans.map(t => 'گذار ' + t.kind)])
         .filter((v, i, a) => a.indexOf(v) === i).slice(0, 24).map(l => h('span', { class: 'echip sm' }, l))),
-      h('small', { class: 'muted' }, 'خروجی یک «موشن‌اسکریپت» است (با توضیح و JSON برای ایجنت‌ها) — هر وقت خواستید دوباره واردش کنید یا به یک AI بدهید تا عوضش کند.'),
-      h('div', { class: 'frow' }, h('button', { class: 'btn sm', title: 'افکت‌ها به‌صورت المان‌های قابل‌تغییر برنامه — قابل وارد کردن دوباره',
-        onclick: () => save(fx.script, main.name.replace(/\.[^.]+$/, '') + '.effects.motion.js', 'text/javascript') }, `✨ خروجی افکت‌ها (${faN(fx.count)})`)));
+      h('small', { class: 'muted' }, '«✨ خروجی افکت‌ها» یک موشن‌اسکریپت آماده است (دوباره وارد می‌شود). «🤖 دستور برای ایجنت» یک فایل Markdown است: آن را به یک AI بدهید تا برای افکت‌هایی که دقیق درنیامده‌اند المان تازه بنویسد؛ فایلی که برمی‌گرداند (elementPack + صحنه‌ها) را همین‌جا وارد کنید تا المان‌ها به برنامه اضافه شوند.'),
+      h('div', { class: 'frow btns' },
+        h('button', { class: 'btn sm', title: 'افکت‌ها به‌صورت المان‌های قابل‌تغییر برنامه — قابل وارد کردن دوباره',
+          onclick: () => save(fx.script, base() + '.effects.motion.js', 'text/javascript') }, `✨ خروجی افکت‌ها (${faN(fx.count)})`),
+        h('button', { class: 'btn sm ghost', title: 'دستور کار کامل برای ایجنت: قرارداد المان‌ها، افکت‌های اندازه‌گیری‌شده، کد هر صحنه و کد اصلی',
+          onclick: () => save(agentBrief(fx, R, { name: main.name }), base() + '.agent.md', 'text/markdown') }, '🤖 دستور برای ایجنت'),
+        h('button', { class: 'btn sm ghost', title: 'کپی همان دستور در کلیپ‌بورد', onclick: async () => {
+          try { await navigator.clipboard.writeText(agentBrief(fx, R, { name: main.name })); say('ok', '✓ دستور ایجنت کپی شد — در گفتگو با AI بچسبانید.'); }
+          catch { say('warn', 'کپی نشد؛ از دکمهٔ «🤖 دستور برای ایجنت» فایلش را بگیرید.'); }
+        } }, '📋')));
   }
 
   const thumbs = new Map();          // OffscreenCanvas ← <canvas> (یک‌بار برای هر صحنه)
@@ -143,10 +169,15 @@ export function importCard({ host, files, onScript, say, project = false, meta =
       h('button', { class: 'icon sm', title: 'بستن', onclick: () => card.remove() }, '✕')));
     if (others.length) card.append(h('div', { class: 'inote' }, `فایل‌های همراه: ${others.map(f => f.name).join('، ')} — «${main.name}» به‌عنوان فایل اصلی خوانده شد` + (main.merged ? ` و ${main.merged.join('، ')} داخلش گذاشته شد.` : '.')));
     if (R.error) card.append(h('div', { class: 'msg err' }, '✗ ' + R.error));
+    if (R.packAdded?.length) card.append(h('div', { class: 'msg ok' }, `🧩 ${faN(R.packAdded.length)} المان تازه به برنامه اضافه شد: ${R.packAdded.join('، ')}`
+      + (R.packOnly ? ' — حالا در موشن‌اسکریپت و فهرست «المان‌ها» در دسترس‌اند.' : '')));
     if (R.script) card.append(modeBox());
     if (project && R.script && R.hasAudio && R.canvas) card.append(h('div', { class: 'isec imusic' }, h('label', { class: 'imxo' },
       h('input', { type: 'checkbox', checked: !!extras.music, onchange: e => { extras.music = e.target.checked; } }),
       h('span', {}, '🎵 موسیقیِ خود کد هم داخل پروژه بیاید (بعداً از «تنظیمات پروژه» ← «🔇 حذف آهنگ» می‌شود برداشتش)'))));
+    if (R.canvas && R.script) card.append(h('div', { class: 'inote' },
+      'ℹ در حالت «فقط اجزای خود کد»، خود کد اصلی هر صحنه را می‌کشد: متن‌ها، رنگ‌ها و عددهای پیدا‌شده (پایین و در «✎ تنظیم» هر لایه) قابل‌تغییرند، '
+      + 'ولی شکل‌ها و نوشته‌ها لایهٔ جدا نیستند. برای بقیه در زبانهٔ «{} کد» لایه با 🔍 جستجو کنید، یا «✏️ نسخهٔ قابل‌ویرایش» را بزنید.'));
 
     // صحنه‌ها
     if (R.scenes?.length) card.append(h('div', { class: 'isec' }, h('div', { class: 'ist' }, '🎞 صحنه‌ها'),
@@ -179,8 +210,11 @@ export function importCard({ host, files, onScript, say, project = false, meta =
     // دکمه‌ها
     const btns = h('div', { class: 'frow btns' });
     if (R.script) {
-      btns.append(h('button', { class: 'btn primary', onclick: () => onScript(finalScript(), true, info()) }, project ? '✓ ساخت پروژه و باز کردن' : '▶ همین الان بساز'));
-      if (!project) btns.append(h('button', { class: 'btn sm ghost', title: 'کد تبدیل‌شده در کادر اسکریپت قرار می‌گیرد تا دستی ویرایشش کنید', onclick: () => onScript(finalScript(), false, info()) }, '← انتقال به موشن‌اسکریپت'));
+      btns.append(h('button', { class: 'btn primary', onclick: () => {
+        if (extras.mode === 'fx' && !fx?.script) { say('warn', 'کمی صبر کنید تا افکت‌ها شناخته شوند…'); return; }
+        onScript(finalScript(), true, info());
+      } }, project ? '✓ ساخت پروژه و باز کردن' : '▶ همین الان بساز'));
+      if (!project) btns.append(h('button', { class: 'btn sm ghost', title: 'کد تبدیل‌شده در کادر اسکریپت قرار می‌گیرد تا دستی ویرایشش کنید', onclick: () => { if (extras.mode === 'fx' && !fx?.script) { say('warn', 'کمی صبر کنید تا افکت‌ها شناخته شوند…'); return; } onScript(finalScript(), false, info()); } }, '← انتقال به موشن‌اسکریپت'));
     }
     const changed = R.source && R.tweaks?.some(t => t.id in values && String(values[t.id]) !== String(t.def ?? t.value));
     if (changed) btns.append(h('button', { class: 'btn sm ghost', title: 'فایل کد اصلی شما (همان زبان و همان ساختار)، فقط با مقدارهایی که این‌جا عوض کرده‌اید — برای اجرای دوباره در محیط خودش',

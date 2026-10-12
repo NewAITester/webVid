@@ -17,6 +17,8 @@ import { frameEnv } from '../motion/evaluate.js';
 import * as M from '../motion/mat.js';
 import { pickFontFile, userFonts, removeFont } from '../motion/fonts.js';
 import { ELEMENT_KINDS, ELEMENT_CATS, colorProp, elementParams, setElementParam, swapElement, findTweaks, setTweak } from '../motion/elements.js';
+import { attachCodeSearch } from './codesearch.js';
+const isImportedCode = code => /e\.runImported\(ctx, e, PROGRAM/.test(code || '');
 import { openScriptSheet } from './scriptpanel.js';
 
 /** نشانهٔ ردیف «شعر» در ترتیب لایه‌ها */
@@ -734,10 +736,29 @@ export class MotionPanel {
   /** «عددهای قابل تنظیم» کد آزاد: هر  const نام = مقدار; // برچسب  یک کنترل می‌شود */
   _codeTweaks(L, body) {
     const tws = findTweaks(L.data.code);
+    const imp = isImportedCode(L.data.code);
+    if (imp) body.append(h('p', { class: 'note' },
+      '🧩 این لایه «کد وارد‌شده» است: کد اصلی همه‌چیز را خودش می‌کشد، پس نوشته‌ها و شکل‌هایش لایهٔ جدا نیستند و مستقیم روی تصویر انتخاب نمی‌شوند. ',
+      'چیزهایی که برنامه پیدا کرده (متن، رنگ، عدد) همین پایین قابل‌تغییرند — مقدارهای 🌐 سراسری در همهٔ صحنه‌های همین کد با هم عوض می‌شوند. ',
+      'برای بقیه: در زبانهٔ «{} کد» با 🔍 جستجو کنید و همان‌جا کد اصلی را عوض کنید؛ یا موقع ساخت پروژه گزینهٔ «✏️ نسخهٔ قابل‌ویرایش» را بزنید تا هر افکت یک لایهٔ جدا شود.'));
     if (!tws.length) return;
-    body.append(h('div', { class: 'shead sm' }, 'مقدارهای داخل کد'));
+    body.append(h('div', { class: 'shead sm' }, imp ? 'متن‌ها و مقدارهای این کد' : 'مقدارهای داخل کد'));
+    const gIdx = imp ? L.data.code.split('\n').findIndex(l => l.startsWith('// ── 🌐')) : -1;
+    const isGlobal = tw => gIdx >= 0 && tw.line > gIdx;
+    let headed = false;
     for (const tw of tws) {
-      const set = v => { L.data.code = setTweak(L.data.code, tw, v); tw.value = v; this.host.draw(); this.host.save(); };
+      if (isGlobal(tw) && !headed) { headed = true; body.append(h('div', { class: 'shead sm' }, '🌐 سراسری (همهٔ صحنه‌های این کد)')); }
+      const set = v => {
+        const old = tw.value;
+        L.data.code = setTweak(L.data.code, tw, v); tw.value = v;
+        // مقدار سراسری ← همهٔ لایه‌های وارد‌شده از همین کد
+        if (isGlobal(tw)) for (const O of this.host.getLayers?.() || []) {
+          if (O === L || O.type !== 'code' || !isImportedCode(O.data?.code)) continue;
+          const ot = findTweaks(O.data.code).find(x => x.name === tw.name && String(x.value) === String(old));
+          if (ot) O.data.code = setTweak(O.data.code, ot, v);
+        }
+        this.host.draw(); this.host.save();
+      };
       if (tw.type === 'num') body.append(this._staticNum(tw.label, tw.value, Math.min(tw.min, tw.value), Math.max(tw.max, tw.value), tw.step, set));
       else if (tw.type === 'color') {
         const inp = h('input', { type: 'color', value: tw.value.slice(0, 7), oninput: () => set(inp.value) });
@@ -974,6 +995,7 @@ export class MotionPanel {
         h('button', { class: 'btn sm ghost', onclick: () => { ta.value = CODE_LAYER_DEFAULT; ta.oninput(); } }, 'پیش‌فرض'),
         h('button', { class: 'btn sm ghost', onclick: () => this.host.openLearn?.() }, '؟ آموزش کدنویسی')));
       body.append(ta, msg);
+      attachCodeSearch(ta, { open: true });
       body.append(h('details', { class: 'xhelp' }, h('summary', {}, 'فهرست ابزارهای e'),
         h('div', {}, ...[
           ['e.t / e.time', 'زمان لایه / زمان آهنگ'], ['e.p', 'پیشرفت لایه ۰..۱'],

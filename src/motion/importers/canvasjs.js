@@ -361,17 +361,34 @@ const q = v => (typeof v === 'string' ? `'${v.replace(/\\/g, '\\\\').replace(/'/
  */
 export function importedBody(program, o = {}) {
   const tw = o.tweaks || {};
+  const labels = o.labels || {};
   const vals = { ...(o.values || {}) };
   for (const k of Object.keys(tw)) delete vals[k];
+  // مقدارهایی که در یک خطِ «const نام = مقدار; // برچسب» جا می‌شوند ← کنترل‌های «✎ تنظیم»
+  const ok = v => (typeof v === 'number' && isFinite(v)) || (typeof v === 'string' && v.length <= 60 && !/['\\\n]/.test(v));
+  const NO = new Set(['START', 'RUN', 'PROGRAM', 'ctx', 'e', '$V', '$T', '$rt', 'Math', 'undefined', 'NaN', 'Infinity', 'eval', 'arguments']);
+  const ID = id => /^[A-Za-z_$][\w$]*$/.test(id) && !NO.has(id) && !/^(break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|let|new|return|super|switch|this|throw|try|typeof|var|void|while|with|yield|await|enum|static|null|true|false)$/.test(id);
+  const own = Object.entries(tw).filter(([id, [v]]) => ID(id) && ok(v));
+  const hide = new Set(o.hide || []);           // مقدارهای مخصوص صحنه‌های دیگر
+  const glob = Object.entries(vals).filter(([id, v]) => ID(id) && ok(v) && !hide.has(id));
+  const shown = new Set([...own, ...glob].map(([id]) => id));
+  const rest = Object.fromEntries(Object.entries({ ...vals, ...Object.fromEntries(Object.entries(tw).map(([k, [v]]) => [k, v])) }).filter(([k]) => !shown.has(k)));
+  const cm = s => String(s || '').replace(/\s+/g, ' ').slice(0, 80);
   const lines = [
     `// 🧩 کد وارد‌شده${o.title ? ' — ' + o.title : ''}`,
-    '// کد اصلی همان‌طور که نوشته شده اجرا می‌شود؛ مقدارهای زیر را عوض کنید:',
+    '// کد اصلی همان‌طور که نوشته شده اجرا می‌شود و همه‌چیز را خودش می‌کشد.',
+    '// ✎ متن‌ها، رنگ‌ها و عددهای پیدا‌شده همین پایین‌اند (در زبانهٔ «✎ تنظیم» هم کنترل دارند).',
+    '// 🔍 برای بقیهٔ چیزها در همین کد جستجو کنید (Ctrl+F): کد اصلی خط‌به‌خط داخل PROGRAM است و قابل ویرایش.',
     `const START = ${q(o.start || 0)}; // شروع این تکه در ویدیوی اصلی (ثانیه)`,
   ];
-  for (const [id, [v, label]] of Object.entries(tw)) lines.push(`const ${id} = ${q(v)}; // ${String(label || id).replace(/\n/g, ' ')}`);
-  lines.push(`const $V = ${JSON.stringify(vals)};`);
+  if (own.length) lines.push('// ── مقدارهای همین صحنه');
+  for (const [id, [v, label]] of own) lines.push(`const ${id} = ${q(v)}; // ${cm(label || labels[id] || id)}`);
+  if (glob.length) lines.push('// ── 🌐 سراسری (در همهٔ صحنه‌های این کد با هم عوض می‌شود)');
+  for (const [id, v] of glob) lines.push(`const ${id} = ${q(v)}; // ${cm(labels[id] || id)}`);
+  lines.push(`const $V = ${JSON.stringify(rest)};`);
   lines.push(`const RUN = ${JSON.stringify(o.run || {})};`);
-  lines.push(`const PROGRAM = ${JSON.stringify(program)};`);
-  lines.push(`return e.runImported(ctx, e, PROGRAM, { ...$V${Object.keys(tw).map(k => ', ' + k).join('')} }, { ...RUN, start: START });`);
+  lines.push('// ───── کد اصلی ─────');
+  lines.push('const PROGRAM = [', ...String(program).split('\n').map(l => '  ' + JSON.stringify(l) + ','), "].join('\\n');");
+  lines.push(`return e.runImported(ctx, e, PROGRAM, { ...$V${[...shown].map(k => ', ' + k).join('')} }, { ...RUN, start: START });`);
   return lines.join('\n');
 }

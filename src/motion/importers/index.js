@@ -8,6 +8,7 @@ import { fallbackModel, literals } from './fallback.js';
 import { looksPyCairo, getPyInst, pyThumb, pyAudioFn } from './pyframes.js';
 import { runScript, scriptToLayers } from '../scenescript.js';
 import { ELEMENT_KINDS } from '../elements.js';
+import { usePacks } from '../packs.js';
 
 /**
  * «وارد کردن کد ویدیو»
@@ -43,6 +44,7 @@ const cmt = s => String(s || '').replace(/\s+/g, ' ').slice(0, 70);
 export function detectFormat(text, name = '') {
   const s = String(text || ''), n = String(name).toLowerCase();
   if (/\bimported\s*\(\s*PROGRAM\b/.test(s) && /^\s*scene\s*\(/m.test(s)) return 'motion';   // خروجی همین واردکننده
+  if (/^\s*elementPack\s*\(/m.test(s)) return 'motion';                                         // بستهٔ المان (+ صحنه‌ها)
   if (/\.html?$/.test(n) || /^\s*(<!doctype|<html|<head|<body|<canvas|<script)/i.test(s)) return 'html';
   const py = /\.py$/.test(n) || (/^\s*(from\s+[\w.]+\s+import|import\s+[\w.]+\s*$|def\s+\w+\(.*\)\s*:|class\s+\w+(\(.*\))?\s*:)/m.test(s) && !/[{};]\s*$/m.test(s.split('\n').slice(0, 30).join('\n').replace(/#.*$/gm, '')));
   if (py) {
@@ -229,11 +231,28 @@ function pyFrameTweaks(src) {
   }
   return tw;
 }
+/** بازهٔ خط‌های هر تابع پایتون (def نام) ← { نام: [شروع، پایان] } (۱-مبنا) */
+function pyDefRanges(src) {
+  const lines = String(src).split('\n'), out = {};
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\s*)def\s+(\w+)\s*\(/.exec(lines[i]);
+    if (!m) continue;
+    const ind = m[1].length;
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const l = lines[j];
+      if (!l.trim() || /^\s*#/.test(l)) continue;
+      if (l.length - l.trimStart().length <= ind) break;
+    }
+    if (!(m[2] in out)) out[m[2]] = [i + 1, j];
+  }
+  return out;
+}
 function convertPyFrames(text, name, values) {
   const tweaks = pyFrameTweaks(text);
   if (values) for (const t of tweaks) if (t.id in values) t.value = values[t.id];
   const T = Object.fromEntries(tweaks.map(t => [t.id, t.value]));
-  const run = { lang: 'py', tweaks: tweaks.map(t => ({ id: t.id, s: t.s, e: t.e, type: t.type === 'num' ? 'num' : 'str', quote: t.quote, def: t.def })) };
+  const run = { lang: 'py', tweaks: tweaks.map(t => ({ id: t.id, s: t.s, e: t.e, raw: text.slice(t.s, t.e), type: t.type === 'num' ? 'num' : 'str', quote: t.quote, def: t.def })) };
   const inst = getPyInst(text, T, run);
   const warnings = [...(inst.warnings || [])];
   const libs = [...new Set([...text.matchAll(/^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w., ]+))/gm)].flatMap(m => (m[1] || m[2]).split(',').map(x => x.trim().split(/\s+as\s+/)[0].split('.')[0])))].filter(Boolean);
@@ -264,10 +283,16 @@ function convertPyFrames(text, name, values) {
     if (t.group !== lastGroup) { L.push(`  // ── ${t.group}`); lastGroup = t.group; }
     L.push(`  ${t.id}: ${lit(t.value)}, // ${cmt(t.label)}`);
   }
-  L.push('}', `const RUN = ${JSON.stringify(run)}`, '');
-  for (const s of scenes) {
+  L.push('}', '// برچسب مقدارها (برای کنترل‌های لایه)', `const GL = {`, ...tweaks.map(t => `  ${t.id}: ${q(cmt(t.label))},`), '}', `const RUN = ${JSON.stringify(run)}`, '');
+  // مقدارهایی که فقط داخل تابع همان صحنه‌اند ← «مقدارهای همین صحنه»
+  const ranges = pyDefRanges(text);
+  const ownOf = s => { const rg = s.fn && ranges[s.fn]; return rg ? tweaks.filter(t => t.line >= rg[0] && t.line <= rg[1]) : []; };
+  const owned = new Set(inst.scenes.flatMap(s => ownOf(s).map(t => t.id)));
+  for (const s of inst.scenes) {
+    const own = ownOf(s), mine = new Set(own.map(t => t.id)), hide = [...owned].filter(id => !mine.has(id));
+    const tw = own.length ? `,\n    tweaks: {\n${own.map(t => `      ${t.id}: [G.${t.id}, ${q(cmt(t.label))}],`).join('\n')}\n    }` : '';
     L.push(`scene({ name: ${q(s.name)}, at: ${r3(s.t0)}, dur: ${r3(s.t1 - s.t0)} },`,
-      `  imported(PROGRAM(), { run: RUN, start: ${r3(s.t0)}, values: G, title: ${q(s.name)}, name: ${q('🧩 ' + s.name)} }))`, '');
+      `  imported(PROGRAM(), { run: RUN, start: ${r3(s.t0)}, values: G, labels: GL${hide.length ? `, hide: ${JSON.stringify(hide)}` : ''}, title: ${q(s.name)}, name: ${q('🧩 ' + s.name)}${tw} }))`, '');
   }
   L.push('// ───── کد پایتون اصلی ─────', `function PROGRAM() { return ${JSON.stringify(text)} }`);
   const found = [
@@ -332,15 +357,16 @@ function canvasScript(A, R, vals, { name, title }) {
     if (t.group !== lastGroup) { L.push(`  // ── ${t.group === 'سراسری' ? 'سراسری' : (A.sceneLabels[t.group] || t.group)}`); lastGroup = t.group; }
     L.push(`  ${t.id}: ${lit(t.id in vals ? vals[t.id] : t.value)}, // ${cmt(t.label)}`);
   }
-  L.push('}');
+  L.push('}', '// برچسب مقدارها (برای کنترل‌های لایه)', 'const GL = {', ...G.map(t => `  ${t.id}: ${q(cmt(t.label))},`), '}');
   const run = { ...A.run };
   if (run.declared) run.declared = run.declared.filter(k => /^[A-Za-z_$][\w$]*$/.test(k) && (REEL_NAMES.includes(k) || PRELUDE_NAMES().includes(k)));
   L.push(`const RUN = ${JSON.stringify(run)}`, '');
   for (const s of segs) {
     const own = single ? [] : A.tweaks.filter(t => t.group === s.key);
+    const hide = single ? [] : A.tweaks.filter(t => t.group !== s.key && segs.some(x => x.key === t.group)).map(t => t.id);
     const tw = own.length ? `,\n    tweaks: {\n${own.map(t => `      ${t.id}: [G.${t.id}, ${q(cmt(t.label))}],`).join('\n')}\n    }` : '';
     L.push(`scene({ name: ${q(labelOf(s))}, at: ${r3(s.t0)}, dur: ${r3(s.t1 - s.t0)} },`,
-      `  imported(PROGRAM(), { run: RUN, start: ${r3(s.t0)}, values: G, title: ${q(labelOf(s))}, name: ${q('🧩 ' + labelOf(s))}${tw} }))`, '');
+      `  imported(PROGRAM(), { run: RUN, start: ${r3(s.t0)}, values: G, labels: GL${hide.length ? `, hide: ${JSON.stringify(hide)}` : ''}, title: ${q(labelOf(s))}, name: ${q('🧩 ' + labelOf(s))}${tw} }))`, '');
   }
   L.push('// ───── کد اصلی ─────', `function PROGRAM() { return ${JSON.stringify(A.program)} }`);
   return L.join('\n');
@@ -411,6 +437,12 @@ function motionResult(text, P) {
 
 export function importCode(text, { name = 'code', values = null } = {}) {
   let kind = detectFormat(text, name);
+  // بستهٔ المان: اول ثبت شود
+  const PK = /\belementPack\s*\(/.test(String(text || '')) ? usePacks(text) : null;
+  if (PK && !/^\s*(scene|overlay|transition|text|bg)\s*\(/m.test(PK.rest)) {
+    return { kind: 'motion', name, label: FORMATS.motion.label, ic: '🧩', script: null, packOnly: true, packAdded: PK.added, error: PK.added.length ? null : 'هیچ المانی از این بسته ثبت نشد.',
+      warnings: PK.errors, tweaks: [], scenes: [], found: [], unknown: [], media: [], audio: [], source: text };
+  }
   // کد JS که به‌عنوان «بوم» یا «ناشناخته» تشخیص داده شده ولی در واقع موشن‌اسکریپت است ← همان‌طور که هست
   let P = null;
   if (kind === 'motion' || kind === 'unknown' || (kind === 'canvas' && !/getContext\s*\(|requestAnimationFrame|\bdocument\s*\./.test(text))) {
@@ -425,6 +457,7 @@ export function importCode(text, { name = 'code', values = null } = {}) {
   else if (kind === 'html' || kind === 'canvas') r = convertCanvas(kind, text, name, values);
   else r = { kind, script: null, error: 'نوع این کد شناخته نشد (JS بوم، HTML، MoviePy یا Manim).', warnings: [], tweaks: [], scenes: [], found: [], unknown: [], media: [], audio: [], source: text };
   r.name = name; r.label = FORMATS[kind].label; r.ic = FORMATS[kind].ic;
+  if (PK) { r.packAdded = PK.added; r.warnings = [...(r.warnings || []), ...PK.errors]; }
   // شبیه موشن‌اسکریپت ولی خطا دارد ← خود خطا را نشان بده، نه برداشت تقریبی
   const looksMotion = () => new RegExp(`^\\s*(scene|overlay|transition|tempo|${Object.keys(ELEMENT_KINDS).join('|')})\\s*\\(`, 'm').test(text);
   if (!r.script && kind === 'unknown' && P?.err && looksMotion()) {

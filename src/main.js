@@ -30,6 +30,7 @@ import { IDLE_FX, IDLE_IDS, drawIdle, idleWindow, IDLE_DEFAULT_OPT } from './eng
 import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
 import { openCodeProjectSheet } from './ui/codeproject.js';
+import { attachCodeSearch } from './ui/codesearch.js';
 import { detectFormat, probeMotion, synthAudio } from './motion/importers/index.js';
 
 import { $, $$, faN } from './ui/dom.js';
@@ -2114,6 +2115,8 @@ function showCodeMsg() {
 $('#cdWhich').onchange = e => { cfIdx = +e.target.value; syncCode(); };
 $('#cdName').oninput = e => { curCf().name = e.target.value || 'بی‌نام'; saveState(); buildSecList(); };
 let codeTimer = 0;
+attachCodeSearch($('#cdText'), { open: false });
+attachCodeSearch($('#imText'), { open: false });
 $('#cdText').addEventListener('input', e => {
   clearTimeout(codeTimer);
   codeTimer = setTimeout(() => {
@@ -2281,7 +2284,7 @@ function openCodeProject(files) {
       if (app_ && r.extras.song) { syncProject(); $('#pjSheet').classList.remove('hidden'); }
       const w = r.warnings.length ? `\n⚠ ${faN(r.warnings.length)} هشدار — جزئیات در «📜 موشن‌اسکریپت».` : '';
       setTimeout(() => alert(`✓ پروژه از کد ساخته شد: ${faN(r.scenes)} صحنه، ${faN(r.layers.length)} لایه، ${faN(r.length)} ثانیه`
-        + (app_ ? ' — به‌همراه افزودنی‌های برنامه' : ' — فقط اجزای خود کد') + '.\nهمه‌چیز در زبانهٔ لایه‌ها قابل‌تغییر است.' + musicNote + w), 60);
+        + (app_ ? ' — به‌همراه افزودنی‌های برنامه' : r.extras.mode === 'fx' ? ' — نسخهٔ قابل‌ویرایش (هر افکت یک لایه)' : ' — فقط اجزای خود کد') + '.\nهمه‌چیز در زبانهٔ لایه‌ها قابل‌تغییر است.' + musicNote + w), 60);
     },
   });
 }

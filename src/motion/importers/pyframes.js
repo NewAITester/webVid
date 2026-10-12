@@ -438,11 +438,19 @@ export function applyPyTweaks(src, tweaks, values) {
     if (!(t.id in values) || values[t.id] === t.def) continue;
     const v = values[t.id];
     const text = t.type === 'num' ? String(+v) : (t.quote || "'") + String(v).replace(/\\/g, '\\\\').split(t.quote || "'").join('\\' + (t.quote || "'")).replace(/\n/g, '\\n') + (t.quote || "'");
-    eds.push({ s: t.s, e: t.e, text });
+    let s = t.s, e = t.e;
+    // اگر کد اصلی دستی ویرایش شده و جای مقدار جابه‌جا شده، نزدیک‌ترین همان متن را پیدا کن
+    if (t.raw != null && src.slice(s, e) !== t.raw) {
+      let best = -1;
+      for (let i = src.indexOf(t.raw); i >= 0; i = src.indexOf(t.raw, i + 1)) if (best < 0 || Math.abs(i - t.s) < Math.abs(best - t.s)) best = i;
+      if (best < 0) continue;
+      s = best; e = best + t.raw.length;
+    }
+    eds.push({ s, e, text });
   }
   eds.sort((a, b) => b.s - a.s);
-  let out = src;
-  for (const ed of eds) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
+  let out = src, lim = Infinity;
+  for (const ed of eds) { if (ed.e > lim) continue; out = out.slice(0, ed.s) + ed.text + out.slice(ed.e); lim = ed.s; }
   return out;
 }
 export function getPyInst(program, T, run = {}) {

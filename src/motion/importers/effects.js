@@ -182,6 +182,24 @@ function analyzeLetters(track, sc, W0, H0) {
     params: { text: word, c1, c2, accent, font: mono ? 'mono' : 'sans', size: sizeK, track: tracking(), dir: moveD ? dir : 'none', dist: r2(Math.abs(moveD) / size), inDur: dur, stagger: r3(stagger), delay, ease: 'outExpo', fade: fadeIn ? 'yes' : 'no', mask: masked ? 'yes' : 'no', outDir: exit, outDur: exitDur, outStagger: exitStagger } };
 }
 
+/** آمار خام رسم در یک صحنه (برای ایجنت: چه چیزهایی کشیده شده که شاید نگاشت نشده باشد) */
+function drawStats(F) {
+  const n = Math.max(1, F.length), sum = { text: 0, fill: 0, stroke: 0, clip: 0, paint: 0, arcs: 0, rects: 0, lines: 0, grad: 0 };
+  const ops = new Set(), texts = new Map(), cols = new Map();
+  for (const f of F) for (const e of f.ev) {
+    sum[e.k] = (sum[e.k] || 0) + 1;
+    if (e.k === 'fill' || e.k === 'stroke') { sum.arcs += e.arcs || 0; sum.rects += e.rects || 0; sum.lines += e.lines || 0; }
+    if (e.c === 'grad') sum.grad++;
+    else if (e.c) cols.set(e.c, (cols.get(e.c) || 0) + 1);
+    if (e.op && e.op !== 'source-over') ops.add(e.op);
+    if (e.k === 'text' && e.s.trim()) { const key = e.s.replace(/\d/g, '0'); if (!texts.has(key)) texts.set(key, e.s); }
+  }
+  const per = Object.fromEntries(Object.entries(sum).map(([k, v]) => [k, Math.round(v / n * 10) / 10]));
+  const singles = [...new Set([...texts.values()].filter(t => [...t].length === 1))].join('');
+  return { perFrame: per, blend: [...ops], colors: [...cols.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(c => c[0]),
+    texts: [...texts.values()].filter(t => [...t].length > 1).slice(0, 30), letters: singles.slice(0, 80) };
+}
+
 function analyzeScene(sc, W0, H0) {
   const F = sc.frames, effects = [], notes = [];
   // گذارها + جدا کردن رویدادهای صحنهٔ بعد (داخل کلیپ گذار)
@@ -316,7 +334,7 @@ function analyzeScene(sc, W0, H0) {
     effects.push({ kind: 'ringBurst', label: `حلقه‌های انفجاری (${Math.max(...rs.map(s => s.rings.length))} حلقه)`, x: 0, y: 0,
       params: { c1: cols[0] || '#5E9FE8', c2: cols[1] || cols[0] || '#DF84A8', c3: cols[2] || cols[0] || '#EAC26B', n: Math.max(...rs.map(s => s.rings.length)), delay: r2(Math.max(0, rs[0].t - sc.t0 - 0.05)), r: r2(Math.max(...rs.flatMap(s => s.rings.map(e => e.maxR))) / W0) } });
   }
-  return { name: sc.name, t0: sc.t0, t1: sc.t1, bg, effects, trans: trans.map(x => ({ ...x, t1: x.t1 + (F[1]?.t - F[0]?.t || 0.08) })) };
+  return { name: sc.name, t0: sc.t0, t1: sc.t1, bg, effects, stats: drawStats(F), trans: trans.map(x => ({ ...x, t1: x.t1 + (F[1]?.t - F[0]?.t || 0.08) })) };
 }
 
 /** همهٔ صحنه‌ها ← { scenes:[{name,t0,t1,bg,effects,trans}], count } */
@@ -402,4 +420,121 @@ export async function detectEffects(R, { name = 'code', fps = 12, onProgress = n
   if (!tr) return null;
   const A = analyzeTraces(tr, { W0, H0 });
   return { A, count: A.count, script: effectsScript(A, { name }) };
+}
+
+/* ── «دستور برای ایجنت»: افکت‌ها را به‌صورت المان تازه به برنامه اضافه کن ── */
+const pyBlocks = (src, names) => {
+  const lines = String(src).split('\n'), out = [];
+  for (const nm of names) {
+    const i = lines.findIndex(l => new RegExp(`^\\s*def\\s+${nm}\\s*\\(`).test(l));
+    if (i < 0) continue;
+    const ind = lines[i].length - lines[i].trimStart().length;
+    let j = i + 1;
+    for (; j < lines.length; j++) { const l = lines[j]; if (!l.trim() || /^\s*#/.test(l)) continue; if (l.length - l.trimStart().length <= ind) break; }
+    out.push({ name: nm, from: i + 1, to: j, code: lines.slice(i, j).join('\n') });
+  }
+  return out;
+};
+const fence = (lang, s) => '```' + lang + '\n' + String(s).replace(/```/g, '`\u200b``') + '\n```';
+
+/**
+ * فایل Markdown برای دادن به یک ایجنت (AI): همهٔ افکت‌های شناسایی‌شده + قرارداد المان‌های برنامه
+ * + کد اصلی، تا ایجنت المان‌های دقیق‌تری بنویسد که برنامه مستقیم وارد کند.
+ * @param {object} fx  خروجی detectEffects
+ * @param {object} R   نتیجهٔ importCode
+ */
+export function agentBrief(fx, R, { name = 'code' } = {}) {
+  const A = fx.A, lang = R?.pyframes || R?.kind === 'python' ? 'python' : R?.kind === 'html' ? 'html' : 'js';
+  const src = String(R?.source || R?.canvas?.program || '');
+  const used = [...new Set(A.scenes.flatMap(s => [...s.effects.map(e => e.kind), ...s.trans.map(t => t.kind)]))].filter(k => ELEMENT_KINDS[k]);
+  const L = [];
+  L.push(`# افزودن افکت‌های «${name}» به webvid — دستور کار برای ایجنت (AI)`, '',
+    '> این فایل را خود برنامهٔ webvid ساخته است. آن را کامل به ایجنت بدهید.', '',
+    '## کاری که باید بکنی', '',
+    `کاربر یک ویدیو با کد (${lang}) ساخته است. برنامه این کد را اجرا کرده، افکت‌هایش را شناخته و هر کدام را به نزدیک‌ترین «المان» آمادهٔ برنامه نگاشته است (جدول پایین).`,
+    'این نگاشت **تقریبی** است. کار تو:', '',
+    '1. برای هر افکتی که با المان‌های موجود درست درنمی‌آید (یا اصلاً نگاشت نشده — بخش «چیزهای کشیده‌شده» هر صحنه را ببین)، یک **المان تازه** بنویس که همان افکت را **دقیق** (حرکت، زمان‌بندی، منحنی، رنگ) از روی کد اصلی بازسازی کند.',
+    '2. همهٔ متن‌ها، رنگ‌ها، اندازه‌ها، سرعت‌ها و زمان‌ها را **تنظیم نام‌دار** (params) کن تا کاربر در برنامه با اسلایدر/کادر عوضشان کند. برچسب‌ها فارسی باشند.',
+    '3. **یک فایل** `*.motion.js` تحویل بده که اولش `elementPack({...})` (تعریف المان‌ها) و بعد صحنه‌ها (`scene(...)`) با همین المان‌ها و مقدارهای کد اصلی است.',
+    '4. کاربر آن فایل را در برنامه با «🧩 پروژه از کد ویدیو» یا پنجرهٔ «📜 موشن‌اسکریپت» وارد می‌کند؛ المان‌ها خودکار ثبت و نگه داشته می‌شوند و در فهرست المان‌ها هم می‌آیند.', '',
+    '> اگر به مخزن کد برنامه (github: NewAITester/webVid) دسترسی داری، می‌توانی همین المان‌ها را مستقیم به `src/motion/elements.js` (داخل `ELEMENT_KINDS`) اضافه کنی — قالبشان دقیقاً همان است.', '',
+    '## قرارداد المان', '',
+    fence('js', `elementPack({
+  // نام المان (انگلیسی، camelCase، هم‌نام المان‌های موجود نباشد)
+  glowTitle: {
+    label: 'عنوان درخشان',      // اسم فارسی در برنامه
+    ic: '✨',                   // آیکن
+    cat: 'type',                // دسته: particles | type | shapes | scene | audio | transition
+    box: 'full',                // کادر پیش‌فرض: full (تمام‌قاب) | sq (مربع) | band (نوار پهن)
+    desc: 'نوشته‌ای که با درخشش وارد می‌شود',
+    // tr: true,                // فقط برای گذارها (روی مرز صحنه‌ها، با transition('glowTitle', {...}))
+    params: [                   // تنظیم‌های نام‌دار ← کنترل‌های «✎ تنظیم» در برنامه
+      T('text', 'نوشته', 'HELLO'),                    // T(کلید، برچسب، پیش‌فرض)               متن
+      C('c1', 'رنگ نوشته', '#FFFFFF'),                // C(…)                                  رنگ (c1/c2 به رنگ لایه وصل و کی‌فریم‌پذیرند)
+      N('size', 'اندازه (نسبت به ارتفاع)', 0.18, 0.02, 1, 0.01),   // N(کلید، برچسب، پیش‌فرض، کمینه، بیشینه، گام)
+      N('inDur', 'مدت ورود (ثانیه)', 0.6, 0.05, 5, 0.05),
+      S('ease', 'منحنی', 'outExpo', [['outExpo', 'تند ← نرم'], ['linear', 'خطی']]),  // S(…، گزینه‌ها)  فهرست
+    ],
+    // code(p) ← «متن» کد JS بدنهٔ لایه را برمی‌گرداند (p = مقدار تنظیم‌ها). این کد هر فریم اجرا می‌شود.
+    code: p => \`
+const size = e.h * \${+p.size}, u = e.ease(\${JSON.stringify(p.ease)}, e.t / \${+p.inDur});
+ctx.save();
+ctx.font = '900 ' + size + 'px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+ctx.globalAlpha = u; ctx.shadowColor = e.c1; ctx.shadowBlur = 40 * (1 - u);
+ctx.fillStyle = e.c1; ctx.fillText(\${JSON.stringify(p.text)}, 0, (1 - u) * size * 0.5);
+ctx.restore();\`,
+  },
+})
+
+scene({ name: 'INTRO', at: 0, dur: 2.5 },
+  bg('#0A0A0D'),
+  glowTitle({ text: 'SHOWREEL', c1: '#FFFFFF', size: 0.19, y: 0 }))`), '',
+    'محیط اجرای `code`:', '',
+    '- `ctx` بوم Canvas 2D؛ **مبدأ (0,0) وسط کادر لایه** است. کادر لایه `e.w × e.h` (برای box: full همان کل قاب).',
+    '- زمان: `e.t` ثانیه از شروع لایه، `e.dur` مدت لایه، `e.p` پیشرفت ۰..۱، `e.time` زمان کل ویدیو.',
+    '- صدا: `e.kick` `e.rms` `e.low` `e.beat` `e.pulse` (۰..۱).',
+    '- رنگ‌های لایه: `e.c1` `e.c2` (اگر تنظیمی با کلید c1/c2 داری، از این‌ها بخوان تا کی‌فریم بخورد).',
+    '- ابزار: `e.ease(نام, u)` (نام‌ها: linear, inQuad, outQuad, inOutQuad, inCubic, outCubic, inOutCubic, inExpo, outExpo, inOutExpo, outBack, outElastic, …)، `e.clamp` `e.lerp` `e.map` `e.noise(x)` `e.random(seed)` (تکرارپذیر — **Math.random نزن**)، `e.sin` `e.cos` `e.PI` `e.TAU`، `e.circle(x,y,r,رنگ)` `e.ring` `e.box` `e.line` `e.text` `e.hsl` `e.rgb`.',
+    '- کد باید **بی‌حالت** باشد: هر فریم فقط از روی `e.t` کشیده شود (کاربر روی زمان جلو و عقب می‌رود).',
+    '- مقدار تنظیم‌ها را داخل متن کد بگذار: عدد با `${+p.x}`، متن/گزینه با `${JSON.stringify(p.x)}`.', '',
+    'تنظیم‌های مشترک هر المان داخل صحنه (جدا از params خودش): `x`, `y` (پیکسل از وسط قاب)، `from`, `dur` (ثانیه نسبت به شروع صحنه)، `opacity`, `blend` (مثل `\'difference\'`)، `name`، `enter: [\'fade\'|\'rise\'|…, مدت]`.',
+    '**نام params را `from`، `dur`، `x`، `y`، `opacity`، `blend`، `name`، `enter`، `exit` نگذار** (این‌ها مال خود لایه‌اند) — مثلاً `inDur`، `outDir` بنویس.', '',
+    `قاب اصلی کد: ${A.W0}×${A.H0}. در اسکریپت \`W\` و \`H\` اندازهٔ قاب پروژه‌اند؛ برای جور شدن با هر نسبتی: \`const SX = W / ${A.W0}, SY = H / ${A.H0}\`.`, '');
+  L.push('## المان‌های موجودی که برنامه به کار برده', '');
+  for (const k of used) { const K = ELEMENT_KINDS[k]; L.push(`- \`${k}\` — ${K.label}: ${K.desc} · تنظیم‌ها: ${K.params.map(p => '`' + p.key + '`').join(' ')}`); }
+  L.push('', '## صحنه‌ها و افکت‌های شناسایی‌شده', '');
+  const fnOf = sc => { const m = (R?.scenes || []).find(x => x.name === sc.name && Math.abs(x.t0 - sc.t0) < 0.01); return (m?.chips || []).map(c => /⚙\s*(\w+)\(\)/.exec(c)?.[1]).find(Boolean); };
+  for (const sc of A.scenes) {
+    const fn = fnOf(sc);
+    L.push(`### ${sc.name} — ${r3(sc.t0)}s تا ${r3(sc.t1)}s${fn ? ` · تابع کد اصلی: \`${fn}\`` : ''}`, '');
+    if (sc.bg) L.push(`- پس‌زمینه: ${sc.bg.length > 1 ? 'گرادیان ' : ''}${sc.bg.join(' → ')}`);
+    for (const e of sc.effects) L.push(`- **${e.label}** ← \`${e.kind}\`${e.x || e.y ? ` · جا (${e.x}, ${e.y})` : ''}${e.from ? ` · از ${e.from}s` : ''}${e.dur ? ` · مدت ${e.dur}s` : ''}${e.blend ? ` · ترکیب ${e.blend}` : ''}`,
+      `  - تنظیم‌های اندازه‌گیری‌شده: \`${JSON.stringify(e.params)}\``);
+    for (const t of sc.trans) L.push(`- گذار **${t.kind}** در ${r3(t.t0)}–${r3(t.t1)}s (رنگ ${t.c1})`);
+    const st = sc.stats;
+    if (st) {
+      L.push(`- چیزهای کشیده‌شده (میانگین هر فریم): ${Object.entries(st.perFrame).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join('، ')}${st.blend.length ? ` · حالت‌های ترکیب: ${st.blend.join('، ')}` : ''}`);
+      if (st.colors.length) L.push(`  - رنگ‌های پرکاربرد: ${st.colors.join(' ')}`);
+      if (st.texts.length) L.push(`  - نوشته‌ها: ${st.texts.map(t => '«' + t + '»').join(' ')}`);
+      if (st.letters) L.push(`  - حروف تکی (متن‌های حرف‌به‌حرف): ${st.letters}`);
+    }
+    L.push('');
+  }
+  if (src && lang === 'python') {
+    const names = A.scenes.map(fnOf).filter(Boolean);
+    const blocks = pyBlocks(src, [...new Set(names)]);
+    if (blocks.length) {
+      L.push('## کد هر صحنه در کد اصلی', '');
+      for (const b of blocks) L.push(`### \`${b.name}\` (خط ${b.from}–${b.to})`, '', fence('python', b.code), '');
+    }
+  }
+  L.push('## خروجی فعلی برنامه (نسخهٔ تقریبی با المان‌های موجود — نقطهٔ شروع تو)', '', fence('js', fx.script.replace(/\/\* WEBVID_EFFECTS_JSON[\s\S]*?WEBVID_EFFECTS_JSON \*\/\n?/, '')), '');
+  if (src) L.push('## کد اصلی کامل', '', fence(lang === 'python' ? 'python' : lang === 'html' ? 'html' : 'js', src.length > 400000 ? src.slice(0, 400000) + '\n… (بقیه بریده شد)' : src), '');
+  L.push('## چک‌لیست تحویل', '',
+    '- [ ] یک فایل `*.motion.js`: اول `elementPack({...})`، بعد `scene(...)`ها و `transition(...)`ها.',
+    '- [ ] هر المان بی‌حالت است و فقط با `e.t` کشیده می‌شود؛ `Math.random` ندارد.',
+    '- [ ] همهٔ متن‌ها/رنگ‌ها/زمان‌ها params نام‌دار با برچسب فارسی دارند.',
+    '- [ ] نام params با تنظیم‌های لایه (from, dur, x, y, …) یکی نیست.',
+    '- [ ] زمان‌بندی و جای هر چیز با کد اصلی یکی است (جدول بالا و کد هر صحنه).', '');
+  return L.join('\n');
 }

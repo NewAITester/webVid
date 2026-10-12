@@ -4,6 +4,7 @@ import { SAMPLE_SCRIPTS } from '../motion/samplescript.js';
 import { ELEMENT_KINDS } from '../motion/elements.js';
 import { LAYER_TYPES } from '../motion/schema.js';
 import { importCard } from './importpanel.js';
+import { attachCodeSearch } from './codesearch.js';
 import { detectFormat, probeMotion } from '../motion/importers/index.js';
 
 /**
@@ -187,6 +188,7 @@ export function openScriptSheet(mp) {
           undoBtn),
         msg, impBox, out, help, file)));
   document.body.append(sheet);
+  attachCodeSearch(ta, { open: false });
   setTimeout(() => sheet.classList.add('in'), 0);
   say('', 'Ctrl+Enter = اجرا. هر صحنه و المان بعد از اجرا یک لایهٔ قابل ویرایش می‌شود.');
   return sheet;

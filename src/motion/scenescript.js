@@ -2,6 +2,7 @@ import { newLayer, LAYER_TYPES, EFFECTS, SHAPE_KINDS, BLEND_MODES } from './sche
 import { APPEAR, LOOPS } from './animate.js';
 import { TEXT_STYLES, applyTextStyle, fxWith } from './presets.js';
 import { ELEMENT_KINDS, makeElementLayer, elementParams } from './elements.js';
+import { usePacks } from './packs.js';
 import { importedBody } from './importers/canvasjs.js';
 
 /**
@@ -43,6 +44,10 @@ function fnBody(fn) {
  */
 export function runScript(src, { W = 1080, H = 1920, bpm = 120 } = {}) {
   const S = { tempo: bpm || 120, cursor: 0, scenes: [], globals: [], warnings: [], cur: null };
+  // elementPack({...}) ← المان‌های تازه اول ثبت می‌شوند تا همین اسکریپت بتواند صدایشان بزند
+  const PK = usePacks(src);
+  src = PK.rest;
+  for (const e of PK.errors) S.warnings.push('بستهٔ المان — ' + e);
   const beat = () => 60 / S.tempo;
   const item = (type, extra) => ({ __el: true, type, ...extra });
   const opt = o => (o && typeof o === 'object' && !o.__el ? o : {});
@@ -85,15 +90,16 @@ export function runScript(src, { W = 1080, H = 1920, bpm = 120 } = {}) {
     spectrum: o => item('spectrum', { o: opt(o) }),
     code: (src, o) => item('code', { src: isFn(src) ? fnBody(src) : String(src || ''), o: opt(o) }),
     adjust: o => item('adjust', { o: opt(o) }),
-    /** کد وارد‌شده: imported(PROGRAM, { run, start, values, tweaks, title }) ← لایهٔ کدی که کد اصلی را اجرا می‌کند */
+    /** کد وارد‌شده: imported(PROGRAM, { run, start, values, tweaks, labels, title }) ← لایهٔ کدی که کد اصلی را اجرا می‌کند */
     imported: (prog, o = {}) => {
-      const { run, start, values, tweaks, title, ...rest } = opt(o);
-      return item('code', { src: importedBody(String(prog || ''), { run, start, values, tweaks, title }), o: rest });
+      const { run, start, values, tweaks, title, labels, hide, ...rest } = opt(o);
+      return item('code', { src: importedBody(String(prog || ''), { run, start, values, tweaks, title, labels, hide }), o: rest });
     },
     layer: raw => item('raw', { raw }),
     /** ابزار: رنگ‌ها با شفافیت  ← '#RRGGBBAA' */
     alpha: (hex, a) => String(hex).slice(0, 7) + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0'),
     log: (...a) => S.warnings.push('log: ' + a.map(String).join(' ')),
+    elementPack: () => {},
   };
   for (const kind of Object.keys(ELEMENT_KINDS)) api[kind] = o => item('el', { kind, o: opt(o) });
 
