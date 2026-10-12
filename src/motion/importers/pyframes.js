@@ -123,7 +123,7 @@ class Ctx {
     this.s = surface; this.g = surface.g; this.base = surface.base;
     this.font = { face: 'sans-serif', slant: 0, weight: 0, size: 10 }; this.fstr = null; this.stack = [];
     this.cp = null; this.sub = false; this.texts = []; this.rule = 'nonzero'; this.saves = 0; this.src = null;
-    this._m = new Map();
+    this._m = new Map(); this.rec = [];
     const g = this.g; g.save(); if (surface.target) surface.R.ctxs.push(this); g.setTransform(this.base); g.beginPath(); g.fillStyle = '#000'; g.strokeStyle = '#000'; g.lineWidth = 2; g.lineCap = 'butt'; g.lineJoin = 'miter'; g.globalCompositeOperation = 'source-over'; g.setLineDash([]);
     g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.direction = 'ltr'; g.globalAlpha = 1; g.shadowBlur = 0; g.shadowColor = 'transparent'; g.filter = 'none'; g.miterLimit = 10; g.lineDashOffset = 0;
     try { g.letterSpacing = '0px'; g.wordSpacing = '0px'; g.fontKerning = 'auto'; } catch { /* */ }
@@ -133,7 +133,7 @@ class Ctx {
   fix() { const c = this.cp; if (c && !c.dev) c.dev = this.g.getTransform().transformPoint({ x: c.x, y: c.y }); }
   getCP() { const c = this.cp; if (!c) return null; if (!c.dev) return c; const p = this.g.getTransform().inverse().transformPoint(c.dev); return { x: p.x, y: p.y }; }
   setCP(x, y) { this.cp = { x, y, dev: null }; }
-  clearPath() { this.g.beginPath(); this.texts.length = 0; this.cp = null; this.sub = false; }
+  clearPath() { this.g.beginPath(); this.texts.length = 0; this.cp = null; this.sub = false; this.rec = []; }
   drawTexts(stroke) {
     const g = this.g;
     for (const T of this.texts) { g.save(); g.setTransform(T.m); g.font = T.font; if (stroke) g.strokeText(T.s, T.x, T.y); else g.fillText(T.s, T.x, T.y); g.restore(); }
@@ -182,15 +182,21 @@ const CTX = {
   paint: C => { C.paint(1); return null; },
   paint_with_alpha: (C, [a]) => { C.paint(Math.max(0, Math.min(1, num(a)))); return null; },
   mask_surface: () => null, mask: () => null,
-  move_to: (C, [x, y]) => { x = num(x); y = num(y); C.g.moveTo(x, y); C.setCP(x, y); C.sub = false; return null; },
-  line_to: (C, [x, y]) => { x = num(x); y = num(y); if (C.cp || !C.sub) C.g.lineTo(x, y); else C.g.moveTo(x, y); C.setCP(x, y); C.sub = false; return null; },
+  move_to: (C, [x, y]) => { x = num(x); y = num(y); C.g.moveTo(x, y); C.setCP(x, y); C.sub = false; C.rec.push([0, x, y]); return null; },
+  line_to: (C, [x, y]) => { x = num(x); y = num(y); const ln = C.cp || !C.sub; if (ln) C.g.lineTo(x, y); else C.g.moveTo(x, y); C.setCP(x, y); C.sub = false; C.rec.push([ln ? 1 : 0, x, y]); return null; },
   rel_move_to: (C, [dx, dy]) => { const p = C.getCP() || { x: 0, y: 0 }; return CTX.move_to(C, [p.x + num(dx), p.y + num(dy)]); },
   rel_line_to: (C, [dx, dy]) => { const p = C.getCP() || { x: 0, y: 0 }; return CTX.line_to(C, [p.x + num(dx), p.y + num(dy)]); },
-  curve_to: (C, a) => { const [x1, y1, x2, y2, x3, y3] = a.map(num); if (!C.cp) C.g.moveTo(x1, y1); C.g.bezierCurveTo(x1, y1, x2, y2, x3, y3); C.setCP(x3, y3); C.sub = false; return null; },
+  curve_to: (C, a) => { const [x1, y1, x2, y2, x3, y3] = a.map(num); const p0 = C.getCP() || { x: x1, y: y1 }; if (!C.cp) { C.g.moveTo(x1, y1); C.rec.push([0, x1, y1]); } C.g.bezierCurveTo(x1, y1, x2, y2, x3, y3);
+    for (let i = 1; i <= 12; i++) { const u = i / 12, v = 1 - u; C.rec.push([1, v * v * v * p0.x + 3 * v * v * u * x1 + 3 * v * u * u * x2 + u * u * u * x3, v * v * v * p0.y + 3 * v * v * u * y1 + 3 * v * u * u * y2 + u * u * u * y3]); }
+    C.setCP(x3, y3); C.sub = false; return null; },
   rel_curve_to: (C, a) => { const p = C.getCP() || { x: 0, y: 0 }; const v = a.map(num); return CTX.curve_to(C, [p.x + v[0], p.y + v[1], p.x + v[2], p.y + v[3], p.x + v[4], p.y + v[5]]); },
   arc: (C, a) => arc(C, a, false), arc_negative: (C, a) => arc(C, a, true),
-  rectangle: (C, a) => { const [x, y, w, h] = a.map(num); C.g.rect(x, y, w, h); C.setCP(x, y); C.sub = false; return null; },
-  close_path: C => { C.g.closePath(); return null; },
+  rectangle: (C, a) => { const [x, y, w, h] = a.map(num); C.g.rect(x, y, w, h); C.setCP(x, y); C.sub = false; C.rec.push([0, x, y], [1, x + w, y], [1, x + w, y + h], [1, x, y + h], [3]); return null; },
+  close_path: C => { C.g.closePath(); C.rec.push([3]); return null; },
+  copy_path_flat: C => C.rec.map(r => tup([r[0], tup(r.length > 1 ? [r[1], r[2]] : [])])),
+  copy_path: C => C.rec.map(r => tup([r[0], tup(r.length > 1 ? [r[1], r[2]] : [])])),
+  append_path: (C, [P]) => { for (const it of (P || [])) { const k = num(it[0]), q = it[1] || []; if (k === 0) CTX.move_to(C, [q[0], q[1]]); else if (k === 1) CTX.line_to(C, [q[0], q[1]]); else if (k === 3) CTX.close_path(C); } return null; },
+  path_extents: C => { const xs = C.rec.filter(r => r.length > 1).map(r => r[1]), ys = C.rec.filter(r => r.length > 1).map(r => r[2]); return xs.length ? tup([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]) : tup([0, 0, 0, 0]); },
   new_path: C => { C.clearPath(); return null; },
   new_sub_path: C => { C.sub = true; C.cp = null; return null; },
   fill: C => { C.fillPath(false); return null; }, fill_preserve: C => { C.fillPath(true); return null; },
@@ -232,11 +238,13 @@ const CTX = {
 };
 function arc(C, a, neg) {
   const [x, y, r0, a1, a2] = a.map(num), r = Math.max(0, r0 || 0);
-  if (C.sub || !C.cp) { C.g.moveTo(x + r * Math.cos(a1), y + r * Math.sin(a1)); }
+  const mv = C.sub || !C.cp;
+  if (mv) { C.g.moveTo(x + r * Math.cos(a1), y + r * Math.sin(a1)); }
   let b = a2;
   if (!neg && b < a1) { b = a1 + ((((b - a1) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)); }
   if (neg && b > a1) { b = a1 - ((((a1 - b) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)); }
   C.g.arc(x, y, r, a1, b, neg);
+  { const n = Math.max(2, Math.min(64, Math.ceil(Math.abs(b - a1) / 0.2))); for (let i = 0; i <= n; i++) { const u = a1 + (b - a1) * i / n; C.rec.push([i === 0 && mv ? 0 : 1, x + r * Math.cos(u), y + r * Math.sin(u)]); } }
   C.setCP(x + r * Math.cos(b), y + r * Math.sin(b)); C.sub = false;
   return null;
 }
@@ -264,6 +272,10 @@ function cairoModule(R) {
     SolidPattern: nat(([r, g, b, a = 1]) => new Pattern('solid', [rgba(r, g, b, a)]), 'SolidPattern'),
     SurfacePattern: nat(([s]) => new Pattern('surface', [s, 0, 0]), 'SurfacePattern'),
     Matrix: nat(([xx = 1, yx = 0, xy = 0, yy = 1, x0 = 0, y0 = 0], k) => matrix([k.xx ?? xx, k.yx ?? yx, k.xy ?? xy, k.yy ?? yy, k.x0 ?? x0, k.y0 ?? y0]), 'Matrix'),
+    FontOptions: nat(() => ({ __pyget: () => nat(() => null) }), 'FontOptions'),
+    PATH_MOVE_TO: 0, PATH_LINE_TO: 1, PATH_CURVE_TO: 2, PATH_CLOSE_PATH: 3, PathDataType: ns('PathDataType', { MOVE_TO: 0, LINE_TO: 1, CURVE_TO: 2, CLOSE_PATH: 3 }),
+    HINT_STYLE_DEFAULT: 0, HINT_STYLE_NONE: 1, HINT_STYLE_SLIGHT: 2, HINT_STYLE_MEDIUM: 3, HINT_STYLE_FULL: 4, HINT_METRICS_DEFAULT: 0, HINT_METRICS_OFF: 1, HINT_METRICS_ON: 2,
+    HintStyle: ns('HintStyle', { DEFAULT: 0, NONE: 1, SLIGHT: 2, MEDIUM: 3, FULL: 4 }), HintMetrics: ns('HintMetrics', { DEFAULT: 0, OFF: 1, ON: 2 }),
     FONT_SLANT_NORMAL: 0, FONT_SLANT_ITALIC: 1, FONT_SLANT_OBLIQUE: 2, FONT_WEIGHT_NORMAL: 0, FONT_WEIGHT_BOLD: 1,
     LINE_CAP_BUTT: 0, LINE_CAP_ROUND: 1, LINE_CAP_SQUARE: 2, LINE_JOIN_MITER: 0, LINE_JOIN_ROUND: 1, LINE_JOIN_BEVEL: 2,
     FILL_RULE_WINDING: 0, FILL_RULE_EVEN_ODD: 1, ANTIALIAS_DEFAULT: 0, ANTIALIAS_NONE: 1, ANTIALIAS_GRAY: 2, ANTIALIAS_SUBPIXEL: 3, ANTIALIAS_FAST: 4, ANTIALIAS_GOOD: 5, ANTIALIAS_BEST: 6,
@@ -351,12 +363,16 @@ function findFrameFn(V, src) {
     const f = V[name]; if (!isF(f)) return null;
     const ps = (f.params || []).filter(p => !p.star).map(p => p.name);
     const req = (f.params || []).filter(p => p.def == null && !p.star).length;
-    let mode = 'fi', ctxArg = false;
-    if (ps.length >= 2 && /^(ctx|cr|c|context|g|cx)$/i.test(ps[0])) { ctxArg = true; mode = /^(fi|i|n|f|frame|idx|index|frame_?i(dx)?|k)$/i.test(ps[1]) ? 'fi' : 't'; }
+    let mode = 'fi', ctxArg = false, surfArg = false, extra = [];
+    const tMode = n => (/^(fi|i|n|f|frame|idx|index|frame_?i(dx)?|k)$/i.test(n) ? 'fi' : /^(p|progress|u)$/i.test(n) ? 'p' : 't');
+    const fill = n => /^(w|width|ww|dw|img_?w)$/i.test(n) || /^(h|height|hh|dh|img_?h)$/i.test(n) || /^fps$/i.test(n);
+    if (ps.length >= 2 && /^(ctx|cr|c|context|g|cx)$/i.test(ps[0])) { ctxArg = true; mode = tMode(ps[1]); extra = ps.slice(2, req); }
+    else if (ps.length >= 2 && /^(surf|surface|sfc|srf|img|image|canvas|target|s)$/i.test(ps[0])) { surfArg = true; mode = tMode(ps[1]); extra = ps.slice(2, req); }
     else if (req > 1) return null;
+    if (extra.some(n => !fill(n))) return null;
     else if (/^(t|time|sec|secs|seconds|tt|ts)$/i.test(ps[0] || '')) mode = 't';
     else if (/^(p|progress|u)$/i.test(ps[0] || '')) mode = 'p';
-    return { name, mode, ctxArg };
+    return { name, mode, ctxArg, surfArg, extra };
   };
   for (const n of FRAME_FN) { const r = pick(n); if (r) return r; }
   // تابعی که ImageSurface می‌سازد و یک پارامتر دارد
@@ -380,7 +396,7 @@ export function instantiatePy(src) {
   const inst = { I, R, error: null, warnings: I.warnings, src };
   try { I.run(src); } catch (e) { if (!(e instanceof FrameDone)) inst.error = e; }
   const V = I.globals.vars;
-  const W0 = firstNum(V, ['W', 'WIDTH', 'width', 'Wd', 'IMG_W', 'VIDEO_W']) || 1920, H0 = firstNum(V, ['H', 'HEIGHT', 'height', 'Ht', 'IMG_H', 'VIDEO_H']) || 1080;
+  const W0 = firstNum(V, ['W', 'WIDTH', 'width', 'Wd', 'IMG_W', 'VIDEO_W', 'DW', 'OUT_W']) || 1920, H0 = firstNum(V, ['H', 'HEIGHT', 'height', 'Ht', 'IMG_H', 'VIDEO_H', 'DH', 'OUT_H']) || 1080;
   R.W0 = Math.round(W0); R.H0 = Math.round(H0);
   const fps = firstNum(V, ['FPS', 'fps', 'FRAME_RATE', 'FRAMERATE', 'frame_rate', 'RATE']) || 30;
   let dur = firstNum(V, ['DUR', 'DURATION', 'duration', 'SECONDS', 'LENGTH', 'TOTAL', 'T_TOTAL']);
@@ -419,6 +435,8 @@ export function pyFrame(inst, ctx, t) {
   try {
     const args = [arg];
     if (inst.fn.ctxArg) { const s = new Surface(R, 0, R.W0, R.H0); args.unshift(new Ctx(s)); }
+    else if (inst.fn.surfArg) args.unshift(new Surface(R, 0, R.W0, R.H0));
+    for (const n of inst.fn.extra || []) args.push(/^fps$/i.test(n) ? inst.fps : /w/i.test(n) ? R.W0 : R.H0);
     I.call(f, args, {});
   } catch (e) {
     if (!(e instanceof FrameDone)) { inst.lastError = e; throw e; }

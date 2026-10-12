@@ -92,6 +92,13 @@ function broadcastN(arrs, f, dtype = 'float64') {
   if (arrs.every(a => a.size === N)) { const k = arrs.length; if (k === 1) for (let i = 0; i < N; i++) out.data[i] = f(D[0][i]); else if (k === 2) for (let i = 0; i < N; i++) out.data[i] = f(D[0][i], D[1][i]); else for (let i = 0; i < N; i++) out.data[i] = f(...D.map(d => d[i])); return out; }
   if (arrs.length === 2 && arrs[1].size === 1) { const b = D[1][0], A = D[0]; if (arrs[0].size === N) { for (let i = 0; i < N; i++) out.data[i] = f(A[i], b); return out; } }
   if (arrs.length === 2 && arrs[0].size === 1) { const a = D[0][0], B = D[1]; if (arrs[1].size === N) { for (let i = 0; i < N; i++) out.data[i] = f(a, B[i]); return out; } }
+  // سریع: هر آرایه یا هم‌اندازهٔ خروجی است، یا تک‌مقدار، یا شکلش انتهای شکل خروجی است (پخش ردیفی)
+  const modes = arrs.map(a => (a.size === N ? 0 : a.size === 1 ? 1 : a.shape.length <= shape.length && a.shape.every((v, i) => v === shape[shape.length - a.shape.length + i]) ? 2 : -1));
+  if (modes.every(m => m >= 0) && arrs.length === 2) {
+    const [A, B] = D, [ma, mb] = modes, la = arrs[0].size, lb = arrs[1].size;
+    for (let i = 0; i < N; i++) out.data[i] = f(ma === 0 ? A[i] : ma === 1 ? A[0] : A[i % la], mb === 0 ? B[i] : mb === 1 ? B[0] : B[i % lb]);
+    return out;
+  }
   const strides = arrs.map(a => bmap(shape, a.shape)), n = shape.length, idx = new Array(n).fill(0), pos = arrs.map(() => 0);
   for (let i = 0; i < N; i++) {
     out.data[i] = arrs.length === 2 ? f(D[0][pos[0]], D[1][pos[1]]) : f(...D.map((d, j) => d[pos[j]]));
@@ -123,9 +130,32 @@ function ndOp(op, a, o, rev) {
   let x = a, y = b;
   if (rev) { if (FLIP[op]) f = BIN[FLIP[op]]; else [x, y] = [b, a]; }
   const dt = op.startsWith('cmp') || '&|^'.includes(op) ? 'bool' : (INT_T.has(x.dtype) && INT_T.has(y.dtype) && op !== '/' && op !== '**' ? 'int64' : 'float64');
+  if (dt === 'float64' && (op === '+' || op === '-' || op === '*' || op === '/')) { const r = fastBin(op, x, y); if (r) return r; }
   return broadcastN([x, y], f, dt);
 }
-function mapND(a, f, dtype) { const o = mk(a.shape, dtype || a.dtype); if (!(o instanceof ND)) return o; for (let i = 0; i < a.size; i++) o.data[i] = f(a.data[i]); return o; }
+/* حلقهٔ مستقیم برای + − × ÷ (هم‌اندازه یا با یک عدد) — بدون صدا زدن تابع برای هر خانه */
+function fastBin(op, x, y) {
+  const n = x.size, m = y.size;
+  let sh;
+  if (n === m && x.shape.length === y.shape.length && x.shape.every((v, i) => v === y.shape[i])) sh = x.shape;
+  else if (m === 1) sh = x.shape; else if (n === 1) sh = y.shape; else return null;
+  const o = mk(sh); if (!(o instanceof ND)) return o;
+  const A = x.data, B = y.data, O = o.data, N = o.size;
+  if (n === m) {
+    if (op === '+') for (let i = 0; i < N; i++) O[i] = A[i] + B[i]; else if (op === '-') for (let i = 0; i < N; i++) O[i] = A[i] - B[i];
+    else if (op === '*') for (let i = 0; i < N; i++) O[i] = A[i] * B[i]; else for (let i = 0; i < N; i++) O[i] = A[i] / B[i];
+  } else if (m === 1) {
+    const b = B[0];
+    if (op === '+') for (let i = 0; i < N; i++) O[i] = A[i] + b; else if (op === '-') for (let i = 0; i < N; i++) O[i] = A[i] - b;
+    else if (op === '*') for (let i = 0; i < N; i++) O[i] = A[i] * b; else for (let i = 0; i < N; i++) O[i] = A[i] / b;
+  } else {
+    const a = A[0];
+    if (op === '+') for (let i = 0; i < N; i++) O[i] = a + B[i]; else if (op === '-') for (let i = 0; i < N; i++) O[i] = a - B[i];
+    else if (op === '*') for (let i = 0; i < N; i++) O[i] = a * B[i]; else for (let i = 0; i < N; i++) O[i] = a / B[i];
+  }
+  return o;
+}
+function mapND(a, f, dtype) { const o = mk(a.shape, dtype || a.dtype); if (!(o instanceof ND)) return o; const A = a.data, O = o.data, n = A.length; for (let i = 0; i < n; i++) O[i] = f(A[i]); return o; }
 
 /* ── اندیس‌گذاری ── */
 function normIdx(k) { return isTuple(k) ? [...k] : [k]; }
@@ -133,7 +163,8 @@ function sliceRange(sl, n) {
   const st = sl.c ?? 1;
   const nn = (v, d) => (v == null ? d : v < 0 ? Math.max(st < 0 ? -1 : 0, n + v) : Math.min(v, st < 0 ? n - 1 : n));
   const [a, b] = st > 0 ? [nn(sl.a, 0), nn(sl.b, n)] : [nn(sl.a, n - 1), sl.b == null ? -1 : nn(sl.b, -1)];
-  const out = []; if (st > 0) for (let i = a; i < b; i += st) out.push(i); else for (let i = a; i > b; i += st) out.push(i);
+  const cnt = Math.max(0, Math.ceil(st > 0 ? (b - a) / st : (a - b) / -st));
+  const out = new Array(cnt); for (let j = 0, i = a; j < cnt; j++, i += st) out[j] = i;
   return out;
 }
 /** شرح اندیس: برای هر محور خروجی، فهرست اندیس‌های ورودی */
@@ -148,7 +179,7 @@ function plan(a, k) {
     const n = a.shape[ax];
     if (n === undefined) throw new PyError('اندیس بیشتر از ابعاد آرایه', 0, 'IndexError');
     if (typeof it === 'number' || typeof it === 'boolean') { let i = +it; if (i < 0) i += n; if (i < 0 || i >= n) throw new PyError(`اندیس ${it} بیرون از بازه است`, 0, 'IndexError'); sel.push({ ax, list: [i], drop: true }); ax++; continue; }
-    if (it?.type === 'slice') { const list = sliceRange(it, n); sel.push({ ax, list }); outShape.push(list.length); ax++; continue; }
+    if (it?.type === 'slice') { const list = Int32Array.from(sliceRange(it, n)); sel.push({ ax, list }); outShape.push(list.length); ax++; continue; }
     if (it instanceof ND || Array.isArray(it)) {
       const ix = asND(it);
       let list;
@@ -158,7 +189,7 @@ function plan(a, k) {
     }
     throw new PyError('نوع اندیس پشتیبانی نمی‌شود', 0, 'TypeError');
   }
-  for (; ax < a.ndim; ax++) { const list = [...Array(a.shape[ax]).keys()]; sel.push({ ax, list }); outShape.push(list.length); }
+  for (; ax < a.ndim; ax++) { const n = a.shape[ax], list = new Int32Array(n); for (let i = 0; i < n; i++) list[i] = i; sel.push({ ax, list }); outShape.push(n); }
   return { sel: sel.filter(s => !s.newaxis), outShape };
 }
 function strides(shape) { const s = new Array(shape.length); let st = 1; for (let i = shape.length - 1; i >= 0; i--) { s[i] = st; st *= shape[i]; } return s; }
@@ -166,7 +197,13 @@ function gatherIdx(a, sel) {
   const st = strides(a.shape), lists = sel.map(s => s.list), mul = sel.map(s => st[s.ax]);
   const total = lists.reduce((p, l) => p * l.length, 1); const out = new Int32Array(total);
   let k = 0;
-  const rec = (d, base) => { if (d === lists.length) { out[k++] = base; return; } const L = lists[d], m = mul[d]; for (let i = 0; i < L.length; i++) rec(d + 1, base + L[i] * m); };
+  const last = lists.length - 1;
+  const rec = (d, base) => {
+    const L = lists[d], m = mul[d];
+    if (d === last) { for (let i = 0; i < L.length; i++) out[k++] = base + L[i] * m; return; }
+    for (let i = 0; i < L.length; i++) rec(d + 1, base + L[i] * m);
+  };
+  if (!lists.length) { out[0] = 0; return out; }
   if (total) rec(0, 0);
   return out;
 }
@@ -255,7 +292,7 @@ function toBytes(a) {
   if (d === 'float32') return new Bytes(new Uint8Array(Float32Array.from(a.data).buffer));
   return new Bytes(new Uint8Array(Float64Array.from(a.data).buffer));
 }
-function cumsum(a) { const o = mk([a.size]); let s = 0; for (let i = 0; i < a.size; i++) { s += a.data[i]; o.data[i] = s; } return o; }
+function cumsum(a) { const n = a.size, o = mk([n]); let s = 0; for (let i = 0; i < n; i++) { s += a.data[i]; o.data[i] = s; } return o; }
 function clip(a, lo, hi) {
   const A = asND(a); if (A instanceof Unk) return A;
   const L = lo == null ? -Infinity : lo, Hh = hi == null ? Infinity : hi;
@@ -364,12 +401,19 @@ export function numpyModule() {
     argmin: nat(([a]) => { a = asND(a); return reduce(a, null, argbest((x, y) => x < y), null)[1]; }),
     prod: nat(([a]) => { a = asND(a); return reduce(a, null, (r, v) => r * v, 1); }),
     cumsum: nat(([a]) => { a = asND(a); return a instanceof ND ? cumsum(a) : a; }),
-    diff: nat(([a]) => { a = asND(a); if (!(a instanceof ND)) return a; const o = mk([Math.max(0, a.size - 1)]); for (let i = 1; i < a.size; i++) o.data[i - 1] = a.data[i] - a.data[i - 1]; return o; }),
+    diff: nat(([a, nn], k) => {
+      a = asND(a); if (!(a instanceof ND)) return a;
+      const ext = v => { if (v == null) return []; const e = asND(v); return e instanceof ND ? Array.from(e.data) : [+v]; };
+      let d = [...ext(k.prepend), ...a.data, ...ext(k.append)];
+      for (let r = 0; r < Math.max(1, +(nn ?? k.n ?? 1) || 1); r++) { const q = new Array(Math.max(0, d.length - 1)); for (let i = 1; i < d.length; i++) q[i - 1] = d[i] - d[i - 1]; d = q; }
+      const o = mk([d.length]); for (let i = 0; i < d.length; i++) o.data[i] = d[i]; return o;
+    }),
     roll: nat(([a, s, ax], k) => { a = asND(a); if (!(a instanceof ND)) return a; ax = k.axis ?? ax; s = Math.trunc(s);
       if (ax == null || a.ndim === 1) { const n = a.size, o = mk([...a.shape], a.dtype); for (let i = 0; i < n; i++) o.data[((i + s) % n + n) % n] = a.data[i]; return o; }
       if (ax < 0) ax += a.ndim; const st = strides(a.shape), n = a.shape[ax], o = mk([...a.shape], a.dtype);
       for (let i = 0; i < a.size; i++) { const c = Math.floor(i / st[ax]) % n, nc = ((c + s) % n + n) % n; o.data[i + (nc - c) * st[ax]] = a.data[i]; } return o; }),
-    convolve: nat(([a, v, mode = 'full']) => {
+    convolve: nat(([a, v, mode], kw) => {
+      mode = String(mode ?? kw?.mode ?? 'full');
       a = asND(a); v = asND(v); if (!(a instanceof ND) || !(v instanceof ND)) return new Unk('convolve');
       const n = a.size, m = v.size, full = n + m - 1, A = a.data, V = v.data;
       const cut = mode === 'same' ? [Math.floor((m - 1) / 2), n] : mode === 'valid' ? [m - 1, Math.max(0, n - m + 1)] : [0, full];

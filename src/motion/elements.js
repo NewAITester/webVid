@@ -36,12 +36,13 @@ const obj = o => '{ ' + Object.entries(o).filter(([, v]) => v !== undefined).map
 const R = (f, k = 'min') => `e.${k}(e.w, e.h) * ${+f}`;
 
 /** کد مشترک دو المان «جریان ذره‌ای» (از صحنهٔ FLOW شوریل پایتون) */
-const flowCode = (p, mode) => `// ${mode === 'title' ? 'عنوان ذره‌ای ریتمیک: بعد از ساخته شدن، با هر ضرب جلو و عقب می‌رود' : 'جریان ذره‌ای: چرخش ← ساختن نوشته ← انفجار'}
+const flowCode = (p, mode) => `// ${mode === 'pulse' ? 'نوشتهٔ ذره‌ای فقط با ریتم: از اول ساخته است و فقط با ضرب‌های آهنگ می‌تپد' : mode === 'title' ? 'عنوان ذره‌ای ریتمیک: بعد از ساخته شدن، با هر ضرب جلو و عقب می‌رود' : 'جریان ذره‌ای: چرخش ← ساختن نوشته ← انفجار'}
 ${p.bg === 'yes' ? `{ const g = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.hypot(e.w, e.h) * 0.55); g.addColorStop(0, '#1B1036'); g.addColorStop(1, '#040407'); ctx.fillStyle = g; ctx.fillRect(-e.w / 2, -e.h / 2, e.w, e.h); }
 ` : ''}e.reel.flowText(${obj({ text: lit(p.text), font: lit(FONT_CSS[p.font] || FONT_CSS.sans), weight: lit(String(p.weight)), size: `e.h * ${+p.size}`, n: lit(p.n),
-  cols: `[e.c1, e.c2, ${lit(p.c3)}, ${lit(p.c4)}]`, lw: lit(p.lw), trail: lit(p.trail), t: 'e.t', dur: 'e.dur', mode: lit(mode),
-  swirl: lit(p.swirl), inAt: lit(p.inAt), gather: lit(p.gather), outLen: lit(p.outLen),
-  ...(mode === 'title' ? { amp: lit(p.amp), beat: lit(p.beat), bpm: lit(p.bpm) } : {}) })})`;
+  cols: `[e.c1, e.c2, ${lit(p.c3)}, ${lit(p.c4)}]`, lw: lit(p.lw), trail: lit(p.trail), t: 'e.t', dur: 'e.dur', mode: lit(mode === 'pulse' ? 'title' : mode),
+  ...(mode === 'pulse' ? { swirl: '0', inAt: '-10', gather: '0.05', outLen: '0', a: `Math.max(0, Math.min(1, e.t / ${Math.max(0.01, +p.fade || 0.01)}, (e.dur - e.t) / ${Math.max(0.01, +p.fade || 0.01)}))` }
+    : { swirl: lit(p.swirl), inAt: lit(p.inAt), gather: lit(p.gather), outLen: lit(p.outLen) }),
+  ...(mode !== 'reel' ? { amp: lit(p.amp), beat: lit(p.beat), bpm: lit(p.bpm) } : {}) })})`;
 
 /*  box  اندازهٔ پیش‌فرض کادر:  full تمام‌قاب · sq مربع · band نوار پهن
     cols نگاشت تنظیم رنگ ← ویژگی لایه (c1/c2)
@@ -420,6 +421,16 @@ ctx.restore();`,
       N('swirl', 'شدت چرخش ورود', 2.6, 0, 6, 0.1), N('inAt', 'شروع جمع شدن (ثانیه)', 0.3, 0, 20, 0.05), N('gather', 'مدت جمع شدن (ثانیه)', 0.8, 0.05, 5, 0.05),
       N('outLen', 'انفجار پایانی (ثانیه، ۰ = نه)', 0.45, 0, 5, 0.05), S('bg', 'پس‌زمینهٔ خودش', 'no', [['no', 'ندارد (شفاف)'], ['yes', 'بنفش تیره مثل اصل']])],
     code: p => flowCode(p, 'title'),
+  },
+  flowPulse: {
+    label: 'نوشتهٔ ذره‌ای فقط با ریتم', ic: '💓', box: 'full', cat: 'type',
+    desc: 'نوشته از اول از ذره‌ها ساخته است و فقط با ضرب‌های آهنگ پروژه می‌تپد (جلو و عقب می‌رود، ذره‌ها کمی باز و جمع می‌شوند) — بدون چرخش ورود و انفجار',
+    params: [T('text', 'نوشته', 'RHYTHM'), C('c1', 'رنگ ۱', '#4FB9C9'), C('c2', 'رنگ ۲', '#5E9FE8'), C('c3', 'رنگ ۳', '#BF8EDA'), C('c4', 'رنگ ۴', '#DF84A8'),
+      S('font', 'قلم', 'sans', FONTS2), S('weight', 'ضخامت قلم', '700', WEIGHTS), N('size', 'اندازهٔ نوشته (نسبت به ارتفاع)', 0.3, 0.05, 1.2, 0.01),
+      N('n', 'تعداد ذره', 1800, 100, 5000, 50), N('lw', 'ضخامت رد ذره', 3.6, 0.5, 12, 0.1), N('trail', 'طول رد (ثانیه)', 0.06, 0.01, 0.4, 0.01),
+      N('amp', 'شدت حرکت با ضرب', 1.4, 0, 3, 0.05), S('beat', 'ریتم از', 'auto', [['auto', 'آهنگ پروژه (اگر نبود BPM)'], ['bpm', 'فقط BPM پایین']]), N('bpm', 'BPM', 120, 40, 240, 1),
+      N('fade', 'محو شدن اول و آخر (ثانیه)', 0.25, 0, 3, 0.05), S('bg', 'پس‌زمینهٔ خودش', 'no', [['no', 'ندارد (شفاف)'], ['yes', 'بنفش تیره مثل اصل']])],
+    code: p => flowCode(p, 'pulse'),
   },
   blinds: {
     label: 'پرده‌های کرکره‌ای', ic: '▥', box: 'full', cat: 'transition', tr: true,

@@ -393,7 +393,9 @@ export function flowText(ctx, env, o = {}) {
   const P = flowPoints(text, font, weight, n);
   if (!P.pts.length) return;
   // اندازهٔ قلم ← هیچ‌وقت پهن‌تر از ۹۲٪ کادر نشود
-  const size = Math.min(o.size ?? H * 0.46, W * 0.92 / Math.max(0.1, P.w));
+  // (در حالت title جای بزرگ شدن روی ضرب هم کنار گذاشته می‌شود)
+  const grow = mode === 'title' ? 1 + 0.3 * Math.max(0, o.amp ?? 1) : 1;
+  const size = Math.min(o.size ?? H * 0.46, W * 0.92 / Math.max(0.1, P.w * grow));
   // ضرب: از آهنگ پروژه یا از BPM خود المان
   const beats = env.beats || [], useSong = o.beat !== 'bpm' && beats.length > 0, bp = 60 / Math.max(20, o.bpm ?? 120);
   const gt = env.t - lt0;     // زمان کل = gt + lt

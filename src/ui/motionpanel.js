@@ -174,9 +174,9 @@ export class MotionPanel {
         if (L.type === 'spectrum') L.props.sc = { v: 55 };
         return [L];
       }, 1.6)));
-    const flows = ['flowTitle', 'flowText'].map(k => ELEMENTS.find(el => el.id === 'el_' + k)).filter(Boolean)
+    const flows = ['flowTitle', 'flowPulse', 'flowText'].map(k => ELEMENTS.find(el => el.id === 'el_' + k)).filter(Boolean)
       .map(el => tile(el.ic, el.label, ELEMENT_KINDS[el.kind].desc, run(() => this.addElement(el)),
-        thumb('el:' + el.id, () => { const L = buildElement(el, 0, 5, 600, 400); L.props.w = { v: 600 }; L.props.h = { v: 400 }; L.props.y = { v: 0 }; return [L]; }, el.kind === 'flowTitle' ? 1.6 : 1.9)));
+        thumb('el:' + el.id, () => { const L = buildElement(el, 0, 5, 600, 400); L.props.w = { v: 600 }; L.props.h = { v: 400 }; L.props.y = { v: 0 }; return [L]; }, el.kind === 'flowText' ? 1.9 : el.kind === 'flowPulse' ? 1.04 : 1.6)));
     const ext = extras.map(x => tile(x.ic, x.label, x.desc, run(x.fn, x.openLayers !== false)));
 
     const q = h('input', { class: 'txt', type: 'search', placeholder: 'جستجو: نئون، قلب، برف…',
@@ -875,9 +875,9 @@ export class MotionPanel {
     if (L.type === 'text' && !opt.noLooks) {
       body.append(h('div', { class: 'shead sm' }, '🌊 افکت ذره‌ای FLOW برای همین نوشته'));
       body.append(h('p', { class: 'note' }, 'نوشته با هزاران ذرهٔ رنگی ساخته می‌شود (یک لایهٔ تازه با همین نوشته و همین زمان؛ نوشتهٔ ساده پنهان می‌شود و هر وقت خواستید برش می‌گردانید).'));
-      body.append(this._strip(['flowTitle', 'flowText'].map(kind => this._thumbBtn(
-        thumb('el:el_' + kind, () => { const T = makeElementLayer(kind, {}, 0, 5, 600, 400); T.props.w = { v: 600 }; T.props.h = { v: 400 }; T.props.y = { v: 0 }; return [T]; }, kind === 'flowTitle' ? 1.6 : 1.9),
-        kind === 'flowTitle' ? 'عنوان ریتمیک (اول ویدیو)' : 'جریان FLOW (هر جای ویدیو)', false,
+      body.append(this._strip(['flowTitle', 'flowPulse', 'flowText'].map(kind => this._thumbBtn(
+        thumb('el:el_' + kind, () => { const T = makeElementLayer(kind, {}, 0, 5, 600, 400); T.props.w = { v: 600 }; T.props.h = { v: 400 }; T.props.y = { v: 0 }; return [T]; }, kind === 'flowText' ? 1.9 : kind === 'flowPulse' ? 1.04 : 1.6),
+        kind === 'flowTitle' ? 'عنوان ریتمیک (اول ویدیو)' : kind === 'flowPulse' ? 'فقط با ریتم آهنگ می‌تپد' : 'جریان FLOW (هر جای ویدیو)', false,
         () => this.textToFlow(L, kind)))));
     }
 

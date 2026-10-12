@@ -287,7 +287,33 @@ Object.assign(IDLE_FX, {
   },
 });
 
-export const IDLE_IDS = Object.keys(IDLE_FX);
+/* FLOW (همان صحنهٔ ذره‌ای شوریل): نام آهنگ از هزاران ذرهٔ رنگی، دقیقاً روی ضرب‌های آهنگ */
+const FLOW_COLS = acc => [acc, '#5E9FE8', '#BF8EDA', '#4FB9C9'];
+const flowFont = s => (/[\u0600-\u06FF]/.test(s) ? `"${FONTS.black}", Vazirmatn, "Noto Sans Arabic", sans-serif` : 'Arial, "Helvetica Neue", "Liberation Sans", sans-serif');
+const flowName = song => String(song.title || '').trim() || 'MUSIC';
+Object.assign(IDLE_FX, {
+  flowsong: {
+    label: '🌊 نام آهنگ ذره‌ای — با ضرب جلو و عقب', icon: '🌊',
+    draw(ctx, song, t, acc, kick, k, w) {
+      // اول فاصله: ذره‌ها می‌چرخند و نام را می‌سازند؛ بعد با هر ضرب جلو می‌آید؛ نزدیک خط بعد پخش می‌شود
+      const text = flowName(song), span = Math.max(1, w.t1 - w.t0);
+      REEL.flowText(ctx, R(song, t), { text, font: flowFont(text), weight: '900', mode: 'title', t: t - w.t0, dur: w.next < 0 ? span : Math.max(1, span - 0.5), inAt: 0.25, gather: 0.75,
+        outLen: w.next < 0 ? 0 : Math.min(0.45, span * 0.2), amp: 1.3, a: k, n: 1700, lw: 3.6, size: H * 0.3, cols: FLOW_COLS(acc) });
+    },
+  },
+  flowbeat: {
+    label: '💓 نام آهنگ ذره‌ای — فقط با ریتم می‌تپد', icon: '💓',
+    draw(ctx, song, t, acc, kick, k, w) {
+      // نوشته از اول ساخته است؛ فقط با ضرب‌های آهنگ می‌تپد (بدون چرخش ورود و انفجار)
+      const text = flowName(song);
+      REEL.flowText(ctx, R(song, t), { text, font: flowFont(text), weight: '900', mode: 'title', t: t - w.t0, dur: 1e9, inAt: -10, gather: 0.05, swirl: 0, outLen: 0,
+        amp: 1.6, a: k, n: 1700, lw: 3.6, size: H * 0.3, cols: FLOW_COLS(acc) });
+    },
+  },
+});
+
+// FLOW اول فهرست (تازه‌ها)
+export const IDLE_IDS = ['flowsong', 'flowbeat', ...Object.keys(IDLE_FX).filter(k => k !== 'flowsong' && k !== 'flowbeat')];
 
 /**
  * کشیدن افکت‌های بین‌خوانی

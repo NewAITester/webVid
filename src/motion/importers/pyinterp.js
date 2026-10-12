@@ -717,15 +717,23 @@ function stdModule(name, I) {
     return new PyModule('math', d);
   }
   if (name === 'random') {
-    let s = 12345;
-    const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-    return new PyModule('random', {
-      seed: n(([x]) => { s = (Math.abs(Math.floor(+x || 0)) % 2147483647) || 7; return null; }), random: n(() => rnd()),
-      uniform: n(([a, b]) => a + (b - a) * rnd()), randint: n(([a, b]) => a + Math.floor(rnd() * (b - a + 1))), randrange: n(([a, b, st = 1]) => (b == null ? Math.floor(rnd() * a) : a + st * Math.floor(rnd() * ((b - a) / st)))),
-      choice: n(([xs]) => { const l = I.iter(xs); return l[Math.floor(rnd() * l.length)]; }), shuffle: n(([xs]) => { for (let i = xs.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [xs[i], xs[j]] = [xs[j], xs[i]]; } return null; }),
-      sample: n(([xs, k]) => { const l = I.iter(xs).slice(); const out = []; for (let i = 0; i < k && l.length; i++) out.push(l.splice(Math.floor(rnd() * l.length), 1)[0]); return out; }),
-      gauss: n(([m = 0, sd = 1]) => m + sd * Math.sqrt(-2 * Math.log(rnd() || 1e-9)) * Math.cos(2 * Math.PI * rnd())),
-    });
+    // random و random.Random(seed): هر نمونه مولد بذری جدای خودش را دارد
+    const mk = seed0 => {
+      let s = seed0 == null ? 12345 : ((Math.abs(Math.floor(+seed0 || 0)) % 2147483647) || 7);
+      const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+      const gauss = (m = 0, sd = 1) => m + sd * Math.sqrt(-2 * Math.log(rnd() || 1e-9)) * Math.cos(2 * Math.PI * rnd());
+      return {
+        seed: n(([x]) => { s = (Math.abs(Math.floor(+x || 0)) % 2147483647) || 7; return null; }), random: n(() => rnd()),
+        uniform: n(([a, b]) => a + (b - a) * rnd()), randint: n(([a, b]) => a + Math.floor(rnd() * (b - a + 1))), randrange: n(([a, b, st = 1]) => (b == null ? Math.floor(rnd() * a) : a + st * Math.floor(rnd() * ((b - a) / st)))),
+        choice: n(([xs]) => { const l = typeof xs === 'string' ? [...xs] : I.iter(xs); return l[Math.floor(rnd() * l.length)]; }), shuffle: n(([xs]) => { for (let i = xs.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [xs[i], xs[j]] = [xs[j], xs[i]]; } return null; }),
+        choices: n(([xs], k) => { const l = typeof xs === 'string' ? [...xs] : I.iter(xs); const out = []; for (let i = 0; i < (k.k ?? 1); i++) out.push(l[Math.floor(rnd() * l.length)]); return out; }),
+        sample: n(([xs, k]) => { const l = (typeof xs === 'string' ? [...xs] : I.iter(xs)).slice(); const out = []; for (let i = 0; i < k && l.length; i++) out.push(l.splice(Math.floor(rnd() * l.length), 1)[0]); return out; }),
+        gauss: n(([m = 0, sd = 1]) => gauss(m, sd)), normalvariate: n(([m = 0, sd = 1]) => gauss(m, sd)),
+        triangular: n(([lo = 0, hi = 1, mode]) => { const u = rnd(), c = mode == null ? 0.5 : (mode - lo) / ((hi - lo) || 1); return u < c ? lo + Math.sqrt(u * (hi - lo) * (mode ?? (lo + hi) / 2 - lo)) : hi - Math.sqrt((1 - u) * (hi - lo) * (hi - (mode ?? (lo + hi) / 2))); }),
+        expovariate: n(([l = 1]) => -Math.log(1 - rnd()) / l), getrandbits: n(([k]) => Math.floor(rnd() * 2 ** Math.min(31, k))),
+      };
+    };
+    return new PyModule('random', { ...mk(null), Random: n(([x]) => new PyModule('Random', mk(x ?? 12345))), SystemRandom: n(() => new PyModule('Random', mk(Date.now() % 2147483647))) });
   }
   if (['os', 'os.path', 'sys', 'pathlib', 'time', 'json', 're', 'itertools', 'functools', 'typing', 'dataclasses', 'collections', 'subprocess', 'shutil', 'glob', 'argparse', 'logging', 'tempfile', 'textwrap', 'datetime', 'string', 'copy', 'colorsys', 'enum', 'abc', '__future__', 'warnings'].includes(name)) {
     const d = {};
