@@ -48,7 +48,36 @@ export const APPEAR = {
   wordsUp:  { label: 'کلمه‌به‌کلمه بالا', fn: u => ({ stagger: { kind: 'up', u } }) },
   wordsPop: { label: 'کلمه‌به‌کلمه جهش', fn: u => ({ stagger: { kind: 'pop', u } }) },
   wordsFade:{ label: 'کلمه‌به‌کلمه محو', fn: u => ({ stagger: { kind: 'fade', u } }) },
+  bounceIn: { label: 'توپی',         fn: u => ({ s: Math.max(0.001, E.outBounce(u)), a: clamp(u * 4) }) },
+  riseBlur: { label: 'بالا آمدن نرم', fn: u => ({ dy: (1 - E.outCubic(u)) * 0.12, blur: (1 - u) * 24, a: u }) },
+  slideBlurL:{ label: 'سرعتی از چپ', fn: u => ({ dx: -(1 - E.outExpo(u)) * 0.9, blur: (1 - u) * 30, sx: 1 + (1 - u) * 0.6, a: clamp(u * 3) }) },
+  slideBlurR:{ label: 'سرعتی از راست', fn: u => ({ dx: (1 - E.outExpo(u)) * 0.9, blur: (1 - u) * 30, sx: 1 + (1 - u) * 0.6, a: clamp(u * 3) }) },
+  zoomBlur: { label: 'زوم سینمایی',  fn: u => ({ s: 1 + (1 - E.outCubic(u)) * 2.2, blur: (1 - u) * 36, a: u }) },
+  rollIn:   { label: 'غلتیدن',       fn: u => ({ dx: (1 - E.outCubic(u)) * 0.8, rot: (1 - E.outCubic(u)) * 270, a: clamp(u * 2) }) },
+  unfold:   { label: 'باز شدن',      fn: u => ({ sy: Math.max(0.001, E.outExpo(u)), a: clamp(u * 3) }) },
+  tvOn:     { label: 'روشن شدن تلویزیون', fn: u => (u < 0.5
+              ? { sx: Math.max(0.001, E.outCubic(u * 2)), sy: 0.02, a: clamp(u * 4) }
+              : { sy: Math.max(0.02, E.outBack((u - 0.5) * 2)) }) },
+  glitchIn: { label: 'ورود گلیچی',   fn: u => {
+              if (u >= 1) return {};
+              const f = Math.floor(u * 24);
+              return { dx: noise(f * 7.3) * 0.06 * (1 - u), sx: 1 + noise(f * 2.1) * 0.15 * (1 - u),
+                       a: noise(f * 3.7 + 1) > -0.2 ? clamp(u * 1.6) : 0.15 };
+            } },
+  wordsDrop:{ label: 'کلمه‌به‌کلمه افتادن', fn: u => ({ stagger: { kind: 'drop', u } }) },
+  wordsZoom:{ label: 'کلمه‌به‌کلمه زوم', fn: u => ({ stagger: { kind: 'zoom', u } }) },
+  wordsSlide:{ label: 'کلمه‌به‌کلمه سُر', fn: u => ({ stagger: { kind: 'slide', u } }) },
+  wordsSpin:{ label: 'کلمه‌به‌کلمه چرخش', fn: u => ({ stagger: { kind: 'spin', u } }) },
 };
+
+/** گروه‌بندی برای نمایش مرتب در پنل */
+export const APPEAR_GROUPS = [
+  ['ساده', ['none', 'fade', 'rise', 'riseBlur', 'zoomIn', 'zoomOut', 'blurIn', 'unfold']],
+  ['پرتاب', ['slideL', 'slideR', 'slideU', 'slideD', 'slideBlurL', 'slideBlurR', 'drop', 'rollIn']],
+  ['پرانرژی', ['pop', 'elastic', 'bounceIn', 'zoomBlur', 'spin', 'spin360', 'swing', 'stretch', 'glitchIn', 'tvOn']],
+  ['ورق و پرده', ['flipX', 'flipY', 'wipeL', 'wipeR', 'wipeU']],
+  ['مخصوص متن', ['typewriter', 'wordsUp', 'wordsPop', 'wordsFade', 'wordsDrop', 'wordsZoom', 'wordsSlide', 'wordsSpin']],
+];
 
 /** انیمیشن‌های تکرارشونده؛ lt زمان محلی، s سرعت، k شدت (۰..۱+) */
 export const LOOPS = {
@@ -79,6 +108,21 @@ export const LOOPS = {
                  const on = noise(f * 3.1 + 0.5) > 0.6;
                  return on ? { dx: noise(f * 7.7) * 0.04 * k, sx: 1 + noise(f * 1.3) * 0.08 * k } : {};
                } },
+  drift:     { label: 'رانش آرام', fn: (lt, s, k) => ({ dx: noise(lt * 0.4 * s + 5) * 0.03 * k, dy: noise(lt * 0.4 * s + 19) * 0.03 * k,
+                 rot: noise(lt * 0.3 * s + 33) * 3 * k }) },
+  wobble:    { label: 'لق‌لق',     fn: (lt, s, k) => ({ rot: Math.sin(lt * 5 * s) * 5 * k, sx: 1 + Math.sin(lt * 10 * s) * 0.03 * k }) },
+  tada:      { label: 'تادا!',     fn: (lt, s, k) => {
+                 const ph = (lt * s * 0.5) % 1;
+                 if (ph > 0.4) return {};
+                 const u = ph / 0.4;
+                 return { s: 1 + Math.sin(u * Math.PI) * 0.12 * k, rot: Math.sin(u * Math.PI * 6) * 6 * k * (1 - u) };
+               } },
+  blink:     { label: 'چشمک منظم', fn: (lt, s, k) => ({ a: ((lt * 2 * s) % 1) < 0.5 ? 1 : 1 - k }) },
+  zigzag:    { label: 'زیگزاگ',    fn: (lt, s, k) => {
+                 const ph = (lt * s) % 1, tri = ph < 0.5 ? ph * 4 - 1 : 3 - ph * 4;
+                 return { dx: tri * 0.03 * k };
+               } },
+  jumpBeat:  { label: 'پرش با ضرب', fn: (lt, s, k, env) => ({ dy: -(env.kick || 0) * 0.04 * k, rot: (env.kick || 0) * 4 * k }) },
 };
 
 /** ترکیب چند تغییردهنده در یکی */

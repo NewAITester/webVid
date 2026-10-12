@@ -105,16 +105,18 @@ export class Timeline {
       const p = this.pick;
       if (p?.kind === 'section' && secs[p.i] && y >= R.sec[0] && y <= R.sec[1]) {
         const s = secs[p.i];
-        if (Math.abs(x - this.xOf(s[0])) < 16) { this._drag = { mode: 'a', obj: s }; e.preventDefault(); return; }
-        if (Math.abs(x - this.xOf(s[1])) < 16) { this._drag = { mode: 'b', obj: s }; e.preventDefault(); return; }
+        const nb = this._secNeighbors(secs, s);
+        if (Math.abs(x - this.xOf(s[0])) < 16) { this._drag = { mode: 'a', obj: s, ...nb }; e.preventDefault(); return; }
+        if (Math.abs(x - this.xOf(s[1])) < 16) { this._drag = { mode: 'b', obj: s, ...nb }; e.preventDefault(); return; }
       }
       if (p?.kind === 'text' && y >= R.txt[0] && y <= R.txt[1]) {
         const L = (this.host.getTexts() || []).find(z => z.id === p.id);
         if (L) {
-          if (Math.abs(x - this.xOf(L.t0)) < 16) { this._drag = { mode: 'a', obj: L, k: 't0' }; e.preventDefault(); return; }
-          if (Math.abs(x - this.xOf(L.t1)) < 16) { this._drag = { mode: 'b', obj: L, k: 't1' }; e.preventDefault(); return; }
+          const lim = this._textLimits(L);
+          if (Math.abs(x - this.xOf(L.t0)) < 16) { this._drag = { mode: 'a', obj: L, k: 't0', ...lim }; e.preventDefault(); return; }
+          if (Math.abs(x - this.xOf(L.t1)) < 16) { this._drag = { mode: 'b', obj: L, k: 't1', ...lim }; e.preventDefault(); return; }
           if (x > this.xOf(L.t0) && x < this.xOf(L.t1)) {
-            this._drag = { mode: 'move', obj: L, x0: x, a0: L.t0, b0: L.t1 }; e.preventDefault(); return;
+            this._drag = { mode: 'move', obj: L, x0: x, a0: L.t0, b0: L.t1, ...lim }; e.preventDefault(); return;
           }
         }
       }
@@ -153,28 +155,47 @@ export class Timeline {
           this.host.onChange?.(); this.draw();
         }
       } else if (d.mode === 'la') {
-        trimStart(d.obj, Math.max(0, this.tOf(x)));
+        const t = this._snap(this.tOf(x), d.obj);
+        trimStart(d.obj, Math.max(0, Math.min(t, d.obj.t1 - 0.1)));
         this.host.onChange?.(); this.draw();
       } else if (d.mode === 'lb') {
-        trimEnd(d.obj, this.tOf(x));
+        const t = this._snap(this.tOf(x), d.obj);
+        trimEnd(d.obj, Math.max(t, d.obj.t0 + 0.1));
         this.host.onChange?.(); this.draw();
       } else if (d.mode === 'move') {
         d.moved = Math.max(d.moved || 0, Math.abs(x - d.x0));
         const dt = (x - d.x0) / this.pps;
         const len = d.b0 - d.a0;
-        d.obj.t0 = Math.max(0, +(d.a0 + dt).toFixed(2));
+        let a = Math.max(0, d.a0 + dt);
+        // آهنربا: لبهٔ شروع یا پایان به نزدیک‌ترین مرز می‌چسبد
+        const sa = this._snap(a, d.obj, true), sb = this._snap(a + len, d.obj, true);
+        if (sa.hit && (!sb.hit || Math.abs(sa.t - a) <= Math.abs(sb.t - a - len))) { a = sa.t; this._guide = sa.t; }
+        else if (sb.hit) { a = sb.t - len; this._guide = sb.t; }
+        else this._guide = null;
+        // متن‌های ساده روی هم نمی‌روند: بین همسایه‌ها قفل می‌شوند
+        if (d.lo !== undefined) a = Math.max(d.lo, Math.min(a, d.hi - len));
+        d.obj.t0 = Math.max(0, +a.toFixed(2));
         d.obj.t1 = +(d.obj.t0 + len).toFixed(2);
         this.host.onChange?.(); this.draw();
       } else {
         const o = d.obj; if (!o) return;
-        const t = Math.max(0, this.tOf(x));
-        const ka = d.k ? 't0' : 0, kb = d.k ? 't1' : 1;
-        if (d.mode === 'a') {
-          const lim = (d.k ? o[kb] : o[1]) - 0.4;
-          if (d.k) o.t0 = +Math.min(t, lim).toFixed(2); else o[0] = Math.min(t, lim);
+        let t = Math.max(0, this._snap(this.tOf(x), o));
+        if (d.k) {
+          // متن ساده
+          if (d.mode === 'a') o.t0 = +Math.max(d.lo ?? 0, Math.min(t, o.t1 - 0.3)).toFixed(2);
+          else o.t1 = +Math.min(d.hi ?? 1e9, Math.max(t, o.t0 + 0.3)).toFixed(2);
+        } else if (d.mode === 'a') {
+          // شروع بخش: به پایان بخش قبلی می‌چسبد و هرگز زیرش نمی‌رود
+          const lo = d.prev ? (d.linkPrev ? d.prev[0] + 0.4 : d.prev[1]) : 0;
+          t = Math.max(lo, Math.min(t, o[1] - 0.4));
+          o[0] = +t.toFixed(2);
+          if (d.linkPrev) d.prev[1] = o[0];
         } else {
-          const lim = (d.k ? o[ka] : o[0]) + 0.4;
-          if (d.k) o.t1 = +Math.max(t, lim).toFixed(2); else o[1] = Math.max(t, lim);
+          const dur = this.host.getDuration?.() || 1e9;
+          const hi = d.next ? (d.linkNext ? d.next[1] - 0.4 : d.next[0]) : dur;
+          t = Math.min(hi, Math.max(t, o[0] + 0.4));
+          o[1] = +t.toFixed(2);
+          if (d.linkNext) d.next[0] = o[1];
         }
         this.host.onChange?.(); this.draw();
       }
@@ -184,6 +205,7 @@ export class Timeline {
     const up = e => {
       const d = this._drag;
       this._drag = null;
+      if (this._guide != null) { this._guide = null; this.draw(); }
       if (!d) return;
       if (d.mode === 'key' && d.moved <= 4) {
         // ضربهٔ کوتاه روی ◆ = پرش به آن کی‌فریم
@@ -238,17 +260,77 @@ export class Timeline {
     }, { passive: true });
   }
 
+  /** بخش قبلی و بعدی، و اینکه به هم چسبیده‌اند یا نه */
+  _secNeighbors(secs, s) {
+    let prev = null, next = null;
+    for (const o of secs) {
+      if (o === s) continue;
+      if (o[1] <= s[0] + 0.05 && (!prev || o[1] > prev[1])) prev = o;
+      if (o[0] >= s[1] - 0.05 && (!next || o[0] < next[0])) next = o;
+    }
+    return { prev, next, linkPrev: !!prev && Math.abs(prev[1] - s[0]) < 0.06, linkNext: !!next && Math.abs(next[0] - s[1]) < 0.06 };
+  }
+
+  /** بازهٔ آزاد یک متن ساده بین همسایه‌هایش */
+  _textLimits(L) {
+    let lo = 0, hi = this.host.getDuration?.() || 1e9;
+    for (const o of this.host.getTexts?.() || []) {
+      if (o === L) continue;
+      if (o.t1 <= L.t0 + 0.01) lo = Math.max(lo, o.t1);
+      else if (o.t0 >= L.t1 - 0.01) hi = Math.min(hi, o.t0);
+    }
+    return { lo, hi };
+  }
+
+  /** همهٔ مرزهایی که می‌شود به آن‌ها چسبید */
+  _snapTargets(self) {
+    const out = [0, this.host.getTime()];
+    const dur = this.host.getDuration?.(); if (dur) out.push(dur);
+    for (const s of this.host.getSections?.() || []) if (s !== self) out.push(s[0], s[1]);
+    const sg = this.host.getSong?.();
+    for (const l of sg?.lines || []) out.push(l.words[0].t);
+    for (const L of this.host.getTexts?.() || []) if (L !== self) out.push(L.t0, L.t1);
+    for (const L of this.host.getLayers?.() || []) if (L !== self) out.push(L.t0, L.t1);
+    return out;
+  }
+  /** t را به نزدیک‌ترین مرز (تا ۱۰ پیکسل) بچسبان */
+  _snap(t, self, detail = false) {
+    const thr = 10 / this.pps;
+    let best = t, bd = thr, hit = false;
+    for (const c of this._snapTargets(self)) {
+      const dd = Math.abs(c - t);
+      if (dd < bd) { bd = dd; best = c; hit = true; }
+    }
+    if (detail) return { t: best, hit };
+    this._guide = hit ? best : null;
+    return best;
+  }
+
+  /** چیدن لایه‌ها در باریکه‌ها طوری که تا جای ممکن روی هم نیفتند */
+  _lanes(list) {
+    const lane = new Map(), ends = new Array(LANES).fill(-1e9);
+    const order = list.map((L, i) => [L, i]).sort((a, b) => a[0].t0 - b[0].t0 || a[1] - b[1]);
+    for (const [L] of order) {
+      let k = ends.findIndex(e => e <= L.t0 + 0.001);
+      if (k < 0) k = ends.indexOf(Math.min(...ends));
+      lane.set(L.id, k);
+      ends[k] = Math.max(ends[k], L.t1);
+    }
+    return lane;
+  }
+
   /** ضربه روی ردیف لایه‌ها: لایهٔ همان باریکه، وگرنه بالاترین لایهٔ آن لحظه */
   _tapAt(x, y) {
     const R = this.rows();
     const t = this.tOf(x);
     const list = this.host.getLayers?.() || [];
     const lane = Math.floor(((y - R.mot[0]) / MOT_H) * LANES);
+    const lanes = this._lanes(list);
     let hit = null;
     for (let i = list.length - 1; i >= 0; i--) {
       const L = list[i];
       if (t < L.t0 || t > L.t1) continue;
-      if (i % LANES === lane) { hit = L; break; }
+      if (lanes.get(L.id) === lane) { hit = L; break; }
       hit ??= L;
     }
     this.choose(hit ? { kind: 'layer', id: hit.id } : null);
@@ -284,6 +366,24 @@ export class Timeline {
     this._texts(ctx, W, R.txt[0]);
     this._layers(ctx, W, R.mot[0]);
     this._wave(ctx, W, R.wav[0], song, dur);
+
+    // خط راهنمای آهنربا
+    if (this._guide != null) {
+      const gx = Math.round(this.xOf(this._guide)) + 0.5;
+      ctx.strokeStyle = '#FFD84D'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(gx, RULER); ctx.lineTo(gx, H); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // برچسب ردیف‌ها — تا معلوم باشد هر ردیف چیست
+    ctx.font = '8.5px "IRANSansX Bold", system-ui, sans-serif';
+    ctx.textBaseline = 'middle'; ctx.direction = 'rtl'; ctx.textAlign = 'right';
+    for (const [k, lb] of [['sec', 'بخش‌ها'], ['lyr', 'شعر'], ['txt', 'زیرنویس'], ['mot', 'لایه‌ها'], ['wav', 'صدا']]) {
+      const [a] = R[k];
+      const tw = ctx.measureText(lb).width + 8;
+      ctx.fillStyle = 'rgba(11,13,18,0.82)';
+      roundRect(ctx, W - tw - 2, a + 1, tw, 12, 4); ctx.fill();
+      ctx.fillStyle = '#6E7790';
+      ctx.fillText(lb, W - 6, a + 7);
+    }
 
     // نشانگر ثابت وسط
     const cx = Math.round(W / 2) + 0.5;
@@ -436,11 +536,12 @@ export class Timeline {
     const sel = this._pickedLayer();
     ctx.font = '8.5px "IRANSansX Bold", system-ui, sans-serif';
     ctx.textBaseline = 'middle';
-    list.forEach((L, i) => {
+    const lanes = this._lanes(list);
+    list.forEach((L) => {
       if (L === sel) return;
       const xa = this.xOf(L.t0), xb = this.xOf(L.t1);
       if (xb < -10 || xa > W + 10) return;
-      const ly = y + (i % LANES) * laneH + 1;
+      const ly = y + lanes.get(L.id) * laneH + 1;
       ctx.globalAlpha = L.visible === false ? 0.35 : 1;
       ctx.fillStyle = L.behind ? '#1E2740' : '#2A2140';
       roundRect(ctx, xa, ly, Math.max(3, xb - xa - 1), laneH - 2, 3); ctx.fill();

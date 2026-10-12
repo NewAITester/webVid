@@ -4,6 +4,11 @@ tests/*.png
 .DS_Store
 *.log
 
+# پایتون واقعی: هنگام بیلد از node_modules/pyodide کپی می‌شود (scripts/copy-pyodide.mjs)
+public/pyodide/
+# فونت‌های همراه برنامه: هنگام بیلد گرفته می‌شوند (scripts/copy-fonts.mjs)
+public/webfonts/
+
 # اندروید: پروژه کامیت می‌شود، خروجی بیلد نه
 android/.gradle/
 android/build/

@@ -1,26 +1,37 @@
 import { h, faN, nice, select, check } from './dom.js';
 import { BezierEditor, easeIcon } from './bezier.js';
 import {
-  LAYER_TYPES, TRANSFORM_PROPS, EFFECTS, SHAPE_KINDS, BLEND_MODES,
-  newLayer, newEffect, propDefs,
+  LAYER_TYPES, TRANSFORM_PROPS, EFFECTS, EFFECT_CATS, SHAPE_KINDS, BLEND_MODES,
+  newLayer, newEffect, propDefs, effectsFor,
 } from '../motion/schema.js';
+import { TEXT_STYLES, LOOKS, ELEMENTS, applyTextStyle, applyLook, buildElement, fxWith } from '../motion/presets.js';
+import { thumb, sampleText, sampleImage, sampleShape } from './thumbs.js';
 import { sample, keyAt, hasKeys, toggleKey, setValue, setKey, prevKeyTime, nextKeyTime } from '../motion/tracks.js';
 import { compileExpr, exprErrors, EXPR_HELP, EXPR_EXAMPLES } from '../motion/expr.js';
-import { APPEAR, LOOPS } from '../motion/animate.js';
+import { APPEAR, APPEAR_GROUPS, LOOPS } from '../motion/animate.js';
 import { EASE_INFO, easeLabel } from '../motion/easing.js';
 import { allKeyTimes, setEaseAt, deleteKeysAt, duplicate } from '../motion/ops.js';
 import { CODE_LAYER_DEFAULT, CODE_SNIPPETS } from '../motion/codeapi.js';
 import { FONT_CHOICES } from '../motion/render.js';
 import { frameEnv } from '../motion/evaluate.js';
 import * as M from '../motion/mat.js';
+import { pickFontFile, userFonts, removeFont } from '../motion/fonts.js';
+import { ELEMENT_KINDS, ELEMENT_CATS, colorProp, elementParams, setElementParam, swapElement, findTweaks, setTweak, makeElementLayer } from '../motion/elements.js';
+import { attachCodeSearch } from './codesearch.js';
+const isImportedCode = code => /e\.runImported\(ctx, e, PROGRAM/.test(code || '');
+import { openScriptSheet } from './scriptpanel.js';
+
+/** نشانهٔ ردیف «شعر» در ترتیب لایه‌ها */
+const LYRIC = { lyric: true };
 
 /**
  * پنل «لایه‌ها» — قلب ویرایش حرکتی
  * ─────────────────────────────────────────────────────────────
  * دو نما دارد:
  *   فهرست    همهٔ لایه‌ها، بالاترین بالا؛ افزودن، پنهان، قفل، ترتیب
- *   بازرس    تنظیمات لایهٔ انتخاب‌شده در هفت زبانه:
- *            تبدیل · ظاهر · انیمیشن · افکت · منحنی · کد · بیشتر
+ *   بازرس    تنظیمات لایهٔ انتخاب‌شده در چهار زبانه (لایهٔ کد یکی بیشتر):
+ *            تنظیم · حرکت · افکت · (کد) · پیشرفته
+ *   افزودن   برگهٔ «＋ افزودن»: لایهٔ خالی، متن آماده، عنصر آماده (openAdd)
  *
  * کنار هر ویژگی دو دکمه هست:
  *   ◆  کی‌فریم در همین لحظه (پُر = هست، نیمه = جای دیگری کی‌فریم دارد)
@@ -35,7 +46,9 @@ export class MotionPanel {
     this.root = root;
     this.host = host;
     this.record = false;          // ⏺ حالت ضبط: هر تغییری کی‌فریم می‌سازد
-    this.tab = 'transform';
+    this.tab = 'edit';
+    this.animWhich = 'in';        // زبانهٔ حرکت: ورود | خروج | تکرار
+    this.fxCat = 'light';         // دستهٔ بازِ گالری افکت
     this.keySel = null;           // کی‌فریم انتخاب‌شده در زبانهٔ منحنی
     this.openExpr = new Set();    // ویژگی‌هایی که جعبهٔ عبارتشان باز است
     this._updaters = [];
@@ -77,13 +90,123 @@ export class MotionPanel {
     if (type === 'adjust') L.effects.push(newEffect('color'));
     if (type === 'spectrum') { L.props.y.v = Math.round(this.host.H() * 0.3); }
     this.layers.push(L);
-    this.tab = type === 'code' ? 'code' : type === 'text' ? 'look' : 'transform';
+    this.tab = type === 'code' ? 'code' : 'edit';
     this.host.select(L.id);
     this.changed(true);
     return L;
   }
 
+  /** متن تازه با یک سبک آماده */
+  addTextStyle(style) {
+    const L = this.add('text');
+    L.data.str = 'متن شما';
+    applyTextStyle(L, style, this.host.W(), this.host.H());
+    L.name = style.label;
+    this.changed(true);
+    return L;
+  }
+
+  /** عنصر آماده (قلب، کانفتی، نوار…) */
+  /** نوشته ← لایهٔ المان ذره‌ای (flowTitle / flowText) با همان نوشته و زمان */
+  textToFlow(L, kind) {
+    const str = String(L.data?.str || '').replace(/\s+/g, ' ').trim() || 'FLOW';
+    const F = makeElementLayer(kind, { text: str }, L.t0, Math.max(0.5, L.t1 - L.t0), this.host.W(), this.host.H());
+    if (F.props.h.v > this.host.H()) F.props.h = { v: this.host.H() };
+    if (F.props.w.v > this.host.W()) F.props.w = { v: this.host.W() };
+    if (L.scene) F.scene = L.scene;
+    this.layers.splice(this.layers.indexOf(L) + 1, 0, F);
+    L.visible = false;
+    this.tab = 'edit';
+    this.host.select(F.id);
+    this.changed(true);
+    return F;
+  }
+
+  addElement(el) {
+    const t = this.host.getTime(), total = this.host.duration() || 5;
+    const t0 = Math.max(0, Math.min(t, Math.max(0, total - 1)));
+    const L = buildElement(el, t0, Math.max(1, Math.min(5, total - t0)) || 5, this.host.W(), this.host.H());
+    if (L.type === 'code' && L.props.h.v > this.host.H()) L.props.h = { v: this.host.H() };
+    if (L.type === 'code' && L.props.w.v > this.host.W()) L.props.w = { v: this.host.W() };
+    this.layers.push(L);
+    this.tab = 'edit';
+    this.host.select(L.id);
+    this.changed(true);
+    return L;
+  }
+
+  /**
+   * برگهٔ «＋ افزودن» — همهٔ چیزهایی که می‌شود اضافه کرد، یک‌جا و با عکس.
+   * @param {Array<{ic,label,desc,fn}>} extras  کارهای بیرون از لایه‌ها (بخش شعر و…)
+   */
+  openAdd(extras = this.host.addExtras?.() || []) {
+    document.querySelector('.addsheet')?.remove();
+    const run = (fn, open = true) => () => { sheet.remove(); fn(); if (open) this.host.openPane?.(); };
+    const tiles = [];
+    const tile = (ic, label, desc, fn, img = null) => {
+      const b = h('button', { class: 'stile' + (img ? ' has' : ''), onclick: fn, title: desc || label },
+        img || h('i', {}, ic), h('b', {}, label), desc ? h('small', {}, desc) : null);
+      b.dataset.q = (label + ' ' + (desc || '')).toLowerCase();
+      tiles.push(b);
+      return b;
+    };
+    const grp = (title, hint, ...kids) => h('section', { class: 'sgrp' },
+      h('div', { class: 'sgh' }, h('b', {}, title), hint ? h('small', {}, hint) : null),
+      h('div', { class: 'sgrid' }, ...kids));
+    const basic = [
+      ['text', 'T', 'متن', 'نوشتهٔ خالی'],
+      ['media', '▣', 'عکس یا ویدیو', 'از گالری گوشی'],
+      ['shape', '◆', 'شکل', 'مستطیل، دایره، ستاره…'],
+      ['spectrum', '≋', 'موج صدا', 'با آهنگ می‌رقصد'],
+      ['code', '{}', 'کد', 'با برنامه‌نویسی بکشید'],
+      ['adjust', '◐', 'لایهٔ تنظیم', 'افکت روی همهٔ زیرین‌ها'],
+      ['null', '⊕', 'والد خالی', 'برای حرکت گروهی'],
+    ].map(([type, ic, label, desc]) => tile(ic, label, desc,
+      type === 'media' ? run(() => this.pickMedia()) : run(() => this.add(type))));
+    const styles = TEXT_STYLES.map(st => tile(st.ic, st.label, '', run(() => this.addTextStyle(st)),
+      thumb('style:' + st.id, () => { const L = sampleText('متن'); applyTextStyle(L, st, 600, 400); L.props.y = { v: 0 }; return [L]; })));
+    const els = ELEMENTS.map(el => tile(el.ic, el.label, '', run(() => this.addElement(el)),
+      el.type === 'adjust' ? null : thumb('el:' + el.id, () => {
+        const L = buildElement(el, 0, 5, 600, 400);
+        L.props.y = { v: 0 };
+        if (L.type === 'code') { L.props.w = { v: 600 }; L.props.h = { v: 400 }; }
+        if (L.props.w && L.type !== 'code' && L.type !== 'spectrum') L.props.sc = { v: Math.min(100, Math.round(100 * 340 / Math.max(L.props.w.v, L.props.h?.v || 0))) };
+        if (L.type === 'spectrum') L.props.sc = { v: 55 };
+        return [L];
+      }, 1.6)));
+    const flows = ['flowTitle', 'flowPulse', 'flowText'].map(k => ELEMENTS.find(el => el.id === 'el_' + k)).filter(Boolean)
+      .map(el => tile(el.ic, el.label, ELEMENT_KINDS[el.kind].desc, run(() => this.addElement(el)),
+        thumb('el:' + el.id, () => { const L = buildElement(el, 0, 5, 600, 400); L.props.w = { v: 600 }; L.props.h = { v: 400 }; L.props.y = { v: 0 }; return [L]; }, el.kind === 'flowText' ? 1.9 : el.kind === 'flowPulse' ? 1.04 : 1.6)));
+    const ext = extras.map(x => tile(x.ic, x.label, x.desc, run(x.fn, x.openLayers !== false)));
+
+    const q = h('input', { class: 'txt', type: 'search', placeholder: 'جستجو: نئون، قلب، برف…',
+      oninput: () => {
+        const v = q.value.trim().toLowerCase();
+        for (const t of tiles) t.classList.toggle('hidden', !!v && !t.dataset.q.includes(v));
+        for (const g of sheet.querySelectorAll('.sgrp')) g.classList.toggle('hidden', ![...g.querySelectorAll('.stile')].some(t => !t.classList.contains('hidden')));
+      } });
+    const sheet = h('div', { class: 'addsheet', onclick: e => { if (e.target === sheet) sheet.remove(); } },
+      h('div', { class: 'sbody' },
+        h('div', { class: 'shd' }, h('b', {}, '＋ چه چیزی اضافه شود؟'), h('div', { class: 'spacer' }),
+          h('button', { class: 'icon sm', onclick: () => sheet.remove(), title: 'بستن' }, '✕')),
+        q,
+        h('div', { class: 'sscroll' },
+          grp('🌊 تازه: افکت ذره‌ای FLOW', 'از کد پایتون شوریل — عنوان ریتمیک برای اسم اول ویدیو، جریان برای هر جای ویدیو', ...flows),
+          grp('لایهٔ خالی', 'از صفر بسازید', ...basic),
+          grp('متن آماده', 'یک ضربه = متن با رنگ، افکت و انیمیشن', ...styles),
+          grp('کد و اسکریپت', 'کل ویدیو را با کد بنویسید، بعد دستی ویرایش کنید',
+            tile('📜', 'موشن‌اسکریپت', 'صحنه‌ها با کد ← لایه‌ها', run(() => this.openScript(), false))),
+          grp('عنصرهای آماده', 'شکل متحرک، ذرات، نوار و…', ...els),
+          ext.length ? grp('شعر و زیرنویس', 'برای بخش‌های آهنگ', ...ext) : null)));
+    document.body.append(sheet);
+    setTimeout(() => sheet.classList.add('in'), 0);
+    return sheet;
+  }
+
   pickMedia() { this._file.value = ''; this._file.click(); }
+
+  /** پنجرهٔ موشن‌اسکریپت */
+  openScript() { return openScriptSheet(this); }
 
   async _onFile() {
     const f = this._file.files?.[0];
@@ -122,46 +245,116 @@ export class MotionPanel {
     const R = this.root;
     R.append(h('div', { class: 'phead' }, 'لایه‌ها', h('div', { class: 'spacer' }),
       h('span', { class: 'pill' }, faN(this.layers.length))));
-    const bar = h('div', { class: 'addbar' });
-    const add = (type, ic, label, fn) => bar.append(h('button', { class: 'addb', onclick: fn || (() => this.add(type)) },
-      h('i', {}, ic), h('b', {}, label)));
-    add('text', 'T', 'متن');
-    add('shape', '◆', 'شکل');
-    add('media', '▣', 'تصویر/ویدیو', () => this.pickMedia());
-    add('spectrum', '≋', 'موج صدا');
-    add('code', '{}', 'کد');
-    add('adjust', '◐', 'تنظیم رنگ');
-    add('null', '⊕', 'والد');
-    R.append(bar);
-
+    R.append(h('button', { class: 'btn primary wide addbig', onclick: () => this.openAdd() },
+      '＋ افزودن لایه، متن آماده یا عنصر'));
+    R.append(h('button', { class: 'btn ghost wide sm', style: { marginBottom: '10px' }, onclick: () => this.openScript() },
+      '📜 موشن‌اسکریپت — ساختن و ویرایش با کد'));
     if (!this.layers.length) {
       R.append(h('div', { class: 'empty' },
         h('div', { class: 'bigicon' }, '◧'),
-        h('p', {}, 'هنوز لایه‌ای ندارید. یکی از دکمه‌های بالا را بزنید.'),
+        h('p', {}, 'هنوز لایه‌ای ندارید. دکمهٔ «＋ افزودن» را بزنید.'),
         h('p', { class: 'note' }, 'هر لایه را می‌شود با انگشت روی تصویر کشید، بزرگ کرد و چرخاند. '
           + 'با دکمهٔ ◆ کنار هر ویژگی «کی‌فریم» بگذارید تا حرکت کند.')));
       return;
     }
+    // ترتیب نمایش: بالاترین لایه بالا. ردیف «شعر» خودش یک طبقه است؛
+    // لایه‌های بالای آن روی شعر کشیده می‌شوند و پایینی‌ها زیر شعر.
     const list = h('div', { class: 'llist' });
-    const arr = this.layers;
-    for (let i = arr.length - 1; i >= 0; i--) {
-      const L = arr[i];
+    const D = this._stack();
+    D.forEach((L, k) => {
+      if (L === LYRIC) {
+        list.append(h('div', { class: 'lrow lyric', title: 'شعر و پس‌زمینهٔ آهنگ' },
+          h('span', { class: 'lic t-lyric' }, '♪'),
+          h('span', { class: 'lnm' }, 'شعر آهنگ', h('small', {}, 'لایه‌های بالای این ردیف روی شعرند، پایینی‌ها پشت شعر')),
+          h('button', { class: 'btn sm ghost', onclick: () => this.host.openLyricFx?.() }, '✦ افکت شعر')));
+        return;
+      }
       const on = this.host.getTime() >= L.t0 && this.host.getTime() < L.t1;
+      const grip = h('span', { class: 'grip', title: 'برای جابه‌جایی بکشید' }, '⋮⋮');
       const row = h('div', { class: 'lrow' + (on ? ' live' : '') + (L.visible === false ? ' off' : ''),
-        onclick: () => { this.host.select(L.id); this.render(); } },
-        h('span', { class: 'lic' }, LAYER_TYPES[L.type].icon),
-        h('span', { class: 'lnm' }, L.name, L.behind ? h('em', {}, ' · پشت شعر') : null,
+        onclick: e => { if (e.target.closest('.grip,.ib')) return; this.host.select(L.id); this.render(); } },
+        grip,
+        h('span', { class: 'lic t-' + L.type, title: LAYER_TYPES[L.type].label }, LAYER_TYPES[L.type].icon),
+        h('span', { class: 'lnm' }, L.name,
+          h('small', {}, (L.scene ? `🎬 ${L.scene} · ` : '') + (L.data?.el && ELEMENT_KINDS[L.data.el.kind] ? 'المان ' + ELEMENT_KINDS[L.data.el.kind].ic : LAYER_TYPES[L.type].label) + (L.effects.length ? ` · ${faN(L.effects.length)} افکت` : '')
+            + ` · ${faN(L.t0.toFixed(1))}–${faN(L.t1.toFixed(1))}ث`),
           hasAnyKeys(L) ? h('em', { class: 'kf' }, ' ◆') : null),
-        h('span', { class: 'ltm' }, `${L.t0.toFixed(1)}–${L.t1.toFixed(1)}`),
         iconBtn(L.visible === false ? '◌' : '👁', 'نمایش', () => { L.visible = L.visible === false; this.changed(true); }),
         iconBtn(L.locked ? '🔒' : '🔓', 'قفل', () => { L.locked = !L.locked; this.changed(true); }),
-        iconBtn('↑', 'بالاتر', () => { if (i < arr.length - 1) { [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]]; this.changed(true); } }),
-        iconBtn('↓', 'پایین‌تر', () => { if (i > 0) { [arr[i], arr[i - 1]] = [arr[i - 1], arr[i]]; this.changed(true); } }),
+        iconBtn('↑', 'یک طبقه بالاتر', () => this._moveTo(L, k - 1)),
+        iconBtn('↓', 'یک طبقه پایین‌تر', () => this._moveTo(L, k + 1)),
       );
+      row.dataset.k = k;
+      this._dragRow(grip, row, list, L);
       list.append(row);
-    }
+    });
     R.append(list);
-    R.append(h('p', { class: 'note' }, 'بالاترین ردیف روی همه کشیده می‌شود. روی هر ردیف بزنید تا تنظیماتش باز شود.'));
+    R.append(h('p', { class: 'note' }, 'بالاترین ردیف روی همه است. با ⋮⋮ بکشید یا با ↑↓ جابه‌جا کنید — می‌شود لایه را از روی شعر به زیر شعر برد. روی هر ردیف بزنید تا تنظیماتش باز شود.'));
+  }
+
+  /** ترتیب نمایش: [لایه‌های روی شعر (بالا به پایین)، شعر، لایه‌های زیر شعر] */
+  _stack() {
+    const arr = this.layers;
+    const front = arr.filter(L => !L.behind).reverse();
+    const back = arr.filter(L => L.behind).reverse();
+    return [...front, LYRIC, ...back];
+  }
+  /** لایه را به جای k در ترتیب نمایش ببر و آرایهٔ اصلی را از نو بساز */
+  _moveTo(L, k) {
+    const D = this._stack();
+    const i = D.indexOf(L);
+    k = Math.max(0, Math.min(D.length - 1, k));
+    if (i < 0 || k === i) return;
+    D.splice(i, 1); D.splice(k, 0, L);
+    const li = D.indexOf(LYRIC);
+    const order = [];
+    D.forEach((x, j) => { if (x !== LYRIC) { x.behind = j > li; order.push(x); } });
+    order.reverse();
+    this.layers.splice(0, this.layers.length, ...order);
+    this.changed(true);
+  }
+  /** کشیدن ردیف با انگشت (روی گوشی هم کار می‌کند) */
+  _dragRow(grip, row, list, L) {
+    grip.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      grip.setPointerCapture?.(e.pointerId);
+      const rows = [...list.children];
+      const tops = rows.map(r => r.getBoundingClientRect());
+      const y0 = e.clientY;
+      row.classList.add('dragging');
+      let target = +row.dataset.k;
+      const mv = ev => {
+        const dy = ev.clientY - y0;
+        row.style.transform = `translateY(${dy}px)`;
+        const cy = ev.clientY;
+        target = tops.findIndex(r => cy < r.top + r.height / 2);
+        if (target < 0) target = rows.length - 1;
+        rows.forEach((r, j) => r.classList.toggle('dropmark', j === target && r !== row));
+      };
+      const up = () => {
+        grip.removeEventListener('pointermove', mv);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        row.classList.remove('dragging'); row.style.transform = '';
+        rows.forEach(r => r.classList.remove('dropmark'));
+        this._moveTo(L, target);
+      };
+      grip.addEventListener('pointermove', mv);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+    });
+  }
+
+  /**
+   * ویرایشگر افکت برای چیزی جز لایه (شعر، کل صفحه) — همان گالری و کارت‌ها.
+   * @param {HTMLElement} box
+   * @param {{id,t0,t1,effects}} target   شیء شبه‌لایه
+   * @param {()=>void} onChange          ذخیره، کشیدن و ساختن دوبارهٔ همین جعبه
+   */
+  fxEditor(box, target, onChange) {
+    target.type ||= 'adjust';
+    target.props ||= {};
+    this._tabFx(target, box, { onChange, kinds: ['filter', 'move'] });
   }
 
   /* ── نمای بازرس ─────────────────────────────────────────── */
@@ -185,25 +378,69 @@ export class MotionPanel {
     R.append(head);
     R.append(this._keyNav(L));
 
-    const tabs = [['transform', 'تبدیل'], ['look', 'ظاهر'], ['anim', 'انیمیشن'], ['fx', 'افکت'],
-                  ['ease', 'منحنی'], ['code', 'کد'], ['more', 'بیشتر']];
-    const tb = h('div', { class: 'tabs' });
+    // نام‌های قدیمی زبانه‌ها (از نسخهٔ هفت‌زبانه) به زبانه‌های تازه
+    const legacy = { transform: 'edit', look: 'edit', ease: 'anim', more: 'adv' };
+    this.tab = legacy[this.tab] || this.tab;
+    if (this.tab === 'code' && L.type !== 'code') this.tab = 'adv';
+    const tabs = [['edit', '✎ تنظیم', 'نوشته، رنگ، اندازه و جای لایه'],
+                  ['anim', '➜ حرکت', 'چطور بیاید، چطور برود، و در این میان چه حرکتی کند'],
+                  ['fx', '✦ افکت', 'افکت‌ها روی هم جمع می‌شوند — از بالا به پایین اعمال می‌شوند'],
+                  ...(L.type === 'code' ? [['code', '{} کد', 'کد این لایه — تغییرات زنده دیده می‌شود']] : []),
+                  ['adv', '⚙ پیشرفته', 'حالت ترکیب، والد، ماسک، زمان و فرمول']];
+    if (!tabs.some(t => t[0] === this.tab)) this.tab = 'edit';
+    const tb = h('div', { class: 'tabs big' });
     for (const [id, label] of tabs) {
-      tb.append(h('button', { class: 'chip' + (this.tab === id ? ' on' : ''),
-        onclick: () => { this.tab = id; this.render(); } }, label));
+      const n = id === 'fx' && L.effects.length ? h('sup', {}, faN(L.effects.length)) : null;
+      tb.append(h('button', { class: 'tab' + (this.tab === id ? ' on' : ''),
+        onclick: () => { this.tab = id; this.render(); } }, label, n));
     }
     R.append(tb);
+    R.append(h('p', { class: 'thint' }, tabs.find(t => t[0] === this.tab)[2]));
     const body = h('div', { class: 'ibody' });
     R.append(body);
     ({
-      transform: () => this._tabTransform(L, body),
-      look: () => this._tabLook(L, body),
+      edit: () => this._tabEdit(L, body),
       anim: () => this._tabAnim(L, body),
       fx: () => this._tabFx(L, body),
-      ease: () => this._tabEase(L, body),
       code: () => this._tabCode(L, body),
-      more: () => this._tabMore(L, body),
+      adv: () => this._tabAdv(L, body),
     })[this.tab]?.();
+  }
+
+  /* ── زبانهٔ «تنظیم»: محتوا + جا و اندازه ─────────────────── */
+  _tabEdit(L, body) {
+    if (L.type === 'text') {
+      body.append(h('div', { class: 'shead sm' }, 'سبک آماده — یک ضربه'));
+      body.append(this._strip(TEXT_STYLES.map(st => this._thumbBtn(
+        thumb('style:' + st.id, () => { const S = sampleText('متن'); applyTextStyle(S, st, 600, 400); S.props.y = { v: 0 }; return [S]; }),
+        st.label, L.style === st.id, () => {
+          applyTextStyle(L, st, this.host.W(), this.host.H());
+          this.changed(true);
+          this.host.seek(L.t0 + Math.min(1.2, (L.t1 - L.t0) / 2));
+        }))));
+    }
+    const typeLabel = { text: 'نوشته و رنگ', shape: 'شکل و رنگ', image: 'تصویر', video: 'ویدیو',
+      spectrum: 'موج صدا', code: 'رنگ‌ها و پارامترهای کد', adjust: 'لایهٔ تنظیم', null: 'والد خالی' }[L.type];
+    const content = h('details', { class: 'grp', open: this._closed?.has('content') ? false : true },
+      h('summary', {}, typeLabel));
+    content.addEventListener('toggle', () => this._remember('content', content.open));
+    this._tabLook(L, content);
+    body.append(content);
+    const tr = h('details', { class: 'grp', open: this._closed?.has('xform') ? false : true },
+      h('summary', {}, 'جا، اندازه، چرخش و شفافیت'));
+    tr.addEventListener('toggle', () => this._remember('xform', tr.open));
+    this._tabTransform(L, tr);
+    body.append(tr);
+  }
+  _remember(key, open) {
+    this._closed ||= new Set();
+    if (open) this._closed.delete(key); else this._closed.add(key);
+  }
+
+  /** نوار افقی پیش‌نمایش‌ها */
+  _strip(items) { return h('div', { class: 'tstrip' }, ...items); }
+  _thumbBtn(img, label, on, fn) {
+    return h('button', { class: 'tbtn' + (on ? ' on' : ''), onclick: fn, title: label }, img, h('span', {}, label));
   }
 
   /** نوار کی‌فریم: ◀ قبلی · ◆ کی‌فریم همه · بعدی ▶ · ⏺ ضبط */
@@ -378,7 +615,11 @@ export class MotionPanel {
         oninput: () => { D.str = ta.value; this.host.draw(); this.host.save(); } });
       body.append(ta);
       body.append(h('div', { class: 'frow btns' },
-        select(FONT_CHOICES.map(f => [f[0], f[2]]), D.font, v => { D.font = v; this.changed(); }),
+        select(FONT_CHOICES.map(f => [f[0], f[2]]), D.font, v => { D.font = v; this.changed(true); }),
+        h('button', { class: 'btn sm ghost', title: 'فایل ttf / otf / woff از گوشی', onclick: async () => {
+          const id = await pickFontFile();
+          if (id) { D.font = id; this.changed(true); }
+        } }, '＋ فونت'),
         ...[['right', 'راست'], ['center', 'وسط'], ['left', 'چپ']].map(([v, lb]) =>
           h('button', { class: 'chip' + (D.align === v ? ' on' : ''), onclick: () => { D.align = v; this.changed(true); } }, lb))));
       this._props(L, body, ['size', 'fill', 'stroke', 'strokeW', 'spacing', 'lineH', 'reveal']);
@@ -440,7 +681,7 @@ export class MotionPanel {
             if (!it?.dur) return;
             L.t1 = +(L.t0 + (it.dur - (D.trimIn || 0)) / (D.speed || 1)).toFixed(2); this.changed(true);
           } }, 'طول لایه = طول ویدیو')));
-        body.append(h('p', { class: 'note' }, 'صدای ویدیو پخش نمی‌شود — صدای پروژه همان آهنگ است. برای حذف پردهٔ سبز از زبانهٔ افکت «پردهٔ سبز» را بزنید.'));
+        body.append(h('p', { class: 'note' }, 'صدای ویدیو پخش نمی‌شود — صدای پروژه همان آهنگ است. برای حذف پردهٔ سبز در زبانهٔ «✦ افکت» دستهٔ «ترکیب و برش» ← «پردهٔ سبز» را بزنید.'));
       }
       return;
     }
@@ -454,16 +695,100 @@ export class MotionPanel {
       this._props(L, body, ['w', 'h', 'fill', 'fill2', 'gain', 'gap']);
       return;
     }
+    if (L.type === 'code' && L.data.el && ELEMENT_KINDS[L.data.el.kind]) { this._elementEdit(L, body); return; }
     if (L.type === 'code') {
+      this._codeTweaks(L, body);
       this._props(L, body, ['w', 'h', 'c1', 'c2', 'p1', 'p2', 'p3']);
-      body.append(h('p', { class: 'note' }, 'این مقدارها در کد به شکل e.c1، e.p1 و… در دسترس‌اند — و می‌شود رویشان کی‌فریم گذاشت. کد را در زبانهٔ «کد» بنویسید.'));
+      body.append(h('p', { class: 'note' }, 'این مقدارها در کد به شکل e.c1، e.p1 و… در دسترس‌اند — و می‌شود رویشان کی‌فریم گذاشت. کد را در زبانهٔ «{} کد» بنویسید.'));
       return;
     }
     if (L.type === 'adjust') {
-      body.append(h('p', { class: 'note' }, 'لایهٔ تنظیم روی هر چیزی که زیرش است اثر می‌گذارد. افکت‌هایش را از زبانهٔ «افکت» بچینید؛ با «شفافیت» در زبانهٔ تبدیل، شدتش را کم و زیاد کنید.'));
+      body.append(h('p', { class: 'note' }, 'لایهٔ تنظیم روی هر چیزی که زیرش است اثر می‌گذارد. افکت‌هایش را از زبانهٔ «✦ افکت» بچینید؛ با «شفافیت» (پایین همین صفحه)، شدتش را کم و زیاد کنید.'));
       return;
     }
-    body.append(h('p', { class: 'note' }, 'والد خالی دیده نمی‌شود. لایه‌های دیگر را از زبانهٔ «بیشتر» فرزند این کنید تا با جابه‌جا کردن این، همه با هم حرکت کنند.'));
+    body.append(h('p', { class: 'note' }, 'والد خالی دیده نمی‌شود. لایه‌های دیگر را از زبانهٔ «⚙ پیشرفته» فرزند این کنید تا با جابه‌جا کردن این، همه با هم حرکت کنند.'));
+  }
+
+  /** تنظیم‌های نام‌دار یک المان + تعویض با المان دیگر */
+  _elementEdit(L, body) {
+    const el = L.data.el, K = ELEMENT_KINDS[el.kind], p = elementParams(L);
+    const W = this.host.W(), H = this.host.H();
+    // تعویض: فهرست همهٔ المان‌ها، دسته‌بندی‌شده
+    const sw = h('select', { class: 'elswap', onchange: () => {
+      swapElement(L, sw.value, W, H); this.changed(true);
+    } });
+    for (const [cat, cl] of ELEMENT_CATS) {
+      const og = h('optgroup', { label: cl });
+      for (const [k, X] of Object.entries(ELEMENT_KINDS)) if (X.cat === cat) og.append(h('option', { value: k, selected: k === el.kind }, `${X.ic} ${X.label}`));
+      sw.append(og);
+    }
+    body.append(h('div', { class: 'elhead' }, h('span', { class: 'elic' }, K.ic),
+      h('div', {}, h('b', {}, K.label), h('small', {}, K.desc + (L.scene ? ` · صحنهٔ «${L.scene}»` : ''))),
+      h('label', { class: 'elsw' }, h('small', {}, '⇄ تعویض با'), sw)));
+    for (const d of K.params) {
+      const cp = colorProp(el.kind, d.key);
+      if (cp && L.props[cp]) {         // رنگ اصلی ← ویژگی لایه (کی‌فریم‌پذیر)
+        const def = { key: cp, label: d.label, type: 'color', def: d.def };
+        body.append(this._propRow(L, L.props[cp], def, `${L.id}.${cp}`));
+        continue;
+      }
+      if (d.type === 'num') {
+        body.append(this._staticNum(d.label, p[d.key], d.min, d.max, d.step, v => { setElementParam(L, d.key, v); }));
+      } else if (d.type === 'color') {
+        const inp = h('input', { type: 'color', value: String(p[d.key]).slice(0, 7), oninput: () => { setElementParam(L, d.key, inp.value); this.host.draw(); this.host.save(); } });
+        body.append(h('div', { class: 'ctl' }, h('label', {}, d.label), inp));
+      } else if (d.type === 'text') {
+        let t = 0;
+        const inp = h('input', { class: 'txt', type: 'text', value: p[d.key], oninput: () => {
+          clearTimeout(t); t = setTimeout(() => { setElementParam(L, d.key, inp.value); this.host.draw(); this.host.save(); }, 200);
+        } });
+        body.append(h('div', { class: 'frow' }, h('label', {}, d.label), inp));
+      } else if (d.type === 'sel') {
+        body.append(h('div', { class: 'frow' }, h('label', {}, d.label),
+          select(d.opts, p[d.key], v => { setElementParam(L, d.key, v); this.changed(); })));
+      }
+    }
+    this._props(L, body, ['w', 'h']);
+    body.append(h('p', { class: 'note' }, 'رنگ‌ها کی‌فریم می‌خورند (◆). «تعویض» زمان، جا، حرکت، افکت و رنگ‌ها را نگه می‌دارد. کد این المان در زبانهٔ «{} کد» دیده می‌شود.'));
+  }
+
+  /** «عددهای قابل تنظیم» کد آزاد: هر  const نام = مقدار; // برچسب  یک کنترل می‌شود */
+  _codeTweaks(L, body) {
+    const tws = findTweaks(L.data.code);
+    const imp = isImportedCode(L.data.code);
+    if (imp) body.append(h('p', { class: 'note' },
+      '🧩 این لایه «کد وارد‌شده» است: کد اصلی همه‌چیز را خودش می‌کشد، پس نوشته‌ها و شکل‌هایش لایهٔ جدا نیستند و مستقیم روی تصویر انتخاب نمی‌شوند. ',
+      'چیزهایی که برنامه پیدا کرده (متن، رنگ، عدد) همین پایین قابل‌تغییرند — مقدارهای 🌐 سراسری در همهٔ صحنه‌های همین کد با هم عوض می‌شوند. ',
+      'برای بقیه: در زبانهٔ «{} کد» با 🔍 جستجو کنید و همان‌جا کد اصلی را عوض کنید؛ یا موقع ساخت پروژه گزینهٔ «✏️ نسخهٔ قابل‌ویرایش» را بزنید تا هر افکت یک لایهٔ جدا شود.'));
+    if (!tws.length) return;
+    body.append(h('div', { class: 'shead sm' }, imp ? 'متن‌ها و مقدارهای این کد' : 'مقدارهای داخل کد'));
+    const gIdx = imp ? L.data.code.split('\n').findIndex(l => l.startsWith('// ── 🌐')) : -1;
+    const isGlobal = tw => gIdx >= 0 && tw.line > gIdx;
+    let headed = false;
+    for (const tw of tws) {
+      if (isGlobal(tw) && !headed) { headed = true; body.append(h('div', { class: 'shead sm' }, '🌐 سراسری (همهٔ صحنه‌های این کد)')); }
+      const set = v => {
+        const old = tw.value;
+        L.data.code = setTweak(L.data.code, tw, v); tw.value = v;
+        // مقدار سراسری ← همهٔ لایه‌های وارد‌شده از همین کد
+        if (isGlobal(tw)) for (const O of this.host.getLayers?.() || []) {
+          if (O === L || O.type !== 'code' || !isImportedCode(O.data?.code)) continue;
+          const ot = findTweaks(O.data.code).find(x => x.name === tw.name && String(x.value) === String(old));
+          if (ot) O.data.code = setTweak(O.data.code, ot, v);
+        }
+        this.host.draw(); this.host.save();
+      };
+      if (tw.type === 'num') body.append(this._staticNum(tw.label, tw.value, Math.min(tw.min, tw.value), Math.max(tw.max, tw.value), tw.step, set));
+      else if (tw.type === 'color') {
+        const inp = h('input', { type: 'color', value: tw.value.slice(0, 7), oninput: () => set(inp.value) });
+        body.append(h('div', { class: 'ctl' }, h('label', {}, tw.label), inp));
+      } else {
+        let t = 0;
+        const inp = h('input', { class: 'txt', type: 'text', value: tw.value, oninput: () => { clearTimeout(t); t = setTimeout(() => set(inp.value), 200); } });
+        body.append(h('div', { class: 'frow' }, h('label', {}, tw.label), inp));
+      }
+    }
+    body.append(h('p', { class: 'note' }, 'این کنترل‌ها از خط‌های «const نام = مقدار; // برچسب» در کد ساخته شده‌اند. بازه را می‌شود در برچسب نوشت: // سرعت [0..10]'));
   }
 
   _staticNum(label, val, min, max, step, set, unit = '') {
@@ -473,62 +798,137 @@ export class MotionPanel {
     return h('div', { class: 'ctl' }, h('label', {}, label), r, v);
   }
 
+  /* ── زبانهٔ «حرکت»: ورود / خروج / تکرار + کی‌فریم ─────────── */
   _tabAnim(L, body) {
-    const section = (title, which, table) => {
-      const a = L.anim[which];
-      body.append(h('div', { class: 'shead sm' }, title));
-      const g = h('div', { class: 'agrid' });
-      for (const [id, o] of Object.entries(table)) {
-        g.append(h('button', { class: 'achip' + (a.id === id ? ' on' : ''),
-          onclick: () => {
-            a.id = id; this.changed(true);
-            // پیش‌نمایش فوری: پرش به جایی که انیمیشن دیده شود
-            if (which === 'in') this.host.seek(L.t0 + 0.01);
-            if (which === 'out') this.host.seek(Math.max(L.t0, L.t1 - (a.d || 0.5) - 0.05));
-          } }, o.label));
-      }
-      body.append(g);
-      if (which !== 'loop') {
-        body.append(this._staticNum('مدت', a.d, 0.1, 3, 0.05, v => { a.d = v; }, ' ث'));
-      } else {
-        body.append(this._staticNum('سرعت', a.s ?? 1, 0.1, 5, 0.05, v => { a.s = v; }, '×'));
-        body.append(this._staticNum('شدت', a.a ?? 100, 0, 300, 1, v => { a.a = v; }, '٪'));
-      }
+    const W = this.animWhich;
+    const parts = [['in', 'ورود', APPEAR], ['out', 'خروج', APPEAR], ['loop', 'در طول نمایش', LOOPS]];
+    const seg = h('div', { class: 'seg' });
+    for (const [id, label, table] of parts) {
+      const cur = L.anim[id].id;
+      seg.append(h('button', { class: W === id ? 'on' : '', onclick: () => { this.animWhich = id; this.render(); } },
+        h('b', {}, label), h('small', {}, cur === 'none' ? 'بدون' : table[cur]?.label || cur)));
+    }
+    body.append(seg);
+    const a = L.anim[W];
+    const pick = id => {
+      a.id = id; this.changed(true);
+      // پیش‌نمایش فوری: پرش به جایی که انیمیشن دیده شود
+      if (W === 'in') this.host.seek(L.t0 + 0.01);
+      if (W === 'out') this.host.seek(Math.max(L.t0, L.t1 - (a.d || 0.5) - 0.05));
+      if (id !== 'none' && W !== 'loop') this.host.playRange(W === 'in' ? L.t0 : Math.max(L.t0, L.t1 - (a.d || 0.5) - 0.1),
+        W === 'in' ? Math.min(L.t1, L.t0 + (a.d || 0.5) + 0.4) : L.t1);
     };
-    section('ورود', 'in', APPEAR);
-    section('خروج', 'out', APPEAR);
-    section('تکرار در طول لایه', 'loop', LOOPS);
+    const chip = (id, o) => h('button', { class: 'achip' + (a.id === id ? ' on' : ''), onclick: () => pick(id) }, o.label);
+    if (W === 'loop') {
+      body.append(h('div', { class: 'agrid' }, ...Object.entries(LOOPS).map(([id, o]) => chip(id, o))));
+      body.append(this._staticNum('سرعت', a.s ?? 1, 0.1, 5, 0.05, v => { a.s = v; }, '×'));
+      body.append(this._staticNum('شدت', a.a ?? 100, 0, 300, 1, v => { a.a = v; }, '٪'));
+    } else {
+      for (const [g, ids] of APPEAR_GROUPS) {
+        if (g === 'مخصوص متن' && L.type !== 'text') continue;
+        body.append(h('div', { class: 'fxcat' }, g));
+        body.append(h('div', { class: 'agrid' }, ...ids.filter(id => APPEAR[id]).map(id => chip(id, APPEAR[id]))));
+      }
+      body.append(this._staticNum('مدت', a.d, 0.1, 3, 0.05, v => { a.d = v; }, ' ث'));
+    }
     body.append(h('div', { class: 'frow btns' },
       h('button', { class: 'btn sm primary', onclick: () => this.host.playRange(L.t0, L.t1) }, '▶ پخش این لایه')));
-    body.append(h('p', { class: 'note' }, 'انیمیشن‌های آماده روی کی‌فریم‌ها «اضافه» می‌شوند؛ پس می‌شود هم کی‌فریم داشت و هم «جهش» ورود.'));
+
+    const keys = h('details', { class: 'grp', open: hasAnyKeys(L) || this.tabEaseOpen },
+      h('summary', {}, '◆ کی‌فریم‌ها و منحنی سرعت (حرکت دلخواه)'));
+    keys.addEventListener('toggle', () => { this.tabEaseOpen = keys.open; });
+    keys.append(h('p', { class: 'note' }, 'برای حرکت دلخواه: در یک لحظه دکمهٔ ◆ کنار ویژگی را بزنید، نشانگر را جلو ببرید، مقدار را عوض کنید. '
+      + 'انیمیشن‌های آمادهٔ بالا روی کی‌فریم‌ها «اضافه» می‌شوند.'));
+    this._tabEase(L, keys);
+    body.append(keys);
   }
 
-  _tabFx(L, body) {
-    if (!L.effects.length) body.append(h('p', { class: 'note' }, 'افکتی ندارد. از فهرست پایین یکی اضافه کنید — ترتیب افکت‌ها مهم است: از بالا به پایین اعمال می‌شوند.'));
+  /* ── زبانهٔ «افکت»: افکت‌های فعلی + ظاهر آماده + گالری ───── */
+  _tabFx(L, body, opt = {}) {
+    const ch = opt.onChange || (() => this.changed(true));
+    body.append(h('div', { class: 'shead sm' }, `افکت‌های این لایه (${faN(L.effects.length)})`,
+      h('div', { class: 'spacer' }),
+      L.effects.length ? h('button', { class: 'btn sm ghost', onclick: () => {
+        if (!confirm('همهٔ افکت‌های این لایه پاک شود؟')) return;
+        L.effects = []; ch();
+      } }, 'پاک کردن همه') : null));
+    if (!L.effects.length) body.append(h('p', { class: 'note' }, 'هنوز افکتی ندارد. از «ظاهر آماده» یا گالری پایین یکی بزنید.'));
     L.effects.forEach((fx, i) => {
       const E = EFFECTS[fx.type];
       const card = h('details', { class: 'fxbox', open: this._openFx === fx.id },
         h('summary', {},
+          h('span', { class: 'fxi' }, E.ic || '✦'),
           h('span', { class: 'fxn' + (fx.on ? '' : ' off') }, E.label),
           h('span', { class: 'spacer' }),
-          iconBtn(fx.on ? '●' : '○', 'روشن/خاموش', ev => { ev.preventDefault(); fx.on = !fx.on; this.changed(true); }),
-          iconBtn('↑', 'بالاتر', ev => { ev.preventDefault(); if (i > 0) { [L.effects[i - 1], L.effects[i]] = [L.effects[i], L.effects[i - 1]]; this.changed(true); } }),
-          iconBtn('↓', 'پایین‌تر', ev => { ev.preventDefault(); if (i < L.effects.length - 1) { [L.effects[i + 1], L.effects[i]] = [L.effects[i], L.effects[i + 1]]; this.changed(true); } }),
-          iconBtn('✕', 'حذف', ev => { ev.preventDefault(); L.effects.splice(i, 1); this.changed(true); }),
+          iconBtn(fx.on ? '●' : '○', 'روشن/خاموش', ev => { ev.preventDefault(); fx.on = !fx.on; ch(); }),
+          iconBtn('↑', 'بالاتر', ev => { ev.preventDefault(); if (i > 0) { [L.effects[i - 1], L.effects[i]] = [L.effects[i], L.effects[i - 1]]; ch(); } }),
+          iconBtn('↓', 'پایین‌تر', ev => { ev.preventDefault(); if (i < L.effects.length - 1) { [L.effects[i + 1], L.effects[i]] = [L.effects[i], L.effects[i + 1]]; ch(); } }),
+          iconBtn('✕', 'حذف', ev => { ev.preventDefault(); L.effects.splice(i, 1); ch(); }),
         ));
       card.addEventListener('toggle', () => { if (card.open) this._openFx = fx.id; });
+      if (E.desc) card.append(h('p', { class: 'note' }, E.desc));
       for (const d of E.params) card.append(this._propRow(L, fx.p[d.key], d, `${L.id}.${fx.id}.${d.key}`));
       body.append(card);
     });
+
+    // نوشته ← افکت ذره‌ای FLOW (همان صحنهٔ FLOW شوریل پایتون)
+    if (L.type === 'text' && !opt.noLooks) {
+      body.append(h('div', { class: 'shead sm' }, '🌊 افکت ذره‌ای FLOW برای همین نوشته'));
+      body.append(h('p', { class: 'note' }, 'نوشته با هزاران ذرهٔ رنگی ساخته می‌شود (یک لایهٔ تازه با همین نوشته و همین زمان؛ نوشتهٔ ساده پنهان می‌شود و هر وقت خواستید برش می‌گردانید).'));
+      body.append(this._strip(['flowTitle', 'flowPulse', 'flowText'].map(kind => this._thumbBtn(
+        thumb('el:el_' + kind, () => { const T = makeElementLayer(kind, {}, 0, 5, 600, 400); T.props.w = { v: 600 }; T.props.h = { v: 400 }; T.props.y = { v: 0 }; return [T]; }, kind === 'flowText' ? 1.9 : kind === 'flowPulse' ? 1.04 : 1.6),
+        kind === 'flowTitle' ? 'عنوان ریتمیک (اول ویدیو)' : kind === 'flowPulse' ? 'فقط با ریتم آهنگ می‌تپد' : 'جریان FLOW (هر جای ویدیو)', false,
+        () => this.textToFlow(L, kind)))));
+    }
+
+    if (L.type !== 'null' && !opt.noLooks) {
+      body.append(h('div', { class: 'shead sm' }, 'ظاهر آماده — چند افکت با هم'));
+      body.append(this._strip(LOOKS.map(lk => this._thumbBtn(
+        thumb('look:' + lk.id, () => [applyLook(sampleImage(), lk)]), lk.label, false,
+        () => { applyLook(L, lk); ch(); }))));
+    }
+
     body.append(h('div', { class: 'shead sm' }, 'افزودن افکت'));
-    const cats = {};
-    for (const [k, E] of Object.entries(EFFECTS)) (cats[E.cat] ||= []).push([k, E]);
-    for (const [cat, items] of Object.entries(cats)) {
-      body.append(h('div', { class: 'fxcat' }, cat));
-      body.append(h('div', { class: 'agrid' }, ...items.map(([k, E]) =>
-        h('button', { class: 'achip', onclick: () => {
-          const fx = newEffect(k); L.effects.push(fx); this._openFx = fx.id; this.changed(true);
-        } }, '+ ' + E.label))));
+    const avail = effectsFor(L.type).filter(([, E]) => !opt.kinds || opt.kinds.includes(E.kind));
+    const cats = EFFECT_CATS.filter(([c]) => avail.some(([, E]) => E.cat === c));
+    if (!cats.some(([c]) => c === this.fxCat)) this.fxCat = cats[0]?.[0];
+    const grid = h('div', { class: 'fxgal' });
+    const showCat = c => {
+      this.fxCat = c;
+      for (const b of catBar.children) b.classList.toggle('on', b.dataset.c === c);
+      grid.innerHTML = '';
+      for (const [k, E] of avail) {
+        if (E.cat !== c) continue;
+        const sample = E.kind === 'move' ? null
+          : thumb('fx:' + k, () => {
+            const S = E.cat === 'text' || E.cat === 'light' ? sampleText('افکت')
+              : E.cat === 'combo' ? sampleShape() : sampleImage();
+            if (k === 'repeat') S.props.x = { v: -120 };
+            S.effects = [fxWith(k, k === 'outline' ? { color: '#E4142A', w: 6 } : {})];
+            return [S];
+          });
+        grid.append(h('button', { class: 'fxt', title: E.desc || E.label, onclick: () => {
+          const fx = newEffect(k); L.effects.push(fx); this._openFx = fx.id; ch();
+        } }, sample || h('i', {}, E.ic || '✦'), h('b', {}, E.label), h('small', {}, E.desc || '')));
+      }
+    };
+    const catBar = h('div', { class: 'tabs' }, ...cats.map(([c, label]) => {
+      const b = h('button', { class: 'chip', onclick: () => showCat(c) }, label);
+      b.dataset.c = c;
+      return b;
+    }));
+    body.append(catBar, grid);
+    showCat(this.fxCat);
+  }
+
+  /* ── زبانهٔ «پیشرفته» ─────────────────────────────────────── */
+  _tabAdv(L, body) {
+    this._tabMore(L, body);
+    if (L.type !== 'code') {
+      const ex = h('details', { class: 'grp', open: propDefs(L.type).some(d => L.props[d.key]?.x) },
+        h('summary', {}, 'ƒ فرمول (Expression) — حرکت با یک خط کد'));
+      this._tabCode(L, ex);
+      body.append(ex);
     }
   }
 
@@ -597,6 +997,9 @@ export class MotionPanel {
   _tabCode(L, body) {
     if (L.type === 'code') {
       const D = L.data;
+      if (D.el && ELEMENT_KINDS[D.el.kind]) body.append(h('p', { class: 'note warn' },
+        `این لایه المان «${ELEMENT_KINDS[D.el.kind].label}» است و کدش از روی تنظیم‌های زبانهٔ «✎ تنظیم» ساخته می‌شود. `
+        + 'اگر کد را دستی عوض کنید، به «لایهٔ کد آزاد» تبدیل می‌شود (تنظیم‌های نام‌دار دیگر نیستند، ولی عددهای const بالای کد قابل تنظیم می‌مانند).'));
       const ta = h('textarea', { class: 'code', spellcheck: false, value: D.code || '' });
       const msg = h('div', { class: 'msg' });
       const show = () => {
@@ -608,7 +1011,10 @@ export class MotionPanel {
       let timer = 0;
       ta.oninput = () => {
         clearTimeout(timer);
-        timer = setTimeout(() => { D.code = ta.value; this.host.draw(); this.host.save(); setTimeout(show, 30); }, 300);
+        timer = setTimeout(() => {
+          if (D.el && ta.value !== D.code) delete D.el;      // ویرایش دستی ← کد آزاد
+          D.code = ta.value; this.host.draw(); this.host.save(); setTimeout(show, 30);
+        }, 300);
       };
       const sn = select([['', 'نمونه‌کدها…'], ...Object.keys(CODE_SNIPPETS).map(k => [k, k])], '', k => {
         if (!k) return;
@@ -618,6 +1024,7 @@ export class MotionPanel {
         h('button', { class: 'btn sm ghost', onclick: () => { ta.value = CODE_LAYER_DEFAULT; ta.oninput(); } }, 'پیش‌فرض'),
         h('button', { class: 'btn sm ghost', onclick: () => this.host.openLearn?.() }, '؟ آموزش کدنویسی')));
       body.append(ta, msg);
+      attachCodeSearch(ta, { open: true });
       body.append(h('details', { class: 'xhelp' }, h('summary', {}, 'فهرست ابزارهای e'),
         h('div', {}, ...[
           ['e.t / e.time', 'زمان لایه / زمان آهنگ'], ['e.p', 'پیشرفت لایه ۰..۱'],

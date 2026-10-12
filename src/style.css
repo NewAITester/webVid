@@ -78,7 +78,12 @@ body{
 /* ── نوار پخش ────────────────────────────────────────────── */
 .transport{display:flex;align-items:center;gap:11px;padding:9px 14px;flex:0 0 auto;
   background:var(--surf);border-top:1px solid var(--line)}
-.time{font-size:12px;min-width:68px;text-align:center;font-variant-numeric:tabular-nums}
+.tbox{display:flex;align-items:center;justify-content:center;gap:4px;flex:none;width:132px;
+  white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}
+.time{font-size:12px;display:inline-block;width:60px;text-align:center;font-variant-numeric:tabular-nums}
+.tsep{color:var(--dim);font-size:11px}
+.tgroup{display:flex;gap:3px;flex:none;padding:2px;border-radius:11px;background:rgba(255,255,255,.04)}
+#fps{min-width:58px;text-align:center;font-variant-numeric:tabular-nums}
 .time.dim{color:var(--dim)}
 .scrub{flex:1;-webkit-appearance:none;appearance:none;height:4px;background:#252A36;
   border-radius:99px;outline:none;direction:ltr}
@@ -291,7 +296,7 @@ textarea.lyr:focus{border-color:#333B4A}
 .icon.sm{width:30px;height:30px;font-size:13px;border-radius:9px}
 
 /* ── نوار بلوک انتخاب‌شده ────────────────────────────────── */
-.clipbar{display:flex;align-items:center;gap:4px;padding:7px 10px;flex:0 0 auto;
+.clipbar{display:flex;align-items:center;gap:4px;padding:7px 10px;flex:0 0 auto;min-height:54px;box-sizing:border-box;
   background:var(--surf);border-top:1px solid var(--line);overflow-x:auto}
 .cinfo{display:flex;flex-direction:column;gap:2px;padding-inline-end:8px;flex:0 0 auto}
 .cinfo b{font-size:12.5px;font-weight:normal}
@@ -462,6 +467,255 @@ canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto
 .transport>*{flex-shrink:0}
 @media (max-width:480px){
   .transport{gap:5px;padding:8px 10px}
-  .time{min-width:0;font-size:11px}
+  .tbox{width:112px}
+  .time{width:52px;font-size:11px}
   .transport .icon.sm{width:28px;height:28px}
 }
+
+/* ══ نسخهٔ مرتب‌شده: افزودن، زبانه‌ها، گالری‌ها ══════════════════ */
+.addtop{padding:6px 12px;font-size:12px;border-radius:999px;white-space:nowrap}
+.addbig{margin-bottom:12px;padding:11px;font-size:13px}
+
+/* برگهٔ «＋ افزودن» */
+.addsheet{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;
+  align-items:flex-end;justify-content:center;opacity:0;transition:opacity .15s}
+.addsheet.in{opacity:1}
+.addsheet .sbody{width:100%;max-width:720px;max-height:86vh;display:flex;flex-direction:column;gap:9px;
+  background:var(--surf);border:1px solid var(--line);border-bottom:none;border-radius:18px 18px 0 0;
+  padding:12px 14px 0;transform:translateY(30px);transition:transform .18s}
+.addsheet.in .sbody{transform:none}
+.shd{display:flex;align-items:center;gap:8px;font-size:14px}
+.sscroll{overflow-y:auto;padding-bottom:22px;display:flex;flex-direction:column;gap:14px;
+  -webkit-overflow-scrolling:touch}
+.sgh{display:flex;align-items:baseline;gap:8px;margin-bottom:7px}
+.sgh b{font-size:12.5px;color:var(--ink)}
+.sgh small{font-size:11px;color:var(--dim)}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px}
+.stile{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 5px 8px;
+  background:var(--surf2);border:1px solid var(--line);border-radius:12px;color:var(--ink2);
+  cursor:pointer;font-family:inherit;text-align:center;transition:.12s}
+.stile:hover{border-color:#3A4253;color:var(--ink)}
+.stile:active{transform:scale(.96)}
+.stile i{font-style:normal;font-size:22px;line-height:1.3;color:var(--ink)}
+.stile b{font-size:11.5px;font-weight:normal;color:var(--ink)}
+.stile small{font-size:10px;color:var(--dim);line-height:1.5}
+.stile.has{padding:5px 5px 7px}
+.thumb{display:block;width:100%;aspect-ratio:3/2;height:auto;border-radius:8px;background:#0D0F14;object-fit:cover}
+
+/* زبانه‌های بازرس */
+.tabs.big{gap:4px;border-bottom:none;padding:3px;background:#07080B;border:1px solid var(--line);
+  border-radius:12px;margin-bottom:4px}
+.tabs.big .tab{flex:1 1 0;min-width:68px;padding:8px 4px;font-size:12px;border:none;border-radius:9px;
+  background:transparent;color:var(--dim);cursor:pointer;font-family:inherit;white-space:nowrap;position:relative}
+.tabs.big .tab.on{background:var(--surf2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--red)}
+.tabs.big .tab sup{font-size:9px;color:var(--red);margin-inline-start:3px}
+.thint{font-size:11px;color:var(--dim);margin:0 2px 6px;line-height:1.7}
+
+/* نوار پیش‌نمایش‌های افقی (سبک متن، ظاهر آماده) */
+.tstrip{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.tbtn{flex:0 0 92px;display:flex;flex-direction:column;gap:4px;padding:4px;background:var(--surf2);
+  border:1px solid var(--line);border-radius:10px;cursor:pointer;color:var(--ink2);font-family:inherit}
+.tbtn span{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbtn:hover{border-color:#3A4253;color:var(--ink)}
+.tbtn.on{border-color:var(--red);color:var(--ink)}
+
+/* انتخاب ورود / خروج / تکرار */
+.seg{display:flex;gap:4px;padding:3px;background:#07080B;border:1px solid var(--line);border-radius:12px}
+.seg button{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 4px;border:none;
+  border-radius:9px;background:transparent;color:var(--dim);cursor:pointer;font-family:inherit}
+.seg button b{font-size:12px;font-weight:normal}
+.seg button small{font-size:10px;color:var(--dim);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg button.on{background:var(--surf2);color:var(--ink)}
+.seg button.on small{color:var(--red)}
+
+/* گالری افکت */
+.fxgal{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:7px}
+.fxt{display:flex;flex-direction:column;gap:3px;padding:5px 5px 7px;background:var(--surf2);
+  border:1px solid var(--line);border-radius:11px;cursor:pointer;color:var(--ink2);font-family:inherit;text-align:center}
+.fxt:hover{border-color:#3A4253;color:var(--ink)}
+.fxt:active{transform:scale(.96)}
+.fxt>i{display:grid;place-items:center;aspect-ratio:3/2;border-radius:8px;background:#0D0F14;
+  font-style:normal;font-size:24px;color:var(--ink)}
+.fxt b{font-size:11.5px;font-weight:normal;color:var(--ink)}
+.fxt small{font-size:9.8px;color:var(--dim);line-height:1.5}
+.fxi{width:22px;text-align:center;color:var(--ink2)}
+
+/* رنگ هر نوع لایه در فهرست */
+.lnm small{display:block;font-size:10px;color:var(--dim);margin-top:1px}
+.lic.t-text{color:#FFD86B}.lic.t-shape{color:#FF6B81}.lic.t-image,.lic.t-video{color:#5FD3C8}
+.lic.t-spectrum{color:#9B8CFF}.lic.t-code{color:#5FD38D}.lic.t-adjust{color:#E8B339}.lic.t-null{color:var(--dim)}
+.pane .note a{color:var(--ink);text-decoration:underline dotted}
+
+/* ── round 2: subnav, layer stack drag, vfx boxes ── */
+.subnav{display:flex;gap:4px;padding:3px;margin:0 0 10px;background:#07080B;border:1px solid var(--line);border-radius:12px}
+.subnav button{flex:1;padding:7px 4px;border:none;border-radius:9px;background:transparent;color:var(--dim);
+  font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.subnav button.on{background:var(--surf2);color:var(--ink)}
+.grip{cursor:grab;color:var(--dim);padding:0 2px;font-size:13px;letter-spacing:-2px;touch-action:none;user-select:none}
+.lrow.dragging{opacity:.6;outline:1px dashed var(--red)}
+.lrow.dropmark{box-shadow:inset 0 2px 0 var(--red)}
+.lrow.lyric{background:#14111A;border:1px dashed #3A3350}
+.lrow.lyric b{color:#C9BFFF}
+.lic.t-lyric{color:#C9BFFF;background:#1E1830}
+.vfxbox{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+#imSheet textarea.code{min-height:150px;margin:8px 0}
+#lkFont .frow{margin-bottom:6px}
+
+/* ── سازندهٔ سبک موشن‌گرافی ── */
+.mxtop{display:flex;gap:10px;align-items:flex-start;margin:6px 0 10px}
+.mxprev{flex:0 0 auto;width:96px;pointer-events:none}
+.mxprev canvas{width:100%;height:auto;display:block}
+.mxmeta{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.mxmeta .frow.btns{flex-wrap:wrap;gap:5px}
+.mxform{display:flex;flex-direction:column;gap:9px}
+.mxrow{display:flex;flex-direction:column;gap:5px}
+.mxrow>label{font-size:12px;color:var(--dim)}
+.mxrow.slider{flex-direction:row;align-items:center;gap:8px}
+.mxrow.slider>label{flex:0 0 110px}
+.mxrow.slider .rng{flex:1}
+.mxrow input[type=color]{width:46px;height:30px;border:none;background:none;padding:0}
+.mxrow:has(input[type=color]){flex-direction:row;align-items:center;gap:8px}
+.mxrow:has(input[type=color])>label{flex:0 0 110px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.btn.danger{color:#FF6B6B}
+.ghosttog{font-size:12.5px;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.ghosttog .dim{font-size:11px}
+.fxbg{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;margin-bottom:8px;
+  padding:7px 9px;border:1px dashed var(--line);border-radius:10px}
+.fxbg .dim{font-size:11.5px}
+
+/* نوار انتخاب خالی: سر جایش می‌ماند، فقط راهنما */
+.clipbar.empty .cinfo b{color:var(--dim)}
+.clipbar.empty .cinfo span{direction:rtl;opacity:.8}
+/* بخش‌های تاشو در برگهٔ سبک نمایش */
+.fold{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
+.fold>summary{cursor:pointer;list-style:none;padding:10px 12px;font-size:13px;display:flex;gap:6px;align-items:center}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:'‹';display:inline-block;transition:transform .15s;color:var(--dim)}
+.fold[open]>summary::before{transform:rotate(-90deg)}
+.fold>summary .dim{font-size:11px}
+.fold>*:not(summary){margin:0 10px 10px}
+
+/* ابزار بالای گالری: جست‌وجو + شانسی */
+.fxtools{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.fxtools input{flex:1;min-width:0}
+.fxcard{position:relative}
+.fxcard .fav{position:absolute;top:3px;inset-inline-start:3px;width:24px;height:24px;border-radius:50%;
+  border:none;background:rgba(0,0,0,.45);color:#fff;font-size:13px;line-height:24px;padding:0;cursor:pointer;opacity:.55}
+.fxcard:hover .fav,.fxcard .fav.on{opacity:1}
+.fxcard .fav.on{color:#FFD447}
+.fold>summary .pill.sm{margin-inline-start:auto;font-size:10.5px;padding:2px 8px}
+.idgrid{margin:8px 0}
+/* کم‌رنگیِ تک‌کلمه */
+.ghostbox{margin:10px 0;padding:8px;border:1px dashed var(--line);border-radius:10px}
+.gwords{display:flex;flex-wrap:wrap;gap:5px;direction:rtl}
+.gw{padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);
+  font-family:inherit;font-size:13px;cursor:pointer}
+.gw.hide{border-color:var(--red);color:var(--dim);text-decoration:line-through}
+.gw.show{border-color:#3FB37F;color:#7FE0B2}
+.gw.inherit.off{opacity:.5}
+
+/* ── موشن‌اسکریپت و المان‌ها ───────────────────────────── */
+.scriptsheet .sbody{max-width:900px;max-height:92vh}
+.scriptsheet .shd small{font-size:11px;color:var(--dim)}
+textarea.code.script{min-height:46vh;direction:ltr;text-align:left;font-size:12.5px;line-height:1.55;tab-size:2;white-space:pre}
+.scriptsheet .msg{white-space:pre-line}
+.sres{display:flex;flex-direction:column;gap:7px}
+.sres .srow{background:var(--surf2);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.sres .sh{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.sres .sh b{font-size:12.5px;color:var(--ink)}
+.sres .sh small{font-size:11px;color:var(--dim)}
+.sres .chips{display:flex;flex-wrap:wrap;gap:5px}
+.echip{display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border-radius:999px;font:inherit;font-size:11.5px;
+  background:var(--surf);border:1px solid var(--line);color:var(--ink2);cursor:pointer}
+.echip:hover{border-color:#3A4253;color:var(--ink)}
+.echip:disabled{cursor:default;opacity:.8}
+.echip i{font-style:normal}
+.xhelp .ek{display:inline-block;margin:2px 4px;font-size:11.5px;direction:ltr;color:var(--ink2)}
+.elhead{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 10px;background:var(--surf2);
+  border:1px solid var(--line);border-radius:12px;flex-wrap:wrap}
+.elhead .elic{font-size:26px;line-height:1}
+.elhead b{display:block;font-size:13px;color:var(--ink)}
+.elhead small{font-size:11px;color:var(--dim)}
+.elhead > div{flex:1;min-width:140px}
+.elsw{display:flex;flex-direction:column;gap:3px}
+.elsw small{font-size:10.5px;color:var(--dim)}
+.note.warn{color:var(--warn)}
+
+/* ── وارد کردن کد ویدیو ───────────────────────────── */
+.impbox:empty{display:none}
+.impcard{display:flex;flex-direction:column;gap:9px;margin:8px 0;padding:10px 12px;background:var(--surf2);
+  border:1px solid #2C3446;border-radius:14px}
+.impcard .ihd{display:flex;align-items:center;gap:9px}
+.impcard .ihd .iic{font-size:24px;line-height:1}
+.impcard .ihd b{font-size:13px;color:var(--ink);direction:ltr;unicode-bidi:isolate}
+.impcard .ihd small{font-size:11px;color:var(--dim)}
+.impcard .inote{font-size:11.5px;color:var(--ink2)}
+.impcard .isec{display:flex;flex-direction:column;gap:6px}
+.impcard .ist{font-size:12px;color:var(--ink2);cursor:default}
+.impcard details.isec>summary.ist{cursor:pointer}
+.impcard .iscenes{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:7px}
+.impcard .iscene{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:6px;display:flex;flex-direction:column;gap:5px;min-width:0}
+.impcard .ithumb{width:100%;height:auto;aspect-ratio:16/9;border-radius:6px;background:#000;display:block}
+.impcard .iscene .sh{display:flex;align-items:baseline;gap:6px}
+.impcard .iscene .sh b{font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impcard .iscene .sh small{font-size:10.5px;color:var(--dim);margin-inline-start:auto}
+.impcard .echip.sm{padding:2px 7px;font-size:10.5px;cursor:default;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impcard .itw{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:5px 10px;padding:4px 0}
+.impcard .itg{grid-column:1/-1;font-size:11px;color:var(--warn);border-bottom:1px solid var(--line);padding:3px 0}
+.impcard .itrow{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink2);min-width:0}
+.impcard .itrow span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impcard .itrow input{width:118px;font-size:12px;padding:4px 6px}
+.impcard .itrow input[type=color]{width:42px;height:26px;padding:0 2px}
+.impcard .inotes{font-size:11.5px;color:var(--warn);gap:3px;white-space:pre-line}
+.impcard .itrow input[type=text],.impcard .itrow input[type=number]{background:var(--surf);color:var(--ink);border:1px solid var(--line);border-radius:8px}
+/* پرسش «با این کد چطور ساخته شود؟» */
+.impcard .imx{gap:7px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
+.impcard .imxr{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border:1px solid var(--line);
+  border-radius:11px;cursor:pointer;background:var(--surf2);transition:.15s}
+.impcard .imxr.on{border-color:var(--red);background:#1C1016}
+.impcard .imxr input{margin-top:3px;accent-color:var(--red)}
+.impcard .imxr b{display:block;font-size:12.5px;font-weight:normal;color:var(--ink)}
+.impcard .imxr small{display:block;font-size:11px;color:var(--dim);line-height:1.6}
+.impcard .imxopts{display:flex;flex-direction:column;gap:5px;padding:2px 6px 0}
+.impcard .imxo{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink2);cursor:pointer}
+.impcard .imxo input{accent-color:var(--red)}
+.impcard .imxo select{margin-inline-start:auto;font-size:11.5px;padding:3px 6px}
+/* پنجرهٔ «پروژه از کد ویدیو» */
+.cpsheet .sheetbox{max-width:620px}
+.cpsheet .cpauto{font-size:11px;color:var(--dim);margin:-2px 0 4px}
+.cpsheet .impcard .btns{position:sticky;bottom:-20px;z-index:2;background:var(--surf2);
+  margin:0 -12px -10px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+
+/* 🔍 جستجو در کد */
+.codesearch{display:flex;flex-direction:column;gap:5px;margin:0 0 6px;padding:6px;border:1px solid var(--line);border-radius:10px;background:#0B0D12}
+.codesearch .cs-row{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.codesearch .cs-q,.codesearch .cs-r{flex:1;min-width:140px;font-size:12.5px;padding:5px 8px}
+.codesearch .cs-t{background:#151922;border:1px solid var(--line);color:var(--ink2);border-radius:7px;min-width:28px;height:28px;padding:0 6px;font-size:12px;cursor:pointer;font-family:ui-monospace,Menlo,Consolas,monospace}
+.codesearch .cs-t.on{background:#2A1218;border-color:var(--red);color:#fff}
+.codesearch .cs-n{font-size:11.5px;color:var(--ink2);min-width:54px;text-align:center}
+.codesearch .cs-n.bad{color:#FF6B6B}
+.codesearch .cs-list{max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:1px}
+.codesearch .cs-list:empty{display:none}
+.codesearch .cs-hit{display:flex;gap:8px;align-items:baseline;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#AEB6C4;padding:2px 6px;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden}
+.codesearch .cs-hit:hover{background:#151922}
+.codesearch .cs-hit.on{background:#22141A}
+.codesearch .cs-hit b{color:var(--ink2);font-weight:400;min-width:34px;text-align:end;flex:none}
+.codesearch .cs-hit span{overflow:hidden;text-overflow:ellipsis;text-align:left}
+.codesearch .cs-hit mark{background:#FF3B5C55;color:#fff;border-radius:3px;padding:0 1px}
+.codesearch .cs-more{font-size:11px;color:var(--ink2);padding:2px 6px}
+.codesearch.closed{padding:0;border:0;background:none}
+.codesearch.closed .cs-row > :not(.cs-open), .codesearch.closed .cs-list, .codesearch.closed .cs-row + .cs-row{display:none}
+.codesearch.closed .cs-open::after{content:' جستجو در کد';font-family:inherit}
+.impcard .imxr.dis{opacity:.55}
+
+/* ⌨ صفحه‌کلید گوشی باز است (ui/keyboard.js): برنامه فقط در بخش دیدنی */
+body.kb #app{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100dvh)}
+body.kb .screen[data-screen="editor"] > .top,
+body.kb .ebody > .transport, body.kb .ebody > .tlwrap, body.kb .ebody > .clipbar, body.kb .nav,
+body.kb .panes > .grab{display:none !important}
+body.kb .ebody > .stagewrap{flex:0 0 36%;min-height:84px}
+body.kb .panes.open{flex:1 1 0 !important;min-height:0}
+body.kb .sheet, body.kb .addsheet{top:var(--vvt,0px);bottom:auto;height:var(--vvh,100dvh)}
+body.kb .sheet .sheetbox, body.kb .addsheet .sbody{max-height:calc(var(--vvh,100dvh) - 12px)}
+body.kb textarea.code{min-height:120px}

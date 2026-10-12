@@ -62,8 +62,9 @@ export function evalEffects(L, lt, env) {
 }
 
 /** تغییردهندهٔ افکت‌های حرکتی */
-function moveMods(fxs, lt, env) {
+export function moveMods(fxs, lt, env) {
   const parts = [];
+  const U = Math.max(1, Math.min(env.W || 1080, env.H || 1080));
   for (const f of fxs) {
     if (f.kind !== 'move') continue;
     const v = f.v, t = env.time ?? lt;
@@ -79,6 +80,22 @@ function moveMods(fxs, lt, env) {
       });
     } else if (f.type === 'pulse') {
       parts.push({ s: 1 + (env.kick || 0) * (v.amt / 100) });
+    } else if (f.type === 'spin') {
+      parts.push({ rot: lt * v.speed * 360 });
+    } else if (f.type === 'swing') {
+      parts.push({ rot: Math.sin(lt * v.freq * Math.PI * 2) * v.ang });
+    } else if (f.type === 'bounce') {
+      parts.push({ dy: -Math.abs(Math.sin(lt * v.freq * Math.PI)) * (v.h / U) });
+    } else if (f.type === 'orbit') {
+      const a = lt * v.freq * Math.PI * 2;
+      parts.push({ dx: Math.cos(a) * (v.r / U), dy: Math.sin(a) * (v.r / U) });
+    } else if (f.type === 'zoomPulse') {
+      parts.push({ s: 1 + Math.sin(lt * v.freq * Math.PI * 2) * (v.amt / 100) });
+    } else if (f.type === 'strobe') {
+      const mix = v.beat / 100;
+      const blink = ((lt * v.rate) % 1) < 0.5 ? 1 : 0;
+      const on = (1 - mix) * blink + mix * Math.min(1, (env.kick || 0) * 2.5);
+      parts.push({ a: 1 - (v.depth / 100) * (1 - on) });
     }
   }
   return parts;

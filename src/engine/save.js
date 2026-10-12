@@ -39,6 +39,15 @@ function toB64(u8) {
   return btoa(s);
 }
 
+/* نوع فایل برای MediaStore: قبلاً همه‌چیز video/mp4 ثبت می‌شد و اندروید
+   مثلاً «x-music.wav» را «x-music.wav.mp4» می‌کرد — یک «ویدیوی فقط صدا». */
+const MIMES = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mkv: 'video/x-matroska', gif: 'image/gif', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+  wav: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg', json: 'application/json', js: 'text/javascript', md: 'text/markdown', txt: 'text/plain', py: 'text/x-python', html: 'text/html' };
+function mimeOf(blob, filename) {
+  const ext = String(filename).toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  return MIMES[ext] || (blob?.type && blob.type.split(';')[0]) || 'application/octet-stream';
+}
+
 function browserSave(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -84,7 +93,7 @@ export async function saveFile(blob, filename, onProgress = () => {}) {
   // ۲) انتقال به پوشهٔ عمومی Downloads
   try {
     const res = await MediaSaver.saveToDownloads({
-      sourcePath: srcUri, filename, mimeType: 'video/mp4',
+      sourcePath: srcUri, filename, mimeType: mimeOf(blob, filename),
     });
     return { where: 'downloads', path: res.path, uri: res.uri, canShare: true };
   } catch (e) {

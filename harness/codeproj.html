@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><html dir="rtl"><link rel="stylesheet" href="../src/style.css">
+<body style="background:#111;color:#eee"><canvas id="c" width="960" height="540"></canvas>
+<script type="module">
+import { openCodeProjectSheet } from '../src/ui/codeproject.js';
+import { MotionRenderer } from '../src/motion/render.js';
+import { frameEnv } from '../src/motion/evaluate.js';
+const ASPECTS = [{ id: '16:9', w: 1920, h: 1080, label: 'افقی — یوتیوب' }, { id: '9:16', w: 1080, h: 1920, label: 'عمودی — ریلز' },
+  { id: '1:1', w: 1080, h: 1080, label: 'مربع — پست' }, { id: '4:5', w: 1080, h: 1350, label: 'پرتره — پست' }];
+window.errs = []; window.addEventListener('error', e => errs.push(e.message));
+window.open1 = async (paths) => {
+  const files = await Promise.all(paths.map(async p => ({ name: p.split('/').pop(), text: await (await fetch(p)).text() })));
+  window.made = null;
+  openCodeProjectSheet({ files, aspects: ASPECTS, defaults: { artist: 'هنرمند', tg: 'Telegram: @test' }, onCreate: async r => { window.made = r; } });
+};
+window.drawAt = (t) => {
+  const r = window.made, A = ASPECTS.find(a => a.id === r.aspect), c = document.getElementById('c');
+  c.width = 640; c.height = Math.round(640 * A.h / A.w);
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, c.width, c.height); ctx.save(); ctx.scale(c.width / A.w, c.height / A.h);
+  const song = { beats: [0, .5, 1, 1.5, 2, 2.5, 3], kick: () => 0, rms: () => .5, beatI: () => 0, beatEnv: () => 0, lines: [], activeLine: () => -1 };
+  const MR = window.MR || (window.MR = new MotionRenderer());
+  const env = { ...frameEnv(song, t, A.w, A.h), song, acc: '#E4142A', fx: {}, lineText: '' };
+  MR.draw(ctx, r.layers, t, env, { behind: true }); MR.draw(ctx, r.layers, t, env, { behind: false }); ctx.restore();
+  return [...MR.errors].map(([id, e]) => e);
+};
+window.ready = true;
+</script>

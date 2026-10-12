@@ -33,13 +33,14 @@ export class PreviewPool {
     this.items = [];
   }
 
-  /** @param {object} o { canvas, style, song, sections, accent, customSet, lineFx } */
+  /** @param {object} o { canvas, style, song, sections, accent, customSet, lineFx, bg } */
   add(o) {
     const st = new Stage(o.canvas);
     st.resize(o.canvas.width, o.canvas.height);
     const r = new Renderer(st);
     r.setSong(o.song);
-    r.sections = [[0, 1e5, o.style, o.accent]];
+    // o.bg: پس‌زمینهٔ «استایل ویدیو» بخش، تا سبک متن روی همان زمینه دیده شود
+    r.sections = [[0, 1e5, o.style, o.accent, o.bg ? { lyric: [], screen: [], bg: o.bg } : undefined]];
     r.customSet = o.customSet || null;
     r.showFurniture = false;
     r.grain = 0;

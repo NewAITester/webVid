@@ -58,6 +58,10 @@
     </div>
     <div id="projList" class="cards"></div>
     <button id="newProj" class="btn primary wide big">+ پروژهٔ جدید</button>
+    <button id="importBtn" class="btn ghost wide">📥 وارد کردن پروژه یا کد</button>
+    <button id="codeProj" class="btn ghost wide" title="کد بوم JS/HTML، پایتون MoviePy/Manim یا موشن‌اسکریپت — می‌شود چند فایل را با هم انتخاب کرد">🧩 پروژه از کد ویدیو (JS/HTML/Python)</button>
+    <input id="codeFile" type="file" multiple accept=".js,.mjs,.html,.htm,.py,.txt,text/plain,text/html,text/javascript" class="hidden">
+    <button id="reelTpl" class="btn ghost wide" title="ویدیوی نمونهٔ ۱۵ ثانیه‌ای که با قطعه‌های موشن همین برنامه ساخته شده">🎬 نمونهٔ آماده: شوریل موشن ۱۵ ثانیه</button>
   </div>
 </section>
 
@@ -80,23 +84,28 @@
       <div>پروژهٔ خالی — آهنگ اضافه کنید، یا بی‌صدا با لایه‌ها بسازید</div>
       <div class="frow btns">
         <button id="addAudioBtn" class="btn sm">افزودن آهنگ</button>
-        <button id="noAudioLayers" class="btn sm primary">+ افزودن لایه</button>
+        <button id="noAudioLayers" class="btn sm primary">＋ افزودن متن، عکس یا شکل</button>
       </div>
     </div>
   </main>
 
   <section class="transport">
     <button id="play" class="btn primary round">▶</button>
-    <div class="time" id="tc">۰۰:۰۰٫۰۰</div>
-    <div class="time dim" id="tdur">—</div>
-    <button id="undoBtn" class="icon sm" title="واگرد (Ctrl+Z)" disabled>↶</button>
-    <button id="redoBtn" class="icon sm" title="ازنو (Ctrl+Shift+Z)" disabled>↷</button>
+    <div class="tbox"><span class="time" id="tc">۰۰:۰۰٫۰۰</span><span class="tsep">/</span><span class="time dim" id="tdur">—</span></div>
+    <div class="tgroup">
+      <button id="undoBtn" class="icon sm" title="واگرد (Ctrl+Z)" disabled>↶</button>
+      <button id="redoBtn" class="icon sm" title="ازنو (Ctrl+Shift+Z)" disabled>↷</button>
+    </div>
     <div class="spacer"></div>
-    <button id="zFit" class="icon sm" title="جا دادن">⤢</button>
-    <button id="zOut" class="icon sm">−</button>
-    <button id="zIn" class="icon sm">+</button>
-    <button id="secAdd" class="icon sm" title="بخش تازه">＋▦</button>
-    <button id="txtAdd" class="icon sm" title="متن تازه">＋T</button>
+    <div class="tgroup">
+      <button id="zOut" class="icon sm" title="کوچک‌نمایی">−</button>
+      <button id="zFit" class="icon sm" title="جا دادن">⤢</button>
+      <button id="zIn" class="icon sm" title="بزرگ‌نمایی">+</button>
+    </div>
+    <button id="addBtn" class="btn sm primary addtop" title="افزودن متن، عکس، شکل، افکت آماده یا بخش شعر">＋ افزودن</button>
+    <!-- این دو حالا از داخل برگهٔ «＋ افزودن» صدا زده می‌شوند -->
+    <button id="secAdd" class="hidden" tabindex="-1">بخش تازه</button>
+    <button id="txtAdd" class="hidden" tabindex="-1">زیرنویس ساده</button>
   </section>
 
   <div class="tlwrap">
@@ -104,7 +113,7 @@
   </div>
 
   <!-- نوار کارِ بلوک انتخاب‌شده -->
-  <div id="clipBar" class="clipbar hidden">
+  <div id="clipBar" class="clipbar empty">
     <div class="cinfo"><b id="cbName">—</b><span id="cbTime"></span></div>
     <div class="spacer"></div>
     <div id="cbActs" class="cbacts"></div>
@@ -128,6 +137,11 @@
 
     <!-- شعر -->
     <section class="pane" data-pane="lyrics">
+      <div class="subnav">
+        <button data-goto="lyrics">✎ متن و زمان</button>
+        <button data-goto="fx">♪ سبک نمایش</button>
+        <button data-goto="words">✥ جای کلمات</button>
+      </div>
       <div class="phead">شعر<div class="spacer"></div>
         <button id="secAuto" class="btn sm ghost">چیدمان خودکار</button>
         <button id="lyWrite" class="btn sm ghost on">نوشتن</button>
@@ -162,19 +176,45 @@
 
     <!-- گالری افکت -->
     <section class="pane" data-pane="fx">
-      <div class="phead">افکت‌ها<div class="spacer"></div>
+      <div class="subnav">
+        <button data-goto="lyrics">✎ متن و زمان</button>
+        <button data-goto="fx">♪ سبک نمایش</button>
+        <button data-goto="words">✥ جای کلمات</button>
+      </div>
+      <div class="phead">سبک نمایش شعر<div class="spacer"></div>
         <span class="pill" id="fxFor">—</span></div>
-      <p class="note">افکت روی بخشی که الان در آن هستید اعمال می‌شود.
-        پیش‌نمایش‌ها همین لحظهٔ آهنگ را نشان می‌دهند.</p>
-      <div class="frow btns" id="fxCats"></div>
+      <p class="note">برای <b>بخش انتخاب‌شده</b> در تایم‌لاین (یا بخش زیر نشانگر). «استایل ویدیو» پس‌زمینه را هم عوض می‌کند. افکت لایه‌ها در
+        <a href="#" data-goto="layers">◧ لایه‌ها</a>.</p>
+      <label class="frow ghosttog"><input id="fxGhost" type="checkbox" checked> نمایش کم‌رنگ کلمه‌ها قبل از خوانده شدن
+        <span class="dim">(خاموش = هر کلمه فقط وقتی خوانده شد دیده شود)</span></label>
+      <div class="fxbg" id="fxBg"></div>
+      <div class="fxtools">
+        <input id="fxSearch" type="search" class="txt" placeholder="🔍 جست‌وجوی سبک…" autocomplete="off">
+        <button id="fxRand" class="btn sm" title="یک استایل ویدیو و سبک متن تصادفی برای همین بخش">🎲 شانسی</button>
+      </div>
+      <div class="frow btns fxcats" id="fxCats"></div>
       <div id="fxGrid" class="fxgrid"></div>
-      <div class="phead" style="margin-top:14px">افکت سفارشی
-        <div class="spacer"></div>
-        <button id="cfAdd" class="btn sm ghost">+ افزودن کد</button></div>
-      <div id="cfList" class="list"></div>
+      <details id="idFold" class="fold">
+        <summary>🎵 بین‌خوانی <span class="dim">(وقتی آواز نیست)</span><span class="pill sm" id="idCount">خاموش</span></summary>
+        <div id="idBox"></div>
+      </details>
+      <details id="mxFold" class="fold">
+        <summary>🎛 ساخت سبک دلخواه <span class="dim">(ترکیب ورود، حرکت، پس‌زمینه…)</span></summary>
+        <div id="mxBox" class="mxbox"></div>
+      </details>
+      <details id="cfFold" class="fold">
+        <summary>⌨ افکت با کد <span class="dim">(پیشرفته)</span></summary>
+        <div class="frow btns"><button id="cfAdd" class="btn sm ghost">+ افزودن کد</button></div>
+        <div id="cfList" class="list"></div>
+      </details>
     </section>
 
     <section class="pane" data-pane="words">
+      <div class="subnav">
+        <button data-goto="lyrics">✎ متن و زمان</button>
+        <button data-goto="fx">♪ سبک نمایش</button>
+        <button data-goto="words">✥ جای کلمات</button>
+      </div>
       <div class="phead">جابه‌جایی کلمات<div class="spacer"></div>
         <span class="pill" id="edCount">۰</span></div>
       <p class="note" id="edHint">روی یک کلمه بکشید تا جابه‌جا شود.</p>
@@ -193,7 +233,8 @@
     </section>
 
     <section class="pane" data-pane="look">
-      <div class="phead">ظاهر</div>
+      <div class="phead">کل ویدیو</div>
+      <p class="note">این‌ها روی کل ویدیو اثر دارند. برای افکت فقط روی یک بخش یا یک خط، روی آن در تایم‌لاین بزنید؛ برای یک لایهٔ خاص به «◧ لایه‌ها» بروید.</p>
       <div class="form">
         <div class="frow"><label>رنگ تأکید</label>
           <input id="lkAccent" type="color" value="#E4142A">
@@ -207,10 +248,14 @@
         <div class="frow slider"><label>انحراف رنگی</label>
           <input id="lkChroma" type="range" min="0" max="40" value="10" class="rng">
           <span class="pill" id="lkChromaV">۱٫۰</span></div>
+        <div class="frow"><label><input id="lkGhost" type="checkbox" checked> نمایش کم‌رنگ کلمه‌های نخوانده</label></div>
         <div class="frow"><label><input id="lkFurn" type="checkbox" checked> اثاثیهٔ قاب</label>
           <div class="spacer"></div>
           <button id="lkReset" class="btn sm ghost">پیش‌فرض</button></div>
       </div>
+      <div class="shead sm">فونت شعر</div>
+      <div id="lkFont"></div>
+      <div id="lkFx"></div>
     </section>
 
     <section class="pane" data-pane="code">
@@ -262,12 +307,10 @@
   </div>
 
   <nav class="nav" id="nav">
-    <button data-go="lyrics" class="on"><i>✎</i><b>شعر</b></button>
-    <button data-go="layers"><i>◧</i><b>لایه‌ها</b></button>
-    <button data-go="fx"><i>✦</i><b>افکت</b></button>
-    <button data-go="words"><i>✥</i><b>کلمات</b></button>
-    <button data-go="look"><i>◐</i><b>ظاهر</b></button>
-    <button data-go="export"><i>↓</i><b>خروجی</b></button>
+    <button data-go="lyrics" class="on" title="نوشتن و هم‌زمان کردن شعر"><i>✎</i><b>شعر</b></button>
+    <button data-go="layers" title="متن، عکس، شکل و افکت‌های شما"><i>◧</i><b>لایه‌ها</b></button>
+    <button data-go="look" title="رنگ، فونت شعر و افکت روی کل ویدیو"><i>◐</i><b>کل ویدیو</b></button>
+    <button data-go="export" title="ساخت فایل ویدیو"><i>↓</i><b>خروجی</b></button>
   </nav>
 </section>
 
@@ -298,6 +341,25 @@
   </div>
 </div>
 
+<div id="imSheet" class="sheet hidden">
+  <div class="sheetbox">
+    <div class="shead">وارد کردن پروژه یا کد<div class="spacer"></div><button id="imX" class="icon">×</button></div>
+    <div class="form">
+      <p class="note">یکی از این‌ها را بدهید: فایل کامل پروژه (.json)، کد پروژه که کپی کرده‌اید،
+        فهرست لایه‌ها (JSON)، شعر زمان‌دار (LRC)، کد جاوااسکریپت یک لایهٔ کدی،
+        یا کد ویدیو (بوم JS/HTML، پایتون MoviePy/Manim) که به پروژهٔ قابل‌ویرایش تبدیل می‌شود.</p>
+      <div class="frow btns">
+        <button id="imFileBtn" class="btn sm">📂 انتخاب فایل</button>
+        <input id="imFile" type="file" accept=".json,.txt,.lrc,.js,.mjs,.html,.htm,.py,application/json,text/plain" class="hidden">
+        <button id="imPaste" class="btn sm ghost">📋 چسباندن</button>
+      </div>
+      <textarea id="imText" class="code" spellcheck="false" dir="ltr" placeholder="کد یا متن را اینجا بچسبانید…"></textarea>
+      <button id="imGo" class="btn primary wide big">بساز و باز کن</button>
+      <div id="imMsg" class="msg"></div>
+    </div>
+  </div>
+</div>
+
 <div id="pjSheet" class="sheet hidden">
   <div class="sheetbox">
     <div class="shead">تنظیمات پروژه<div class="spacer"></div><button id="pjX" class="icon">×</button></div>
@@ -307,6 +369,8 @@
       <div class="frow"><label>شعر</label><input id="inLrc" type="file" accept=".lrc,.txt,text/plain"></div>
       <div id="songBar" class="bar2 hidden"><i></i></div>
       <div id="songMsg" class="msg"></div>
+      <div class="frow btns hidden" id="pjAudioRow"><span class="dim" id="pjAudioName"></span><div class="spacer"></div>
+        <button id="pjNoAudio" class="btn sm ghost" title="آهنگ از پروژه برداشته می‌شود؛ لایه‌ها و طول ویدیو می‌مانند">🔇 حذف آهنگ</button></div>
       <div class="shead sm">مشخصات</div>
       <div class="frow"><label>عنوان</label><input id="pjTitle" type="text" class="txt"></div>
       <div class="frow"><label>هنرمند</label><input id="pjArtist" type="text" class="txt"></div>
@@ -315,6 +379,12 @@
       <div class="frow" id="pjLenRow"><label>طول (بی‌صدا)</label>
         <input id="pjLen" type="number" min="1" max="600" step="1" value="15"><span class="dim">ثانیه</span></div>
       <button id="pjSave" class="btn primary wide">ذخیره</button>
+      <div class="shead sm">فایل پروژه</div>
+      <p class="note">کل پروژه (شعر، زمان‌ها، لایه‌ها، افکت‌ها و فایل‌ها) در یک فایل؛ بعداً از صفحهٔ اول «وارد کردن» بزنید.</p>
+      <div class="frow btns">
+        <button id="pjExport" class="btn sm">📤 ذخیرهٔ فایل کامل پروژه</button>
+        <button id="pjCopy" class="btn sm ghost">📋 کپی کد پروژه</button>
+      </div>
       <div id="pjMsg" class="msg"></div>
     </div>
   </div>
