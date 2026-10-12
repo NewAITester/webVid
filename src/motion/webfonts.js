@@ -12,10 +12,12 @@ let M = null, loading = null;
 const fam = new Map();           // نام کوچک‌شده ← { family, faces: [{…, ff}] }
 const pend = new Set();
 let redrawT = 0;
+/** document.fonts یا (در Web Worker) self.fonts */
+const FS = () => globalThis.document?.fonts || globalThis.fonts || null;
 
 export function webfontsBase() {
   if (globalThis.WV_FONTS_URL) return globalThis.WV_FONTS_URL;
-  try { return new URL('webfonts/', document.baseURI).href; } catch { return './webfonts/'; }
+  try { return new URL('webfonts/', globalThis.document?.baseURI || self.location.href).href; } catch { return './webfonts/'; }
 }
 const key = s => String(s || '').trim().replace(/^['"]|['"]$/g, '').toLowerCase();
 const compact = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -23,7 +25,7 @@ const compact = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 /** فهرست فونت‌ها (یک بار) و معرفی به document.fonts */
 export function initWebfonts() {
   if (loading) return loading;
-  if (typeof document === 'undefined' || typeof FontFace === 'undefined') return (loading = Promise.resolve(null));
+  if (!FS() || typeof FontFace === 'undefined') return (loading = Promise.resolve(null));
   loading = (async () => {
     const base = webfontsBase();
     const r = await fetch(base + 'fonts.json');
@@ -34,7 +36,7 @@ export function initWebfonts() {
       let e = fam.get(k);
       if (!e) fam.set(k, (e = { family: name, faces: [] }));
       const ff = new FontFace(name, `url("${base}${encodeURI(f.file)}")`, { weight: f.weight, style: f.style, display: 'swap' });
-      try { document.fonts.add(ff); } catch { /* */ }
+      try { FS().add(ff); } catch { /* */ }
       e.faces.push({ ...f, url: base + encodeURI(f.file), ff });
     };
     for (const f of M.faces) add(f.family, f);
@@ -68,7 +70,7 @@ export function wantFont(css) {
     const e = fam.get(key(part));
     if (!e || !e.faces.some(f => f.ff.status === 'unloaded')) continue;
     let p;
-    try { p = document.fonts.load(css.replace(m[1], `"${e.family}"`)); } catch { continue; }
+    try { p = FS().load(css.replace(m[1], `"${e.family}"`)); } catch { continue; }
     pend.add(p);
     p.then(list => { if (list?.length) redraw(); }).catch(() => {}).finally(() => pend.delete(p));
   }

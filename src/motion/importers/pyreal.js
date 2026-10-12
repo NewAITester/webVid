@@ -20,7 +20,7 @@ const loaded = new Set(), pkgJobs = new Map(), insts = new Map();
 
 export function pyodideBase() {
   if (globalThis.WV_PYODIDE_URL) return globalThis.WV_PYODIDE_URL;
-  try { return new URL('pyodide/', document.baseURI).href; } catch { return './pyodide/'; }
+  try { return new URL('pyodide/', globalThis.document?.baseURI || self.location.href).href; } catch { return './pyodide/'; }
 }
 const fire = () => { try { window.dispatchEvent(new Event('wv-dom-frame')); } catch { /* */ } };
 export const realState = () => (PY ? 'ready' : failed ? 'failed' : loading ? 'loading' : 'idle');
@@ -721,7 +721,7 @@ def wv_frame(g, name, W, H, bgr, *args):
 /** بار کردن Pyodide (یک بار) */
 export function loadReal() {
   if (loading) return loading;
-  if (typeof document === 'undefined' || globalThis.WV_NO_REAL_PY) { failed = 'unavailable'; return (loading = Promise.resolve(null)); }
+  if ((typeof document === 'undefined' && typeof WorkerGlobalScope === 'undefined') || typeof WebAssembly === 'undefined' || globalThis.WV_NO_REAL_PY) { failed = 'unavailable'; return (loading = Promise.resolve(null)); }
   loading = (async () => {
     const base = pyodideBase();
     try { const r = await fetch(base + 'bundled.json'); if (r.ok) { const j = await r.json(); if (j?.imports) BUNDLED = j; } } catch { /* فهرست پیش‌فرض */ }

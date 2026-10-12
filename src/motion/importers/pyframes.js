@@ -9,6 +9,7 @@
 import { Interp, PyModule, PyFunc, PyError, Unk, nat, tup, isTuple } from './pyinterp.js';
 import { numpyModule, Bytes, ND } from './pynumpy.js';
 import { realInst, realFrame, realAudio, realState } from './pyreal.js';
+import { hostAvailable, hostFrame, hostAudio, hostWidth } from './pyhost.js';
 
 class FrameDone { }
 const num = v => (typeof v === 'number' ? v : typeof v === 'boolean' ? +v : v instanceof ND ? v.data[0] : v == null ? 0 : +v);
@@ -369,7 +370,13 @@ export async function pyAudio(program, T, run = {}) {
   if (!fn) return null;
   // اول پایتون واقعی (Pyodide)؛ اگر نبود یا خطا داد ← مفسر داخلی
   if (run.real !== false) {
-    try { const w = await realAudio(inst.src, fn, inst.fn ? (inst.fn.anim ? '__wv_anim__' : inst.fn.name) : null); if (w && w.length > 44) return w; } catch (e) { console.warn('پایتون واقعی (صدا):', e); }
+    const ff = inst.fn ? (inst.fn.anim ? '__wv_anim__' : inst.fn.name) : null;
+    try {
+      // در کارگر (پس‌زمینه)؛ اگر کارگر نبود مستقیم
+      let w = hostAvailable() ? await hostAudio(inst.src, fn, ff) : undefined;
+      if (w === undefined) w = await realAudio(inst.src, fn, ff);
+      if (w && w.length > 44) return w;
+    } catch (e) { console.warn('پایتون واقعی (صدا):', e); }
   }
   if (!(inst.I.globals.vars[fn] instanceof PyFunc)) return null;
   const { I, R } = inst, f = I.globals.vars[fn];
@@ -624,6 +631,15 @@ export function runPyFrame(ctx, e, program, T, run) {
     ctx.translate(-w / 2, -h / 2);
     const s = Math.max(w / inst.W0, h / inst.H0);
     ctx.translate((w - inst.W0 * s) / 2, (h - inst.H0 * s) / 2); ctx.scale(s, s);
+    // پایتون واقعی در کارگر پس‌زمینه (رابط قفل نمی‌شود؛ فریم‌ها نگه داشته و از قبل ساخته می‌شوند)
+    if (run.real !== false && hostAvailable()) {
+      const m = ctx.getTransform(), sx = Math.hypot(m.a, m.b) || 1;
+      const r = hostFrame(inst, t, hostWidth(inst.W0 * sx, inst.W0));
+      if (r.bmp) { ctx.imageSmoothingQuality = 'high'; ctx.drawImage(r.bmp, 0, 0, inst.W0, inst.H0); return; }
+      if (r.wait) { if (inst.realOnly) waitFrame(ctx, inst); else pyFrame(inst, ctx, t); return; }
+      if (r.error) { pyFrame(inst, ctx, t); return; }
+      // r.fail ← اجرای مستقیم (پایین)
+    }
     const RI = run.real === false ? null : realInst(inst.src, inst.fn.anim ? '__wv_anim__' : inst.fn.name);
     if (RI && !RI.error) {
       try { realFrame(RI, inst.fn, ctx, t, inst); return; } catch (e) { RI.error = e; console.warn('پایتون واقعی (فریم) — برگشت به مفسر داخلی:', e); }
