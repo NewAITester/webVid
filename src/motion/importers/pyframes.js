@@ -8,6 +8,7 @@
  */
 import { Interp, PyModule, PyFunc, PyError, Unk, nat, tup, isTuple } from './pyinterp.js';
 import { numpyModule, Bytes, ND } from './pynumpy.js';
+import { realInst, realFrame, realAudio } from './pyreal.js';
 
 class FrameDone { }
 const num = v => (typeof v === 'number' ? v : typeof v === 'boolean' ? +v : v instanceof ND ? v.data[0] : v == null ? 0 : +v);
@@ -341,12 +342,46 @@ export function pyAudioFn(inst) {
 export async function pyAudio(program, T, run = {}) {
   const inst = getPyInst(program, T, run), fn = pyAudioFn(inst);
   if (!fn) return null;
+  // اول پایتون واقعی (Pyodide)؛ اگر نبود یا خطا داد ← مفسر داخلی
+  if (run.real !== false) {
+    try { const w = await realAudio(inst.src, fn); if (w && w.length > 44) return w; } catch (e) { console.warn('پایتون واقعی (صدا):', e); }
+  }
   const { I, R } = inst, f = I.globals.vars[fn];
   R.wav = null; I.steps = 0; I.maxSteps = 2e7;
   const req = (f.params || []).filter(p => p.def == null && !p.star).length;
   I.call(f, req ? ['audio.wav'] : [], {});
   if (!R.wav || !R.wav.parts.length) return null;
   return wavBytes(R.wav);
+}
+
+/* ── پل cairo برای پایتون واقعی (Pyodide) ──
+   همان پیاده‌سازی cairo روی بوم، ولی صدا زده از کد پایتون واقعی: مقدارها عدد/متن/آرایه‌اند
+   و شیءها (سطح، Context، الگو، ماتریس) همان شیءهای جاوااسکریپتی‌اند. */
+export function cairoBridge() {
+  const R = { frame: false, bound: false, target: null, base: null, W0: 1920, H0: 1080, ctxs: [], done: false };
+  const mod = cairoModule(R).d;
+  const out = v => (v instanceof Unk || v === undefined ? null : v instanceof Bytes ? v.u8 : Array.isArray(v) ? v.map(out) : v);
+  const guard = f => { try { return out(f()); } catch (e) { if (e instanceof FrameDone) { R.done = true; throw new Error('__wv_frame_done__'); } throw e; } };
+  const consts = {}, enums = {};
+  for (const [k, v] of Object.entries(mod)) { if (typeof v === 'number') consts[k] = v; else if (v instanceof PyModule) enums[k] = { ...v.d }; }
+  return {
+    R,
+    consts: () => JSON.stringify(consts), enums: () => JSON.stringify(enums),
+    make: (name, args, kw) => guard(() => mod[name](args || [], kw || {})),
+    stat: (cls, name, args, kw) => guard(() => { const f = mod[cls]?.__pyget?.(name); return typeof f === 'function' ? f(args || [], kw || {}) : null; }),
+    has: (h, name) => { const v = h?.__pyget?.(name); return v === undefined ? 0 : typeof v === 'function' ? 1 : 2; },
+    get: (h, name) => guard(() => h.__pyget(name)),
+    call: (h, name, args, kw) => guard(() => { const f = h.__pyget(name); if (typeof f !== 'function') throw new Error(`cairo: ${name} پشتیبانی نمی‌شود`); return f(args || [], kw || {}); }),
+    kind: v => (v instanceof Surface ? 'surface' : v instanceof Ctx ? 'ctx' : v instanceof Pattern ? 'pattern' : v instanceof Uint8Array ? 'bytes' : Array.isArray(v) ? 'arr' : v && v.__pyget && 'm' in v ? 'matrix' : v && v.__pyget ? 'obj' : 'other'),
+    /** یک فریم: سطح/Context قاب اصلی روی ctx لایه */
+    begin(ctx, W0, H0) { R.frame = true; R.bound = false; R.target = ctx; R.base = ctx.getTransform(); R.ctxs = []; R.done = false; R.W0 = W0; R.H0 = H0; },
+    surface: () => new Surface(R, 0, R.W0, R.H0),
+    context: s => new Ctx(s),
+    end(ctx) {
+      for (const C of R.ctxs.reverse()) { for (let i = 0; i <= C.saves; i++) ctx.restore(); C.saves = 0; C.g = DEAD(); }
+      R.frame = false; R.target = null; R.ctxs = [];
+    },
+  };
 }
 
 let _dead = null;
@@ -493,6 +528,10 @@ export function runPyFrame(ctx, e, program, T, run) {
     ctx.translate(-w / 2, -h / 2);
     const s = Math.max(w / inst.W0, h / inst.H0);
     ctx.translate((w - inst.W0 * s) / 2, (h - inst.H0 * s) / 2); ctx.scale(s, s);
+    const RI = run.real === false ? null : realInst(inst.src);
+    if (RI && !RI.error) {
+      try { realFrame(RI, inst.fn, ctx, t, inst); return; } catch (e) { RI.error = e; console.warn('پایتون واقعی (فریم) — برگشت به مفسر داخلی:', e); }
+    }
     pyFrame(inst, ctx, t);
   } finally { ctx.restore(); }
 }

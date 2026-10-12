@@ -69,6 +69,10 @@ jobs:
           test -f android/app/src/main/assets/public/data/Neghab.mp3
           test -f android/app/src/main/assets/public/fonts/IRANSansX-Black.ttf
           test -f android/app/src/main/assets/public/data/lyrics.lrc
+          # پایتون واقعی (Pyodide + numpy) داخل اپ
+          test -f android/app/src/main/assets/public/pyodide/pyodide.asm.wasm
+          test -f android/app/src/main/assets/public/pyodide/python_stdlib.zip
+          ls android/app/src/main/assets/public/pyodide/numpy-*.whl
 
       - name: ساخت APK
         working-directory: android

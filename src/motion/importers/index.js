@@ -301,7 +301,7 @@ function convertPyFrames(text, name, values) {
   if (bad.length) warnings.push(`خطای اجرای فریم در ${bad.map(s => s.name).join('، ')}: ${errMsg(bad[0].err)}`);
   const post = libs.filter(l => /^(cv2|PIL|scipy|skimage)$/.test(l));
   if (post.length) warnings.push(`پس‌پردازش پیکسلی (${post.join('، ')} — مثل bloom، grain، لرزش رنگ) اجرا نمی‌شود؛ طراحی خود cairo کامل اجرا می‌شود. برای حال‌وهوای مشابه می‌توانید «افکت پایانی» برنامه را روشن کنید.`);
-  if (/\brandom\b|default_rng/.test(text)) warnings.push('عددهای تصادفی numpy اینجا با الگوریتم دیگری ساخته می‌شوند؛ چیدمان ذره‌ها کمی با خروجی اصلی فرق دارد.');
+  warnings.push('کد با پایتون واقعی (CPython + numpy داخل برنامه) اجرا می‌شود؛ صدا دقیقاً همان خروجی اجرای اصلی است. تا پایتون واقعی بار شود (چند ثانیه) پیش‌نمایش با مفسر داخلی کشیده می‌شود' + (/\brandom\b|default_rng/.test(text) ? ' و چیدمان ذره‌های تصادفی بعد از بار شدن کمی عوض می‌شود.' : '.'));
   const audioFn = pyAudioFn(inst);
   const L = [
     `// 🧩 وارد‌شده از «${name}» — پایتون فریم‌به‌فریم (pycairo)`,

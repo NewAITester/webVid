@@ -162,6 +162,9 @@ async function pump(P) {
 }
 
 let misses = [];
+const pending = new Set();
+/** کار ناهمگامی که فریم فعلی منتظرش است (مثلاً بار شدن پایتون واقعی) */
+export function addPending(p) { if (p && typeof p.then === 'function') { pending.add(p); p.finally(() => pending.delete(p)); } }
 /** اندازهٔ عکس: کوچک‌ترین پله‌ای که از اندازهٔ واقعی روی بوم کمتر نیست */
 function bucket(need, W0) {
   const steps = [320, 640, 960, 1280, 1920, 2560, 3840];
@@ -202,6 +205,7 @@ export function runDomFrame(ctx, e, html, T, run) {
 
 /** خروجی: آیا در آخرین کشیدن فریمی آماده نبود؟ صبر تا برسد ← true (یعنی دوباره بکش) */
 export async function domSettle() {
+  if (pending.size) { await Promise.all([...pending]); pending.clear(); return true; }
   if (!misses.length) return false;
   const list = [...new Set(misses)]; misses = [];
   await Promise.all(list.map(P => new Promise(res => { if (!P.busy && !P.want.size) res(); else P.waiters.push(res); if (!P.busy) pump(P); })));

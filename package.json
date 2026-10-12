@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/copy-ffmpeg.mjs",
+    "prebuild": "node scripts/copy-ffmpeg.mjs && node scripts/copy-pyodide.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test": "node tests/engine.test.mjs && node tests/song.test.mjs && node tests/motion.test.mjs"
@@ -23,6 +23,7 @@
     "@ffmpeg/core": "^0.12.10",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
-    "mp4-muxer": "^5.2.2"
+    "mp4-muxer": "^5.2.2",
+    "pyodide": "314.0.7"
   }
 }
