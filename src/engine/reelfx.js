@@ -397,8 +397,8 @@ export function flowText(ctx, env, o = {}) {
   // ضرب: از آهنگ پروژه یا از BPM خود المان
   const beats = env.beats || [], useSong = o.beat !== 'bpm' && beats.length > 0, bp = 60 / Math.max(20, o.bpm ?? 120);
   const gt = env.t - lt0;     // زمان کل = gt + lt
-  // پوش ضرب: حملهٔ نرم (۰٫۰۹ ثانیه) و افت آرام — بدون پرش ناگهانی
-  const env1 = sb => (sb < 0 || sb > 0.9 ? 0 : sb < 0.09 ? E.io3(sb / 0.09) : Math.exp(-(sb - 0.09) * 5));
+  // پوش ضرب: حملهٔ تند (۰٫۰۴ ثانیه، درست روی ضرب) و برگشت نرم
+  const env1 = sb => (sb < 0 || sb > 1.2 ? 0 : sb < 0.04 ? E.out3(sb / 0.04) : Math.exp(-(sb - 0.04) * 4.5));
   const kickAt = lt => {
     if (useSong) { const T = gt + lt; let lo = 0, hi = beats.length - 1, r = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (beats[m] <= T) { r = m; lo = m + 1; } else hi = m - 1; } return env1(r < 0 ? 99 : T - beats[r]); }
     return env1((((lt / bp) % 1 + 1) % 1) * bp);
@@ -414,9 +414,9 @@ export function flowText(ctx, env, o = {}) {
     let tx = px * size, ty = py * size;
     if (mode === 'title' && m > 0) {
       // با هر ضرب: نوشته جلو می‌آید (بزرگ‌تر) و ذره‌ها کمی باز می‌شوند، بعد برمی‌گردند
-      const k = kickAt(lt) * amp * m, sc = 1 + 0.08 * k, spread = 1 + k * (0.03 + 0.1 * hash(i * 8.1));
+      const k = kickAt(lt) * amp * m, sc = 1 + 0.22 * k, spread = 1 + k * (0.04 + 0.16 * hash(i * 8.1));
       tx = tx * sc * spread; ty = ty * sc * spread;
-      tx += Math.sin(a * 3 + i) * 6 * k * s; ty += Math.cos(a * 2 + i) * 5 * k * s;
+      tx += Math.sin(a * 3 + i) * 10 * k * s; ty += Math.cos(a * 2 + i) * 8 * k * s;
     }
     const jx = Math.sin(lt * 4 + a * 5) * 1.6 * s, jy = Math.cos(lt * 3.3 + a * 7) * 1.6 * s;
     x += (tx + jx - x) * m; y += (ty + jy - y) * m;
