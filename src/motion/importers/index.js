@@ -6,7 +6,7 @@ import { Interp } from './pyinterp.js';
 import { moviepyModules, moviepyModel } from './moviepy.js';
 import { manimModules, runManimScenes, manimModel } from './manim.js';
 import { fallbackModel, literals } from './fallback.js';
-import { looksPyCairo, getPyInst, pyThumb, pyAudioFn } from './pyframes.js';
+import { looksPyCairo, looksPyFrames, getPyInst, pyThumb, pyAudioFn } from './pyframes.js';
 import { runScript, scriptToLayers } from '../scenescript.js';
 import { ELEMENT_KINDS } from '../elements.js';
 import { usePacks } from '../packs.js';
@@ -286,7 +286,7 @@ function convertPyFrames(text, name, values) {
   const T = Object.fromEntries(tweaks.map(t => [t.id, t.value]));
   const run = { lang: 'py', tweaks: tweaks.map(t => ({ id: t.id, s: t.s, e: t.e, raw: text.slice(t.s, t.e), type: t.type === 'num' ? 'num' : 'str', quote: t.quote, def: t.def })) };
   const inst = getPyInst(text, T, run);
-  const warnings = [...(inst.warnings || [])];
+  const warnings = inst.realOnly ? [] : [...(inst.warnings || [])];
   const libs = [...new Set([...text.matchAll(/^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w., ]+))/gm)].flatMap(m => (m[1] || m[2]).split(',').map(x => x.trim().split(/\s+as\s+/)[0].split('.')[0])))].filter(Boolean);
   const errMsg = e => (e ? `${e.line ? `خط ${e.line}: ` : ''}${e.message || e}` : null);
   if (!inst.fn) return { kind: 'python', script: null, error: errMsg(inst.error) || 'تابع فریم پیدا نشد.', warnings, tweaks, scenes: [], found: [], unknown: [], media: [], audio: [], source: text };
@@ -294,17 +294,19 @@ function convertPyFrames(text, name, values) {
   Object.assign(run, { fps: inst.fps, W0: inst.W0, H0: inst.H0, fn: inst.fn.name });
   const scenes = inst.scenes.map(s => {
     let thumb = null, err = null;
-    try { thumb = pyThumb(inst, s.t0 + (s.t1 - s.t0) * 0.6); } catch (e) { err = e; }
+    if (!inst.realOnly) try { thumb = pyThumb(inst, s.t0 + (s.t1 - s.t0) * 0.6); } catch (e) { err = e; }
     return { name: s.name, t0: s.t0, t1: s.t1, thumb, err, chips: [s.fn ? `⚙ ${s.fn}()` : `⚙ ${inst.fn.name}()`] };
   });
   const bad = scenes.filter(s => s.err);
   if (bad.length) warnings.push(`خطای اجرای فریم در ${bad.map(s => s.name).join('، ')}: ${errMsg(bad[0].err)}`);
   const post = libs.filter(l => /^(cv2|PIL|scipy|skimage)$/.test(l));
-  if (post.length) warnings.push(`پس‌پردازش پیکسلی (${post.join('، ')} — مثل bloom، grain، لرزش رنگ) اجرا نمی‌شود؛ طراحی خود cairo کامل اجرا می‌شود. برای حال‌وهوای مشابه می‌توانید «افکت پایانی» برنامه را روشن کنید.`);
-  warnings.push('کد با پایتون واقعی (CPython + numpy داخل برنامه) اجرا می‌شود؛ صدا دقیقاً همان خروجی اجرای اصلی است. تا پایتون واقعی بار شود (چند ثانیه) پیش‌نمایش با مفسر داخلی کشیده می‌شود' + (/\brandom\b|default_rng/.test(text) ? ' و چیدمان ذره‌های تصادفی بعد از بار شدن کمی عوض می‌شود.' : '.'));
+  if (post.length && !inst.realOnly && !/\.get_data\s*\(/.test(text)) warnings.push(`پس‌پردازش پیکسلی (${post.join('، ')}) فقط روی تصویری اجرا می‌شود که خود کد برمی‌گرداند یا ذخیره می‌کند.`);
+  if (inst.realOnly) warnings.push(`کد با پایتون واقعی داخل برنامه (CPython + ${libs.filter(l => /^(numpy|PIL|cv2|imageio|matplotlib|pylab|pygame|skimage|scipy|moviepy|noise|opensimplex)$/.test(l)).join('، ') || 'numpy'}) اجرا می‌شود و تصویری که ${inst.fn.anim ? 'انیمیشن matplotlib' : `${inst.fn.name}()`} می‌سازد (برمی‌گرداند، ذخیره می‌کند یا به ffmpeg می‌دهد) همان فریم ویدیوست. بار شدن اول چند ثانیه طول می‌کشد.`);
+  else warnings.push('کد با پایتون واقعی (CPython + numpy داخل برنامه) اجرا می‌شود؛ صدا دقیقاً همان خروجی اجرای اصلی است. تا پایتون واقعی بار شود (چند ثانیه) پیش‌نمایش با مفسر داخلی کشیده می‌شود' + (/\brandom\b|default_rng/.test(text) ? ' و چیدمان ذره‌های تصادفی بعد از بار شدن کمی عوض می‌شود.' : '.'));
+  if (/^\s*(import|from)\s+(moviepy|manim)\b/m.test(text) && inst.realOnly) warnings.push('از moviepy فقط تابع فریم (VideoClip) اجرا می‌شود؛ ترکیب کلیپ‌ها و نوشتن فایل ویدیو را خود برنامه انجام می‌دهد.');
   const audioFn = pyAudioFn(inst);
   const L = [
-    `// 🧩 وارد‌شده از «${name}» — پایتون فریم‌به‌فریم (pycairo)`,
+    `// 🧩 وارد‌شده از «${name}» — پایتون فریم‌به‌فریم (${inst.realOnly ? (inst.fn.anim ? 'matplotlib' : libs.filter(l => /^(PIL|cv2|imageio|matplotlib|pygame|numpy|moviepy|skimage)$/.test(l)).join(' + ') || 'پایتون') : 'pycairo'})`,
     `// ${fa(scenes.length)} صحنه · ${fa(r3(inst.dur))} ثانیه · ${fa(inst.fps)} فریم بر ثانیه · قاب اصلی ${inst.W0}×${inst.H0}`,
     `// خود کد پایتون (پایین فایل) هر فریم با ${inst.fn.name}() داخل لایه‌های «کد» اجرا و مستقیم روی بوم کشیده می‌شود.`,
     '// مقدارهای قابل‌تغییر در G است؛ صحنه‌ها را جابه‌جا، کوتاه/بلند یا حذف کنید و «▶ اجرا» بزنید.',
@@ -350,7 +352,7 @@ function convertPyFrames(text, name, values) {
   L.push('// ───── کد پایتون اصلی ─────', `function PROGRAM() { return ${JSON.stringify(text)} }`);
   const found = [
     { ic: '🎞', label: 'صحنه', n: scenes.length },
-    { ic: '⚙', label: `تابع فریم ${inst.fn.name}()`, n: 1 },
+    { ic: '⚙', label: inst.fn.anim ? 'انیمیشن matplotlib' : `تابع فریم ${inst.fn.name}()`, n: 1 },
     { ic: '🎨', label: 'رنگ', n: tweaks.filter(t => t.type === 'color').length },
     { ic: '🔤', label: 'متن', n: tweaks.filter(t => t.type === 'text').length },
     { ic: '🔢', label: 'عدد', n: tweaks.filter(t => t.type === 'num').length },
@@ -358,7 +360,7 @@ function convertPyFrames(text, name, values) {
   ].filter(f => f.n);
   return {
     kind: 'python', script: L.join('\n'), error: null, warnings, tweaks, scenes: scenes.map(({ err, ...s }) => s), found,
-    unknown: libs.filter(l => /^(cv2|PIL|scipy|skimage|imageio)$/.test(l)), media: [], audio: [], duration: inst.dur, hasAudio: !!audioFn,
+    unknown: [], media: [], audio: [], duration: inst.dur, hasAudio: !!audioFn,
     canvas: { program: text, T, run }, pyframes: true,
     source: text,
   };
@@ -529,7 +531,7 @@ function motionResult(text, P) {
 
 export function importCode(text, { name = 'code', values = null } = {}) {
   let kind = detectFormat(text, name);
-  let EMB = null;
+  let EMB = null, R0 = null;
   // بستهٔ المان: اول ثبت شود
   const PK = /\belementPack\s*\(/.test(String(text || '')) ? usePacks(text) : null;
   if (PK && !/^\s*(scene|overlay|transition|text|bg)\s*\(/m.test(PK.rest)) {
@@ -544,9 +546,11 @@ export function importCode(text, { name = 'code', values = null } = {}) {
   }
   let r;
   if (kind === 'motion') r = motionResult(text, P);
-  else if (kind === 'moviepy' || kind === 'manim') r = convertPython(kind, text, name, values);
+  else if (kind === 'manim' || (kind === 'moviepy' && !looksPyFrames(text))) r = convertPython(kind, text, name, values);
   else if (kind === 'python' && looksPyCairo(text)) r = convertPyFrames(text, name, values);
   else if (kind === 'python' && (EMB = pyEmbeddedHtml(text))) r = looksDomPage(EMB.html) ? { ...convertDom(EMB.html, name, { py: { ...EMB, src: text } }), source: text } : { ...convertCanvas('html', EMB.html, name, values), kind: 'python' };
+  else if ((kind === 'python' || kind === 'moviepy') && looksPyFrames(text) && (R0 = convertPyFrames(text, name, values)).script) r = R0;
+  else if (kind === 'moviepy' || kind === 'manim') r = convertPython(kind, text, name, values);
   else if (kind === 'python') r = pythonOther(text, name);
   else if (kind === 'html' && looksDomPage(text)) r = convertDom(text, name, {});
   else if (kind === 'html' || kind === 'canvas') r = convertCanvas(kind, text, name, values);

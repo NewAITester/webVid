@@ -13,6 +13,8 @@
  * صدا: تابع صوتی خود صفحه (مثل window.renderAudio که WAV می‌دهد) اجرا می‌شود.
  */
 
+import { initWebfonts, webfontsReady, webfontsPending, familiesIn, fontFaceCss, bundledFamily } from '../webfonts.js';
+
 const SEEK_NAMES = ['seek', 'setTime', 'seekTo', 'renderAt', 'gotoTime', '__seek'];
 const AUDIO_NAMES = ['renderAudio', 'renderSoundtrack', 'makeAudio', 'buildAudio', 'renderMusic', 'synthAudio', 'synthTrack', 'getAudio', 'audioWav'];
 
@@ -73,6 +75,15 @@ async function inlineFonts(doc) {
   return out.join('\n');
 }
 
+/** لینک Google Fonts که همهٔ خانواده‌هایش داخل برنامه‌اند ← حذف (همان فونت‌ها محلی بار می‌شوند) */
+function dropBundledFontLinks(html) {
+  if (!webfontsReady()) return html;
+  return html.replace(/<link\b[^>]*href=["']([^"']*fonts\.googleapis\.com[^"']*)["'][^>]*>/gi, (m, href) => {
+    const fams = [...href.replace(/&amp;/g, '&').matchAll(/family=([^&:]+)/g)].map(x => decodeURIComponent(x[1].replace(/\+/g, ' ')));
+    return fams.length && fams.every(f => bundledFamily(f)) ? '' : m;
+  });
+}
+
 function getPage(html, run = {}) {
   const key = hashStr(html);
   let P = pages.get(key);
@@ -84,6 +95,7 @@ function getPage(html, run = {}) {
   const f = document.createElement('iframe');
   f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
   f.style.cssText = `position:fixed;left:-${W0 + 4000}px;top:0;width:${W0}px;height:${H0}px;border:0;opacity:0;pointer-events:none;`;
+  html = dropBundledFontLinks(html);
   f.srcdoc = seekName ? html : withHead(html, CLOCK);
   P.frame = f;
   P.loaded = new Promise(res => { f.onload = res; });
@@ -92,9 +104,22 @@ function getPage(html, run = {}) {
     await P.loaded;
     const w = f.contentWindow, d = f.contentDocument;
     P.win = w; P.doc = d;
+    // فونت‌های همراه برنامه (بدون اینترنت هم همان فونت‌های صفحه)
+    let fks = [];
+    try {
+      await Promise.race([initWebfonts(), new Promise(r => setTimeout(r, 3000))]);
+      fks = familiesIn(html);
+      if (fks.length) {
+        const st = d.createElement('style'); st.id = 'wv-local-fonts'; st.textContent = await fontFaceCss(fks);
+        (d.head || d.documentElement).prepend(st);
+        const fams = new Set(fks.map(k => bundledFamily(k)));
+        await Promise.race([Promise.all([...d.fonts].filter(x => fams.has(x.family.replace(/["']/g, ''))).map(x => x.load().catch(() => {}))), new Promise(r => setTimeout(r, 5000))]);
+      }
+    } catch { /* */ }
     try { await Promise.race([d.fonts?.ready, new Promise(r => setTimeout(r, 4000))]); } catch { /* */ }
     try { if (typeof w.init === 'function') await w.init(); } catch (e) { P.error = e; }
     try { P.fontCss = await Promise.race([inlineFonts(d), new Promise(r => setTimeout(() => r(''), 6000))]); } catch { /* */ }
+    try { if (fks.length) P.fontCss = (await fontFaceCss(fks, { inline: true })) + '\n' + P.fontCss; } catch { /* */ }
     P.seek = typeof w[seekName] === 'function' ? t => w[seekName](t) : typeof w.__wvSeek === 'function' ? t => w.__wvSeek(t) : () => {};
     P.ready = true;
   })().catch(e => { P.error = e; P.ready = true; });
@@ -114,7 +139,7 @@ async function snapshot(P, px) {
   // بوم‌های داخل صفحه ← تصویر
   const live = [...d.querySelectorAll('canvas')], cl = [...clone.querySelectorAll('canvas')];
   cl.forEach((c, i) => { try { const im = d.createElement('img'); im.src = live[i].toDataURL(); im.setAttribute('style', c.getAttribute('style') || ''); im.className = c.className; im.width = live[i].width; im.height = live[i].height; c.replaceWith(im); } catch { /* */ } });
-  clone.querySelectorAll('script,link,noscript,iframe').forEach(e => e.remove());
+  clone.querySelectorAll('script,link,noscript,iframe,#wv-local-fonts').forEach(e => e.remove());
   if (P.fontCss) { const st = d.createElement('style'); st.textContent = P.fontCss; (clone.querySelector('head') || clone).prepend(st); }
   const xml = new XMLSerializer().serializeToString(clone);
   const ph = Math.round(px * H0 / W0);
@@ -205,6 +230,7 @@ export function runDomFrame(ctx, e, html, T, run) {
 
 /** خروجی: آیا در آخرین کشیدن فریمی آماده نبود؟ صبر تا برسد ← true (یعنی دوباره بکش) */
 export async function domSettle() {
+  const fp = webfontsPending(); if (fp) { await fp; return true; }
   if (pending.size) { await Promise.all([...pending]); pending.clear(); return true; }
   if (!misses.length) return false;
   const list = [...new Set(misses)]; misses = [];

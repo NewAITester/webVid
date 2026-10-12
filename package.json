@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/copy-ffmpeg.mjs && node scripts/copy-pyodide.mjs",
+    "prebuild": "node scripts/copy-ffmpeg.mjs && node scripts/copy-pyodide.mjs && node scripts/copy-fonts.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test": "node tests/engine.test.mjs && node tests/song.test.mjs && node tests/motion.test.mjs"

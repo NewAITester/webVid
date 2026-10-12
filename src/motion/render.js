@@ -36,6 +36,7 @@ const alphaOf = hex => (typeof hex === 'string' && hex.length === 9 ? parseColor
 
 /* ── متن ─────────────────────────────────────────────────────── */
 const _measure = new Map();
+if (typeof window !== 'undefined') window.addEventListener('wv-fonts-loaded', () => _measure.clear());
 function textMetrics(ctx, L, P) {
   const str = String(L.data.str ?? '');
   const fam = fontFamily(L.data.font);

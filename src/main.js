@@ -28,6 +28,8 @@ import { MG_PRESETS, VIDEO_PRESETS, MG_LABELS, MIX, MIX_OPTS, MIX_DEFAULT, setMi
 import { DRAW } from './engine/draw.js';
 import { IDLE_FX, IDLE_IDS, drawIdle, idleWindow, IDLE_DEFAULT_OPT } from './engine/idlefx.js';
 import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from './motion/fonts.js';
+import { initWebfonts } from './motion/webfonts.js';
+import { FONT_CHOICES } from './motion/render.js';
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
 import { openCodeProjectSheet } from './ui/codeproject.js';
 import { attachCodeSearch } from './ui/codesearch.js';
@@ -2418,6 +2420,12 @@ window.addEventListener('keydown', e => {
 /* ── راه‌اندازی ──────────────────────────────────────────── */
 async function boot() {
   await loadFonts();
+  // فونت‌های همراه برنامه ← فهرست فونت لایه‌های متن
+  initWebfonts().then(m => {
+    if (!m) return;
+    const skip = new Set(['Arimo', 'Tinos', 'Cousine']);
+    for (const f of [...new Set(m.faces.map(x => x.family))]) if (!skip.has(f) && !FONT_CHOICES.some(c => c[0] === 'w:' + f)) FONT_CHOICES.push(['w:' + f, f, f]);
+  });
   await loadUserFonts();
   applyLook();
   buildAspectPicker();

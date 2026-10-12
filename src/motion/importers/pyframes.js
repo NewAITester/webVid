@@ -8,7 +8,7 @@
  */
 import { Interp, PyModule, PyFunc, PyError, Unk, nat, tup, isTuple } from './pyinterp.js';
 import { numpyModule, Bytes, ND } from './pynumpy.js';
-import { realInst, realFrame, realAudio } from './pyreal.js';
+import { realInst, realFrame, realAudio, realState } from './pyreal.js';
 
 class FrameDone { }
 const num = v => (typeof v === 'number' ? v : typeof v === 'boolean' ? +v : v instanceof ND ? v.data[0] : v == null ? 0 : +v);
@@ -104,8 +104,8 @@ class Surface {
       get_width: () => S.w, get_height: () => S.h, get_format: () => S.fmt, get_stride: stride,
       flush: () => null, mark_dirty: () => null, finish: () => null, set_device_scale: () => null, set_device_offset: () => null,
       get_data: () => {
-        if (S.target) throw new FrameDone();
-        const id = S.g.getImageData(0, 0, S.w, S.h).data, st = stride();
+        if (S.target && !S.R.pix) throw new FrameDone();
+        const id = readPixels(S), st = stride();
         if (S.fmt === 2) { const out = new Uint8Array(st * S.h); for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) out[y * st + x] = id[(y * S.w + x) * 4 + 3]; return new Bytes(out); }
         const out = new Uint8Array(S.w * S.h * 4);
         for (let i = 0; i < out.length; i += 4) { out[i] = id[i + 2]; out[i + 1] = id[i + 1]; out[i + 2] = id[i]; out[i + 3] = S.fmt === 1 ? 255 : id[i + 3]; }
@@ -116,6 +116,24 @@ class Surface {
     if (!M) return undefined;
     f = nat(M, name); this._m.set(name, f); return f;
   }
+}
+
+/** پیکسل‌های سطح (قاب اصلی در حالت پایتون واقعی: بوم جدای W0×H0) */
+function readPixels(S) {
+  const c = S.g.canvas;
+  if (!S.target || (c.width === S.w && c.height === S.h)) return S.g.getImageData(0, 0, S.w, S.h).data;
+  const t = offscreen(S.w, S.h), g = t.getContext('2d', { willReadFrequently: true });
+  g.drawImage(c, 0, 0, S.w, S.h);
+  return g.getImageData(0, 0, S.w, S.h).data;
+}
+/** بایت‌های BGRA (مثل cairo) ← سطح */
+function writePixels(S, u8) {
+  const n = S.w * S.h, id = new ImageData(S.w, S.h), d = id.data;
+  if (S.fmt === 2) { const st = (S.w + 3) & ~3; for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) { const o = (y * S.w + x) * 4; d[o + 3] = u8[y * st + x] || 0; } }
+  else for (let i = 0; i < n * 4 && i + 3 < u8.length; i += 4) { d[i] = u8[i + 2]; d[i + 1] = u8[i + 1]; d[i + 2] = u8[i]; d[i + 3] = S.fmt === 1 ? 255 : u8[i + 3]; }
+  if (!S.target) { S.g.putImageData(id, 0, 0); return; }
+  const t = offscreen(S.w, S.h); t.getContext('2d').putImageData(id, 0, 0);
+  const g = S.g; g.save(); g.setTransform(S.base); g.clearRect(0, 0, S.w, S.h); g.drawImage(t, 0, 0); g.restore();
 }
 
 /* ── Context ── */
@@ -336,7 +354,14 @@ export function pyAudioFn(inst) {
   const V = inst.I.globals.vars;
   for (const n of AUDIO_FN) if (V[n] instanceof PyFunc) return n;
   const m = /^def\s+([A-Za-z_]\w*)\s*\([^)]*\)[^\n]*:[\s\S]*?(?:wave\.open|wavfile\.write)/m.exec(inst.src);
-  return m && V[m[1]] instanceof PyFunc ? m[1] : null;
+  if (m && V[m[1]] instanceof PyFunc) return m[1];
+  // تابع صدا که مفسر داخلی به آن نرسید (فقط پایتون واقعی)
+  if (inst.realOnly) {
+    for (const n of AUDIO_FN) if (new RegExp(`^def\\s+${n}\\s*\\(`, 'm').test(inst.src)) return n;
+    const m2 = /^def\s+([A-Za-z_]\w*)\s*\([^)]*\)[^\n]*:[\s\S]*?(?=^\S)/gm;
+    for (const d of (inst.src + '\n#').matchAll(m2)) if (/(wave\.open|wavfile\.write|soundfile|sf\.write|\.export\([^)]*wav)/.test(d[0])) return d[1];
+  }
+  return null;
 }
 /** صدای ساخته‌شده با خود کد (make_audio → wave) ← بایت‌های WAV */
 export async function pyAudio(program, T, run = {}) {
@@ -344,8 +369,9 @@ export async function pyAudio(program, T, run = {}) {
   if (!fn) return null;
   // اول پایتون واقعی (Pyodide)؛ اگر نبود یا خطا داد ← مفسر داخلی
   if (run.real !== false) {
-    try { const w = await realAudio(inst.src, fn); if (w && w.length > 44) return w; } catch (e) { console.warn('پایتون واقعی (صدا):', e); }
+    try { const w = await realAudio(inst.src, fn, inst.fn ? (inst.fn.anim ? '__wv_anim__' : inst.fn.name) : null); if (w && w.length > 44) return w; } catch (e) { console.warn('پایتون واقعی (صدا):', e); }
   }
+  if (!(inst.I.globals.vars[fn] instanceof PyFunc)) return null;
   const { I, R } = inst, f = I.globals.vars[fn];
   R.wav = null; I.steps = 0; I.maxSteps = 2e7;
   const req = (f.params || []).filter(p => p.def == null && !p.star).length;
@@ -358,7 +384,7 @@ export async function pyAudio(program, T, run = {}) {
    همان پیاده‌سازی cairo روی بوم، ولی صدا زده از کد پایتون واقعی: مقدارها عدد/متن/آرایه‌اند
    و شیءها (سطح، Context، الگو، ماتریس) همان شیءهای جاوااسکریپتی‌اند. */
 export function cairoBridge() {
-  const R = { frame: false, bound: false, target: null, base: null, W0: 1920, H0: 1080, ctxs: [], done: false };
+  const R = { frame: false, bound: false, target: null, base: null, W0: 1920, H0: 1080, ctxs: [], done: false, pix: false, out: null };
   const mod = cairoModule(R).d;
   const out = v => (v instanceof Unk || v === undefined ? null : v instanceof Bytes ? v.u8 : Array.isArray(v) ? v.map(out) : v);
   const guard = f => { try { return out(f()); } catch (e) { if (e instanceof FrameDone) { R.done = true; throw new Error('__wv_frame_done__'); } throw e; } };
@@ -377,6 +403,11 @@ export function cairoBridge() {
     begin(ctx, W0, H0) { R.frame = true; R.bound = false; R.target = ctx; R.base = ctx.getTransform(); R.ctxs = []; R.done = false; R.W0 = W0; R.H0 = H0; },
     surface: () => new Surface(R, 0, R.W0, R.H0),
     context: s => new Ctx(s),
+    /** بایت‌های BGRA ← سطح (create_for_data، یا get_data تغییر‌یافته) */
+    put: (h, u8) => { if (h instanceof Surface && u8) writePixels(h, u8); return null; },
+    /** تصویر نهایی فریم که پایتون ساخت (RGBA) */
+    out: (w, h, u8) => { R.out = { w, h, u8 }; return null; },
+    outSurface: h => { if (h instanceof Surface && !h.target) R.out = { surf: h }; return null; },
     end(ctx) {
       for (const C of R.ctxs.reverse()) { for (let i = 0; i <= C.saves; i++) ctx.restore(); C.saves = 0; C.g = DEAD(); }
       R.frame = false; R.target = null; R.ctxs = [];
@@ -390,14 +421,30 @@ const stub = name => { const m = new PyModule(name, {}); m.unknown = true; retur
 
 /* ── تحلیل و اجرا ── */
 const FRAME_FN = ['render', 'render_frame', 'make_frame', 'draw_frame', 'frame', 'draw', 'generate_frame', 'make', 'paint_frame'];
+/** پایتونی که فریم‌به‌فریم تصویر می‌سازد (PIL / numpy / OpenCV / imageio / matplotlib / pygame / moviepy VideoClip) */
+export function looksPyFrames(src) {
+  const s = String(src || '');
+  if (!/^\s*(import|from)\s+(PIL|cv2|imageio|matplotlib|pylab|pygame|numpy|skimage|moviepy)\b/m.test(s)) return false;
+  if (/\b(FuncAnimation|ArtistAnimation)\s*\(/.test(s) || /\bVideoClip\s*\(\s*(?:make_frame\s*=\s*|frame_function\s*=\s*)?[A-Za-z_]/.test(s)) return true;
+  if (/^\s*(import|from)\s+moviepy\b/m.test(s)) return false;
+  return new RegExp(`^def\\s+(${FRAME_FN.join('|')})\\s*\\(`, 'm').test(s) || findFrameFn({}, s, true) != null;
+}
 export function looksPyCairo(src) { return /^\s*(import\s+cairo\b|from\s+cairo\s+import|import\s+cairocffi)/m.test(String(src || '')); }
 
-function findFrameFn(V, src) {
+/** پارامترهای یک تابع از متن کد (وقتی مفسر داخلی به تعریف آن نرسید) */
+function srcParams(src, name) {
+  const m = new RegExp(`^def\\s+${name}\\s*\\(([^)]*)\\)`, 'm').exec(src);
+  if (!m) return null;
+  return m[1].split(',').map(x => x.trim()).filter(Boolean).map(x => ({ name: x.replace(/^\*+/, '').split(/[:=]/)[0].trim(), def: /=/.test(x) ? 1 : null, star: /^\*/.test(x) }));
+}
+function findFrameFn(V, src, real = false) {
   const isF = v => v instanceof PyFunc;
   const pick = name => {
-    const f = V[name]; if (!isF(f)) return null;
-    const ps = (f.params || []).filter(p => !p.star).map(p => p.name);
-    const req = (f.params || []).filter(p => p.def == null && !p.star).length;
+    const f = V[name];
+    const params = isF(f) ? f.params : real ? srcParams(src, name) : null;
+    if (!params) return null;
+    const ps = (params || []).filter(p => !p.star).map(p => p.name);
+    const req = (params || []).filter(p => p.def == null && !p.star).length;
     let mode = 'fi', ctxArg = false, surfArg = false, extra = [];
     const tMode = n => (/^(fi|i|n|f|frame|idx|index|frame_?i(dx)?|k)$/i.test(n) ? 'fi' : /^(p|progress|u)$/i.test(n) ? 'p' : 't');
     const fill = n => /^(w|width|ww|dw|img_?w)$/i.test(n) || /^(h|height|hh|dh|img_?h)$/i.test(n) || /^fps$/i.test(n);
@@ -409,12 +456,26 @@ function findFrameFn(V, src) {
     else if (/^(p|progress|u)$/i.test(ps[0] || '')) mode = 'p';
     return { name, mode, ctxArg, surfArg, extra };
   };
+  if (real) {
+    // matplotlib: FuncAnimation(fig, update, frames=…) / ArtistAnimation
+    if (/\b(FuncAnimation|ArtistAnimation)\s*\(/.test(src)) return { name: '__wv_anim__', anim: true, mode: 'fi', ctxArg: false, surfArg: false, extra: [] };
+    // moviepy: VideoClip(make_frame, duration=…)
+    const mv = /\bVideoClip\s*\(\s*(?:make_frame\s*=\s*|frame_function\s*=\s*)?([A-Za-z_]\w*)/.exec(src);
+    if (mv) { const r = pick(mv[1]); if (r) return { ...r, mode: 't' }; }
+  }
   for (const n of FRAME_FN) { const r = pick(n); if (r) return r; }
-  // تابعی که ImageSurface می‌سازد و یک پارامتر دارد
+  // تابعی که ImageSurface می‌سازد (یا با PIL / numpy / OpenCV / matplotlib / pygame تصویر می‌سازد) و یک پارامتر دارد
   const re = /^def\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(?:->[^:]*)?:([\s\S]*?)(?=^\S)/gm;
   let m;
+  const one = m => m[2].split(',').filter(x => x.trim() && !/=/.test(x)).length === 1;
   while ((m = re.exec(src + '\n#'))) {
-    if (/ImageSurface\s*\(/.test(m[3]) && /\.(paint|fill|stroke|show_text)\s*\(/.test(m[3]) && m[2].split(',').filter(x => x.trim() && !/=/.test(x)).length === 1) { const r = pick(m[1]); if (r) return r; }
+    if (/ImageSurface\s*\(/.test(m[3]) && /\.(paint|fill|stroke|show_text)\s*\(/.test(m[3]) && one(m)) { const r = pick(m[1]); if (r) return r; }
+  }
+  if (real) {
+    re.lastIndex = 0;
+    while ((m = re.exec(src + '\n#'))) {
+      if (/(Image\.new|ImageDraw|np\.(zeros|full|ones|empty)|cv2\.|plt\.|\bfig\b|\bax\.|pygame\.|\.fill\()/.test(m[3]) && /\breturn\b|\.save\(|imwrite|savefig|\.write\(|flip\(/.test(m[3]) && one(m) && !/^_/.test(m[1])) { const r = pick(m[1]); if (r) return r; }
+    }
   }
   return null;
 }
@@ -437,7 +498,31 @@ export function instantiatePy(src) {
   let dur = firstNum(V, ['DUR', 'DURATION', 'duration', 'SECONDS', 'LENGTH', 'TOTAL', 'T_TOTAL']);
   if (!dur) { const n = firstNum(V, ['N', 'NFRAMES', 'N_FRAMES', 'FRAMES', 'TOTAL_FRAMES', 'NUM_FRAMES', 'frames']); dur = n ? n / fps : 10; }
   inst.fps = fps; inst.dur = Math.min(dur, 600); inst.W0 = R.W0; inst.H0 = R.H0;
-  inst.fn = findFrameFn(V, src);
+  // کد غیر pycairo (PIL، numpy، OpenCV، matplotlib، pygame، moviepy) فقط با پایتون واقعی اجرا می‌شود
+  inst.realOnly = !looksPyCairo(src);
+  if (inst.realOnly) inst.error = null;
+  inst.fn = findFrameFn(V, src, inst.realOnly);
+  if (inst.realOnly) {
+    // اندازه، fps و مدت از متن کد (مفسر داخلی شاید به آن‌ها نرسیده باشد)
+    const num = re => { const m = re.exec(src); return m ? +m[1] : null; };
+    const fs = /figsize\s*=\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/.exec(src), dpi = num(/\bdpi\s*=\s*(\d+)/);
+    const sm = /set_mode\s*\(\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/.exec(src);
+    if (!firstNum(V, ['W', 'WIDTH', 'width'])) {
+      if (sm) { R.W0 = +sm[1]; R.H0 = +sm[2]; }
+      else if (fs) { R.W0 = Math.round(fs[1] * (dpi || 100)); R.H0 = Math.round(fs[2] * (dpi || 100)); }
+      inst.W0 = R.W0; inst.H0 = R.H0;
+    }
+    if (!firstNum(V, ['FPS', 'fps', 'FRAME_RATE', 'FRAMERATE', 'frame_rate', 'RATE'])) {
+      const f = num(/\bfps\s*=\s*(\d+(?:\.\d+)?)/) || (num(/\binterval\s*=\s*(\d+(?:\.\d+)?)/) ? 1000 / num(/\binterval\s*=\s*(\d+(?:\.\d+)?)/) : null);
+      if (f) inst.fps = Math.min(120, f);
+    }
+    if (inst.fn?.anim) {
+      const n = num(/\bframes\s*=\s*(\d+)/) || num(/\bframes\s*=\s*range\s*\(\s*(\d+)\s*\)/) || firstNum(V, ['N', 'NFRAMES', 'N_FRAMES', 'FRAMES', 'TOTAL_FRAMES', 'NUM_FRAMES', 'frames']);
+      if (n) inst.dur = Math.min(600, n / inst.fps);
+    } else if (/\bVideoClip\s*\(/.test(src)) {
+      const d = num(/\bduration\s*=\s*(\d+(?:\.\d+)?)/); if (d) inst.dur = Math.min(600, d);
+    }
+  }
   if (!inst.fn && !inst.error) inst.error = new PyError('تابع فریم (مثلاً render(fi) یا make_frame(t)) پیدا نشد', 0);
   // صحنه‌ها: SCENES = [(t0, fn, 'name'), …]
   const sc = V.SCENES || V.scenes || V.TIMELINE;
@@ -518,6 +603,17 @@ export function getPyInst(program, T, run = {}) {
   return inst;
 }
 
+/** کادر «در حال بار شدن پایتون» (تا پایتون واقعی و کتابخانه‌ها آماده شوند) */
+function waitFrame(ctx, inst) {
+  const W0 = inst.W0, H0 = inst.H0;
+  ctx.save();
+  ctx.fillStyle = '#101418'; ctx.fillRect(0, 0, W0, H0);
+  ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `${Math.round(H0 / 22)}px sans-serif`;
+  ctx.fillText('⏳ Python…', W0 / 2, H0 / 2);
+  ctx.restore();
+}
+
 /** از runImported برای run.lang === 'py' */
 export function runPyFrame(ctx, e, program, T, run) {
   const w = e.w, h = e.h, t = (run.start || 0) + e.t;
@@ -528,10 +624,12 @@ export function runPyFrame(ctx, e, program, T, run) {
     ctx.translate(-w / 2, -h / 2);
     const s = Math.max(w / inst.W0, h / inst.H0);
     ctx.translate((w - inst.W0 * s) / 2, (h - inst.H0 * s) / 2); ctx.scale(s, s);
-    const RI = run.real === false ? null : realInst(inst.src);
+    const RI = run.real === false ? null : realInst(inst.src, inst.fn.anim ? '__wv_anim__' : inst.fn.name);
     if (RI && !RI.error) {
       try { realFrame(RI, inst.fn, ctx, t, inst); return; } catch (e) { RI.error = e; console.warn('پایتون واقعی (فریم) — برگشت به مفسر داخلی:', e); }
     }
+    // کدی که فقط با پایتون واقعی اجرا می‌شود (PIL، matplotlib، OpenCV، …) ← تا آماده شود «در حال بار شدن»
+    if (inst.realOnly && run.real !== false && !(RI && RI.error) && realState() !== 'failed') { waitFrame(ctx, inst); return; }
     pyFrame(inst, ctx, t);
   } finally { ctx.restore(); }
 }
