@@ -1093,8 +1093,17 @@ $$('.nudge').forEach(b => {
 /* ── کتابخانهٔ پروژه ─────────────────────────────────────── */
 function songMsg(t, cls = '') { $('#songMsg').textContent = t; $('#songMsg').className = 'msg ' + cls; }
 
+let projListRun = 0;
 async function buildProjList() {
-  const host = $('#projList');
+  const host = $('#projList'), run = ++projListRun;
+  // فهرست را اول کامل می‌خوانیم و بعد یک‌جا می‌سازیم؛ اگر وسط کار دوباره صدا زده شد،
+  // نسخهٔ قدیمی کنار می‌رود (قبلاً دو ساخت هم‌زمان کارت‌ها را تکراری/درهم می‌کرد)
+  let list = [];
+  try { list = await Library.all(); } catch (e) { console.warn(e); }
+  if (run !== projListRun) return;
+  // جدیدترین بالا (زمان ساخت، وگرنه زمان داخل شناسه)
+  const when = p => +p.createdAt || +String(p.id || '').replace(/\D/g, '').slice(0, 13) || 0;
+  list.sort((a, b) => when(b) - when(a));
   host.innerHTML = '';
   const mk = (id, title, sub, removable, badge) => {
     const el = document.createElement('div');
@@ -1121,7 +1130,7 @@ async function buildProjList() {
   mk('__demo', 'نقاب — زروان اکو', 'نمونهٔ همراه برنامه · ۳:۴۸ · ۱۶:۹', false, 'ن');
   let n = 1;
   try {
-    for (const p of await Library.all()) {
+    for (const p of list) {
       n++;
       const asp = p.aspect || '16:9';
       const sub = p.audio

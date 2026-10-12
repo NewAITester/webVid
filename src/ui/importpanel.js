@@ -224,7 +224,7 @@ export function importCard({ host, files, onScript, say, project = false, meta =
         else { save(new Blob([wav], { type: 'audio/wav' }), main.name.replace(/\.[^.]+$/, '') + '-music.wav'); say('ok', '✓ موسیقی کد به‌صورت WAV ذخیره شد؛ می‌توانید به‌عنوان آهنگ پروژه بارش کنید.'); }
       } catch (err) { say('err', 'خطا در ساخت صدا: ' + err.message); }
       b.disabled = false; b.textContent = old;
-    } }, '🎵 موسیقی کد (WAV)'));
+    } }, '⬇ ذخیرهٔ موسیقی کد (WAV) در Downloads'));
     if (btns.childNodes.length) card.append(btns);
   }
 

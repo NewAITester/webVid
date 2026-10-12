@@ -318,7 +318,8 @@ function analyzeScene(sc, W0, H0) {
   const maxD = Math.max(0, ...stat.map(s => s.nd)), maxS = Math.max(0, ...stat.map(s => s.ns));
   if (maxS >= 300) {
     const cols = [...new Set(stat.flatMap(s => s.streaks.map(e => e.c)))];
-    effects.push({ kind: 'vortex', label: `ذره‌های چرخان (${maxS} رد ذره)`, x: 0, y: 0, params: { c1: cols[0] || '#5E9FE8', c2: cols[1] || cols[0] || '#DF84A8', n: Math.min(3000, maxS), spin: 1, arms: 3, tilt: 0.45, size: 1, r: 0.46 } });
+    if (cols.length >= 3) effects.push({ kind: 'flowText', label: `جریان ذره‌ای (${maxS} رد ذره)`, x: 0, y: 0, params: { text: /^[A-Z0-9]{2,10}$/.test(sc?.name || '') ? sc.name : 'FLOW', c1: cols[0], c2: cols[1], c3: cols[2], c4: cols[3] || cols[0], n: Math.min(5000, maxS) } });
+    else effects.push({ kind: 'vortex', label: `ذره‌های چرخان (${maxS} رد ذره)`, x: 0, y: 0, params: { c1: cols[0] || '#5E9FE8', c2: cols[1] || cols[0] || '#DF84A8', n: Math.min(3000, maxS), spin: 1, arms: 3, tilt: 0.45, size: 1, r: 0.46 } });
   }
   if (maxD >= 500) {
     const ds = stat.find(s => s.nd === maxD).dots, cols = ds.map(e => e.c);

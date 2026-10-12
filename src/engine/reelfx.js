@@ -354,6 +354,95 @@ export function swarmText(ctx, env, o = {}) {
   ctx.restore();
 }
 
+/* ── ۱۰) جریان ذره‌ای نوشته (FLOW) ─────────────────────────────
+   ذره‌ها روی مدارهای بیضی می‌چرخند (با رد حرکت)، جمع می‌شوند و نوشته را
+   می‌سازند و آخر به بیرون پرت می‌شوند. حالت title: نوشته می‌ماند و با هر ضرب
+   جلو می‌آید و برمی‌گردد (ذره‌ها کمی باز و دوباره جمع می‌شوند). */
+const _flowPts = new Map();
+function flowPoints(text, font, weight, n) {
+  const key = [text, font, weight, n].join('|');
+  let p = _flowPts.get(key); if (p) return p;
+  if (typeof document === 'undefined' && typeof OffscreenCanvas === 'undefined') return { pts: [], w: 1 };
+  const fs = 160, mk = (w, h) => (typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h }));
+  let g = mk(8, 8).getContext('2d'); g.font = `${weight} ${fs}px ${font}`;
+  const tw = Math.ceil(g.measureText(text).width) + 40, th = Math.ceil(fs * 1.6);
+  const c = mk(tw, th); g = c.getContext('2d');
+  g.font = `${weight} ${fs}px ${font}`; g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, tw / 2, th / 2);
+  const d = g.getImageData(0, 0, tw, th).data, cand = [];
+  for (let y = 0; y < th; y += 2) for (let x = 0; x < tw; x += 2) if (d[(y * tw + x) * 4 + 3] > 128) cand.push([(x - tw / 2) / fs, (y - th / 2) / fs]);
+  p = { pts: [], w: (tw - 40) / fs };
+  if (cand.length) for (let i = 0; i < n; i++) p.pts.push(cand[Math.floor(hash(i * 3.71 + 0.13) * cand.length)]);
+  _flowPts.set(key, p);
+  if (_flowPts.size > 30) _flowPts.delete(_flowPts.keys().next().value);
+  return p;
+}
+/**
+ * o: { text, font, weight, size (px قلم), n, cols[4], lw, trail, t (ثانیه از شروع), dur,
+ *      swirl, inAt, gather, outLen, mode: 'reel'|'title', amp, bpm, beat: 'auto'|'bpm', cx, cy, s }
+ */
+export function flowText(ctx, env, o = {}) {
+  const { W, H } = env;
+  const text = String(o.text ?? 'FLOW'), n = Math.max(10, Math.min(5000, (o.n ?? 1500) | 0));
+  const s = o.s ?? Math.min(W / 1920, H / 1080), cx = o.cx ?? W / 2, cy = o.cy ?? H / 2;
+  const font = o.font || 'Arial, "Helvetica Neue", "Liberation Sans", sans-serif', weight = o.weight || '700';
+  const cols = (o.cols && o.cols.length ? o.cols : ['#4FB9C9', '#5E9FE8', '#BF8EDA', '#DF84A8']);
+  const lt0 = o.t ?? env.t, dur = o.dur ?? 2.5, mode = o.mode || 'reel';
+  const swirlK = o.swirl ?? 2.6, inAt = o.inAt ?? 0.95, gather = Math.max(0.05, o.gather ?? 0.7);
+  const outLen = o.outLen ?? 0.45, outAt = dur - outLen, amp = o.amp ?? 1;
+  const P = flowPoints(text, font, weight, n);
+  if (!P.pts.length) return;
+  // اندازهٔ قلم ← هیچ‌وقت پهن‌تر از ۹۲٪ کادر نشود
+  const size = Math.min(o.size ?? H * 0.46, W * 0.92 / Math.max(0.1, P.w));
+  // ضرب: از آهنگ پروژه یا از BPM خود المان
+  const beats = env.beats || [], useSong = o.beat !== 'bpm' && beats.length > 0, bp = 60 / Math.max(20, o.bpm ?? 120);
+  const gt = env.t - lt0;     // زمان کل = gt + lt
+  // پوش ضرب: حملهٔ نرم (۰٫۰۹ ثانیه) و افت آرام — بدون پرش ناگهانی
+  const env1 = sb => (sb < 0 || sb > 0.9 ? 0 : sb < 0.09 ? E.io3(sb / 0.09) : Math.exp(-(sb - 0.09) * 5));
+  const kickAt = lt => {
+    if (useSong) { const T = gt + lt; let lo = 0, hi = beats.length - 1, r = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (beats[m] <= T) { r = m; lo = m + 1; } else hi = m - 1; } return env1(r < 0 ? 99 : T - beats[r]); }
+    return env1((((lt / bp) % 1 + 1) % 1) * bp);
+  };
+  const pos = (lt, i, out) => {
+    const h1 = hash(i * 1.37 + 0.11), h2 = hash(i * 2.91 + 0.7), h6 = hash(i * 6.13 + 0.3);
+    const r = 70 + 640 * Math.pow(h1, 0.75), a = h2 * TAU, w = 2.2 / Math.sqrt(r / 100);
+    const z = ((hash(i * 3.3) + hash(i * 4.7) + hash(i * 5.9)) - 1.5) * 2 * 18, d = h6 * 0.35;
+    const sw = 1 + swirlK * (1 - E.outExpo(lt / 0.9)), an = a + w * lt + (sw - 1) * 0.8;
+    let x = r * sw * Math.cos(an) * s, y = (r * sw * 0.45 * Math.sin(an) + z) * s;
+    const m = E.io3((lt - inAt - d) / gather);
+    const [px, py] = P.pts[i];
+    let tx = px * size, ty = py * size;
+    if (mode === 'title' && m > 0) {
+      // با هر ضرب: نوشته جلو می‌آید (بزرگ‌تر) و ذره‌ها کمی باز می‌شوند، بعد برمی‌گردند
+      const k = kickAt(lt) * amp * m, sc = 1 + 0.08 * k, spread = 1 + k * (0.03 + 0.1 * hash(i * 8.1));
+      tx = tx * sc * spread; ty = ty * sc * spread;
+      tx += Math.sin(a * 3 + i) * 6 * k * s; ty += Math.cos(a * 2 + i) * 5 * k * s;
+    }
+    const jx = Math.sin(lt * 4 + a * 5) * 1.6 * s, jy = Math.cos(lt * 3.3 + a * 7) * 1.6 * s;
+    x += (tx + jx - x) * m; y += (ty + jy - y) * m;
+    if (outLen > 0) {
+      const ex = Math.pow(clamp((lt - outAt - d * 0.3) / outLen), 3);
+      if (ex > 0) { const L = Math.hypot(x, y) + 1e-3; x += x / L * ex * 1500 * s; y += y / L * ex * 1500 * s; }
+    }
+    out[0] = cx + x; out[1] = cy + y;
+  };
+  const a0 = [0, 0], a1 = [0, 0], trail = o.trail ?? 0.06;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round'; ctx.lineWidth = (o.lw ?? 4.4) * s;
+  ctx.globalAlpha = o.a ?? 1;
+  for (let ci = 0; ci < 4; ci++) {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const r = 70 + 640 * Math.pow(hash(i * 1.37 + 0.11), 0.75);
+      if (Math.min(3, Math.floor((r - 70) / 640 * 4)) !== ci) continue;
+      pos(lt0 - trail, i, a0); pos(lt0, i, a1);
+      ctx.moveTo(a0[0], a0[1]); ctx.lineTo(a1[0] + 0.01, a1[1]);
+    }
+    ctx.strokeStyle = cols[ci % cols.length]; ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /* ── ۹) نوشتهٔ کوبنده (کینتیک تایپوگرافی) ─────────────────────── */
 /** d: ثانیه از شروع کلمه */
 export function slamText(ctx, env, o = {}) {
@@ -437,7 +526,7 @@ export function reelApi(ctx, env) {
   return {
     vortex: wrap(vortex), burst: wrap(burst), morph: wrap(morph), wire: wrap(wire),
     starfield: wrap(starfield), grid3d: wrap(grid3d), eqRing: wrap(eqRing),
-    swarmText: wrap(swarmText), slamText: wrap(slamText), shock: wrap(shock),
+    swarmText: wrap(swarmText), slamText: wrap(slamText), shock: wrap(shock), flowText: wrap(flowText),
     wipe: (p, o) => wipe(ctx, env.W, env.H, p, o), glitch: (amt, seed) => glitch(ctx, env.W, env.H, amt, seed),
   };
 }
