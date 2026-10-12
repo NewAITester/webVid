@@ -85,6 +85,8 @@ R.lineFx = lineFx; R.texts = texts; R.layers = layers;
 /* عکس و ویدیوی لایه‌ها: فایل در IndexedDB، عنصر آماده در این استخر */
 const MEDIA = new MediaPool();
 MEDIA.onUpdate = () => { if (!app.playing) draw(); };
+// لایه‌های صفحهٔ وب (DOM) فریمشان را ناهمگام می‌سازند ← وقتی رسید دوباره بکش
+addEventListener('wv-dom-frame', () => { if (!app.playing) draw(); });
 R.media = MEDIA;
 
 const CSET = new CustomSet();
@@ -1174,6 +1176,8 @@ async function openProject(id) {
     if (!p) return;
     app.aspect = p.aspect || '16:9';
     setAspect(app.aspect);
+    // پروژه‌های قبلی که بی‌شعر بودند جدول بخش‌های نمونه («نقاب») را گرفته بودند ← پاکش کن
+    if (p.sections && !parseLRC(p.lrc || '').length && JSON.stringify(p.sections) === JSON.stringify(SECT)) p.sections = null;
     if (p.audio) {
       app.song = new Song(parseLRC(p.lrc || ''), new Analysis(p.analysis), {
         title: p.title || p.name, artist: p.artist || '', tg: p.tg || '', duration: p.duration,

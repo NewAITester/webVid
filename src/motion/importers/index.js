@@ -1,4 +1,5 @@
 import { analyzeJS, extractHtml } from './canvasjs.js';
+import { looksDomPage, pyEmbeddedHtml, domSeekName, domAudioName } from './domframes.js';
 import { analyzeRun, synthAudio, REEL_NAMES, PRELUDE_NAMES } from './runtime.js';
 import { emitScript } from './emit.js';
 import { Interp } from './pyinterp.js';
@@ -460,6 +461,45 @@ function convertCanvas(kind, text, name, values) {
   };
 }
 
+/* ───────────── صفحهٔ وب DOM (div / svg / CSS، بدون بوم) ───────────── */
+function convertDom(html, name, { py = null } = {}) {
+  const num = re => { const m = re.exec(html); return m ? +m[1] : null; };
+  const W0 = py?.W0 || num(/#stage\s*\{[^}]*?\bwidth\s*:\s*(\d+)px/) || num(/<body[^>]*>[\s\S]{0,400}?width\s*:\s*(\d{3,4})px/) || 1920;
+  const H0 = py?.H0 || num(/#stage\s*\{[^}]*?\bheight\s*:\s*(\d+)px/) || num(/<body[^>]*>[\s\S]{0,400}?height\s*:\s*(\d{3,4})px/) || Math.round(W0 * 9 / 16);
+  const dur = py?.dur || num(/\b(?:DUR|DURATION|TOTAL|LENGTH)\s*[:=]\s*(\d+(?:\.\d+)?)/) || 10;
+  const bpm = num(/\b(?:BPM|TEMPO)\s*[:=]\s*(\d+(?:\.\d+)?)/) || (num(/\bBEAT\s*[:=]\s*(0?\.\d+|\d+(?:\.\d+)?)/) ? 60 / num(/\bBEAT\s*[:=]\s*(0?\.\d+|\d+(?:\.\d+)?)/) : null);
+  const seek = domSeekName(html), audio = domAudioName(html);
+  const doc1 = py ? (/^\s*(?:#[^\n]*\n\s*)*[rRuU]?(?:"""|''')\s*([^\n]+)/.exec(py.src || '')?.[1] || '').split(/\s+[-–—|:]\s+/)[0].trim() : '';
+  const title = (/<title>([^<]*)<\/title>/i.exec(html)?.[1] || '').trim() || (doc1.length > 1 && doc1.length < 40 ? doc1 : '') || String(name).replace(/\.[^.]+$/, '');
+  const run = { lang: 'dom', W0, H0, dur, ...(seek ? { seek } : {}), ...(audio ? { audio } : {}) };
+  const warnings = [];
+  if (!seek) warnings.push('این صفحه تابع seek(t) ندارد؛ زمان با ساعت ساختگی (requestAnimationFrame و انیمیشن‌های CSS) جلو می‌رود و عقب رفتن ممکن است دقیق نباشد.');
+  if (/fonts\.googleapis|@import\s+url/.test(html)) warnings.push('فونت‌های اینترنتی (مثل Google Fonts) فقط وقتی اینترنت وصل است بار می‌شوند؛ وگرنه فونت جایگزین دیده می‌شود.');
+  if (py) warnings.push(`صفحهٔ HTML داخل کد پایتون (${py.varName}) جدا شد و مستقیم اجرا می‌شود — همان کاری که Playwright در اسکریپت می‌کند (seek(t) و عکس هر فریم).`);
+  const L = [
+    `// 🧩 وارد‌شده از «${name}» — صفحهٔ وب (DOM / SVG / CSS)`,
+    `// ${fa(r3(dur))} ثانیه · قاب اصلی ${W0}×${H0}${seek ? ` · زمان با ${seek}(t)` : ''}${audio ? ` · صدا با ${audio}()` : ''}`,
+    '// خود صفحه (پایین فایل) در یک iframe پنهان اجرا می‌شود و هر فریم از روی DOM عکس گرفته و روی بوم کشیده می‌شود.',
+    '// صحنه را جابه‌جا، کوتاه/بلند یا حذف کنید و «▶ اجرا» بزنید؛ متن و رنگ‌ها را در خود PROGRAM عوض کنید.',
+  ];
+  if (bpm && bpm > 20 && bpm < 400) L.push(`tempo(${r3(bpm)})`);
+  L.push('', `const RUN = ${JSON.stringify(run)}`, '',
+    `scene({ name: ${q(title)}, at: 0, dur: ${r3(dur)} },`,
+    `  imported(PROGRAM(), { run: RUN, start: 0, title: ${q(title)}, name: ${q('🧩 ' + title)} }))`, '',
+    '// ───── صفحهٔ اصلی ─────', `function PROGRAM() { return ${JSON.stringify(html)} }`);
+  const found = [
+    { ic: '🎞', label: 'صفحهٔ DOM', n: 1 },
+    ...(seek ? [{ ic: '⏱', label: `زمان‌بندی ${seek}(t)`, n: 1 }] : []),
+    ...(audio ? [{ ic: '🎵', label: `صدای ساخته‌شده با کد (${audio}())`, n: 1 }] : []),
+  ];
+  return {
+    kind: py ? 'python' : 'html', script: L.join('\n'), error: null, warnings, tweaks: [],
+    scenes: [{ name: title, t0: 0, t1: dur, thumb: null, chips: ['🌐 DOM / SVG / CSS'] }], found,
+    unknown: [], media: [], audio: [], duration: dur, bpm, hasAudio: !!audio,
+    canvas: { program: html, T: {}, run }, dom: true, source: html,
+  };
+}
+
 /**
  * @param {string} text  کد
  * @param {object} o  { name, values }  values: مقدارهای تازهٔ tweaks (اختیاری)
@@ -489,6 +529,7 @@ function motionResult(text, P) {
 
 export function importCode(text, { name = 'code', values = null } = {}) {
   let kind = detectFormat(text, name);
+  let EMB = null;
   // بستهٔ المان: اول ثبت شود
   const PK = /\belementPack\s*\(/.test(String(text || '')) ? usePacks(text) : null;
   if (PK && !/^\s*(scene|overlay|transition|text|bg)\s*\(/m.test(PK.rest)) {
@@ -505,7 +546,9 @@ export function importCode(text, { name = 'code', values = null } = {}) {
   if (kind === 'motion') r = motionResult(text, P);
   else if (kind === 'moviepy' || kind === 'manim') r = convertPython(kind, text, name, values);
   else if (kind === 'python' && looksPyCairo(text)) r = convertPyFrames(text, name, values);
+  else if (kind === 'python' && (EMB = pyEmbeddedHtml(text))) r = looksDomPage(EMB.html) ? { ...convertDom(EMB.html, name, { py: { ...EMB, src: text } }), source: text } : { ...convertCanvas('html', EMB.html, name, values), kind: 'python' };
   else if (kind === 'python') r = pythonOther(text, name);
+  else if (kind === 'html' && looksDomPage(text)) r = convertDom(text, name, {});
   else if (kind === 'html' || kind === 'canvas') r = convertCanvas(kind, text, name, values);
   else r = { kind, script: null, error: 'نوع این کد شناخته نشد (JS بوم، HTML، MoviePy یا Manim).', warnings: [], tweaks: [], scenes: [], found: [], unknown: [], media: [], audio: [], source: text };
   r.name = name; r.label = FORMATS[kind].label; r.ic = FORMATS[kind].ic;

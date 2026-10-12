@@ -80,7 +80,9 @@ export function silentAnalysis(duration = 15) {
  * یکی‌درمیان عوض می‌شوند تا یکنواخت نشود.
  */
 export function autoSections(lines, duration) {
-  if (!lines.length) return SECT.map(s => s.slice());
+  // بی‌شعر ← یک بخش خالی؛ نه جدول بخش‌های پروژهٔ نمونه (وگرنه صحنه‌های «نقاب» پشت پروژهٔ تازه پخش می‌شوند)
+  const blank = () => [[0, +Math.max(1, duration || 15).toFixed(2), 'none', C.CRIMSON]];
+  if (!lines.length) return blank();
 
   const GAP = 6.0;
   const out = [];
@@ -129,7 +131,7 @@ export function autoSections(lines, duration) {
   if (duration - prevEnd > 3) push(prevEnd, duration, 'end');
   else if (out.length) out[out.length - 1][1] = duration;
 
-  return out.length ? out : SECT.map(s => s.slice());
+  return out.length ? out : blank();
 }
 
 /** خواندن متن ساده و ساختن LRC تقریبی (وقتی کاربر فقط شعر دارد) */

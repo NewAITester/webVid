@@ -2,6 +2,7 @@ import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { Stage } from './stage.js';
 import { Renderer } from './renderer.js';
 import { W, H } from './song.js';
+import { domSettle } from '../motion/importers/domframes.js';
 
 /**
  * خروجی گرفتن ویدیو
@@ -187,6 +188,8 @@ export async function exportVideo({
     // ویدیوهای داخل لایه‌ها باید دقیقاً روی همین لحظه باشند
     if (media && R.layers.length) await media.prepare(R.layers, t);
     R.renderFrame(t);
+    // لایه‌های صفحهٔ وب (DOM) فریمشان را ناهمگام می‌سازند ← صبر و کشیدن دوباره
+    if (R.layers.length && await domSettle()) R.renderFrame(t);
 
     const frame = new VideoFrame(canvas, {
       timestamp: Math.round(i * FRAME_US),

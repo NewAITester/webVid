@@ -12,7 +12,7 @@ import { ELLIPSIS } from './pyparse.js';
 export const MAXN = 4.2e6;
 const prod = s => s.reduce((a, b) => a * b, 1);
 const isNum = v => typeof v === 'number' || typeof v === 'boolean';
-const INT_T = new Set(['int', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'bool', 'intp']);
+const INT_T = new Set(['int', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'bool', 'intp', 'uint64']);
 
 export class ND {
   constructor(data, shape, dtype = 'float64') { this.data = data; this.shape = shape; this.dtype = dtype; }
@@ -231,7 +231,9 @@ function setItem(a, k, v) {
 /* ── نوع داده ── */
 const dt = (name, f) => { const fn = nat(([x]) => (x instanceof ND ? astype(x, name) : f(x)), name); fn.__dtype = name; return fn; };
 const castFn = name => (name === 'bool' ? x => +!!x : name === 'uint8' ? x => ((Math.trunc(x) % 256) + 256) % 256 : name === 'int16' ? x => ((Math.trunc(x) + 32768) % 65536 + 65536) % 65536 - 32768 : INT_T.has(name) ? Math.trunc : name === 'float32' ? Math.fround : x => x);
-function dtypeName(d) { if (!d) return null; if (typeof d === 'string') return d.replace(/^np\./, ''); if (d.__dtype) return d.__dtype; if (d.__name === 'int') return 'int64'; if (d.__name === 'float') return 'float64'; if (d.__name === 'bool') return 'bool'; return 'float64'; }
+const DT_CODES = { i1: 'int8', i2: 'int16', i4: 'int32', i8: 'int64', u1: 'uint8', u2: 'uint16', u4: 'uint32', u8: 'uint64', f2: 'float32', f4: 'float32', f8: 'float64', '?': 'bool', b1: 'bool', b: 'int8', B: 'uint8', h: 'int16', H: 'uint16', i: 'int32', I: 'uint32', l: 'int64', q: 'int64', L: 'uint64', Q: 'uint64', e: 'float32', f: 'float32', d: 'float64', int: 'int64', float: 'float64', double: 'float64', single: 'float32', short: 'int16', ubyte: 'uint8', byte: 'int8', intc: 'int32', bool_: 'bool', float_: 'float64', int_: 'int64' };
+function normDtype(s) { s = s.replace(/^(np|numpy)\./, ''); const c = s.replace(/^[<>=|]/, ''); return DT_CODES[c] || (s !== c && DT_CODES[c.toLowerCase()]) || c; }
+function dtypeName(d) { if (!d) return null; if (typeof d === 'string') return normDtype(d); if (d.__dtype) return d.__dtype; if (d.__name === 'int') return 'int64'; if (d.__name === 'float') return 'float64'; if (d.__name === 'bool') return 'bool'; return 'float64'; }
 export function astype(a, d) { const name = dtypeName(d) || 'float64'; return mapND(a, castFn(name), name); }
 
 function reshape(a, args) {
@@ -289,6 +291,9 @@ function toBytes(a) {
   if (d === 'uint8' || d === 'int8' || d === 'bool') return new Bytes(Uint8Array.from(a.data, x => x & 255));
   if (d === 'int16') { const b = new Int16Array(n); for (let i = 0; i < n; i++) b[i] = a.data[i]; return new Bytes(new Uint8Array(b.buffer)); }
   if (d === 'int32') { const b = new Int32Array(n); b.set(a.data); return new Bytes(new Uint8Array(b.buffer)); }
+  if (d === 'uint16') { const b = new Uint16Array(n); for (let i = 0; i < n; i++) b[i] = a.data[i]; return new Bytes(new Uint8Array(b.buffer)); }
+  if (d === 'uint32') { const b = new Uint32Array(n); for (let i = 0; i < n; i++) b[i] = a.data[i]; return new Bytes(new Uint8Array(b.buffer)); }
+  if (d === 'int64' || d === 'uint64') { const b = new BigInt64Array(n); for (let i = 0; i < n; i++) b[i] = BigInt(Math.trunc(a.data[i])); return new Bytes(new Uint8Array(b.buffer)); }
   if (d === 'float32') return new Bytes(new Uint8Array(Float32Array.from(a.data).buffer));
   return new Bytes(new Uint8Array(Float64Array.from(a.data).buffer));
 }
