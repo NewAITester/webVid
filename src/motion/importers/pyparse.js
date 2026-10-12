@@ -1,3 +1,5 @@
+/** نشانهٔ «...» (Ellipsis) — با None فرق دارد (برای اندیس‌گذاری numpy) */
+export const ELLIPSIS = Object.freeze({ __ellipsis: true, toString: () => 'Ellipsis' });
 /**
  * خواندن پایتون (بدون اجرا): توکن‌ساز + تجزیه‌گر ← درخت نحو
  * زیرمجموعهٔ رایج پایتون ۳ که در اسکریپت‌های ساخت ویدیو (MoviePy، Manim، …) می‌آید.
@@ -368,7 +370,7 @@ export function pyParse(src) {
       if (k.v === 'lambda' || k.v === 'not' || k.v === 'await' || k.v === 'yield') return expr();
     }
     if (k.t === 'op') {
-      if (k.v === '...') { next(); return N('Const', { v: null }); }
+      if (k.v === '...') { next(); return N('Const', { v: ELLIPSIS }); }
       if (k.v === '(') {
         next();
         if (isOp(')')) { next(); return N('Tuple', { elts: [] }); }

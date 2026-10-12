@@ -4,7 +4,8 @@ import { emitScript } from './emit.js';
 import { Interp } from './pyinterp.js';
 import { moviepyModules, moviepyModel } from './moviepy.js';
 import { manimModules, runManimScenes, manimModel } from './manim.js';
-import { fallbackModel } from './fallback.js';
+import { fallbackModel, literals } from './fallback.js';
+import { looksPyCairo, getPyInst, pyThumb, pyAudioFn } from './pyframes.js';
 import { runScript, scriptToLayers } from '../scenescript.js';
 import { ELEMENT_KINDS } from '../elements.js';
 
@@ -202,6 +203,89 @@ function convertPython(kind, src, name, values) {
   };
 }
 
+/* ───────────── پایتون فریم‌به‌فریم (pycairo) ───────────── */
+const FONT_NAME = /^(Liberation|DejaVu|Noto|Helvetica|Courier|Consolas|Menlo|Monaco|Times|Georgia|Verdana|Roboto|Inter|Ubuntu|Segoe|Tahoma|Impact|Futura|Montserrat|Open Sans|Source)\b/i;
+function pyFrameTweaks(src) {
+  const tw = pyTweaks(src).filter(t => !/^(NP|NS|N_?PARTICLES|SEED)$/i.test(t.id));
+  const taken = tw.map(t => [t.s, t.e]);
+  const free = (s, e) => !taken.some(([a, b]) => s < b && e > a);
+  // رنگ‌های '#RRGGBB'
+  let k = 0;
+  for (const m of src.matchAll(/(['"])#([0-9a-fA-F]{6})\1/g)) {
+    const s = m.index, e = s + m[0].length;
+    if (!free(s, e)) continue;
+    const line = src.slice(0, s).split('\n').length, ln = src.split('\n')[line - 1] || '';
+    const owner = (/^\s*([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*=/.exec(ln) || [])[1];
+    const v = '#' + m[2].toUpperCase();
+    tw.push({ id: `COLOR_${++k}`, label: `رنگ ${v}${owner ? ' (' + owner.split(',').map(x => x.trim()).slice(0, 4).join('، ') + ')' : ''}`, group: 'رنگ‌ها', type: 'color', value: v, def: v, quote: m[1], s, e, line, raw: m[0] });
+    taken.push([s, e]);
+  }
+  // متن‌های نوشته‌شده
+  k = 0;
+  for (const L of literals(src)) {
+    if (k >= 40 || FONT_NAME.test(L.str) || !free(L.s, L.e) || !/[A-Za-z\u0600-\u06FF]{2}/.test(L.str)) continue;
+    tw.push({ id: `TEXT_${++k}`, label: `متن «${L.str.slice(0, 30)}»`, group: 'متن‌های کد', type: 'text', value: L.str, def: L.str, quote: L.quote, s: L.s, e: L.e, line: L.line });
+    taken.push([L.s, L.e]);
+  }
+  return tw;
+}
+function convertPyFrames(text, name, values) {
+  const tweaks = pyFrameTweaks(text);
+  if (values) for (const t of tweaks) if (t.id in values) t.value = values[t.id];
+  const T = Object.fromEntries(tweaks.map(t => [t.id, t.value]));
+  const run = { lang: 'py', tweaks: tweaks.map(t => ({ id: t.id, s: t.s, e: t.e, type: t.type === 'num' ? 'num' : 'str', quote: t.quote, def: t.def })) };
+  const inst = getPyInst(text, T, run);
+  const warnings = [...(inst.warnings || [])];
+  const libs = [...new Set([...text.matchAll(/^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w., ]+))/gm)].flatMap(m => (m[1] || m[2]).split(',').map(x => x.trim().split(/\s+as\s+/)[0].split('.')[0])))].filter(Boolean);
+  const errMsg = e => (e ? `${e.line ? `خط ${e.line}: ` : ''}${e.message || e}` : null);
+  if (!inst.fn) return { kind: 'python', script: null, error: errMsg(inst.error) || 'تابع فریم پیدا نشد.', warnings, tweaks, scenes: [], found: [], unknown: [], media: [], audio: [], source: text };
+  if (inst.error) warnings.push('خطا هنگام اجرای بالای فایل: ' + errMsg(inst.error));
+  Object.assign(run, { fps: inst.fps, W0: inst.W0, H0: inst.H0, fn: inst.fn.name });
+  const scenes = inst.scenes.map(s => {
+    let thumb = null, err = null;
+    try { thumb = pyThumb(inst, s.t0 + (s.t1 - s.t0) * 0.6); } catch (e) { err = e; }
+    return { name: s.name, t0: s.t0, t1: s.t1, thumb, err, chips: [s.fn ? `⚙ ${s.fn}()` : `⚙ ${inst.fn.name}()`] };
+  });
+  const bad = scenes.filter(s => s.err);
+  if (bad.length) warnings.push(`خطای اجرای فریم در ${bad.map(s => s.name).join('، ')}: ${errMsg(bad[0].err)}`);
+  const post = libs.filter(l => /^(cv2|PIL|scipy|skimage)$/.test(l));
+  if (post.length) warnings.push(`پس‌پردازش پیکسلی (${post.join('، ')} — مثل bloom، grain، لرزش رنگ) اجرا نمی‌شود؛ طراحی خود cairo کامل اجرا می‌شود. برای حال‌وهوای مشابه می‌توانید «افکت پایانی» برنامه را روشن کنید.`);
+  if (/\brandom\b|default_rng/.test(text)) warnings.push('عددهای تصادفی numpy اینجا با الگوریتم دیگری ساخته می‌شوند؛ چیدمان ذره‌ها کمی با خروجی اصلی فرق دارد.');
+  const audioFn = pyAudioFn(inst);
+  const L = [
+    `// 🧩 وارد‌شده از «${name}» — پایتون فریم‌به‌فریم (pycairo)`,
+    `// ${fa(scenes.length)} صحنه · ${fa(r3(inst.dur))} ثانیه · ${fa(inst.fps)} فریم بر ثانیه · قاب اصلی ${inst.W0}×${inst.H0}`,
+    `// خود کد پایتون (پایین فایل) هر فریم با ${inst.fn.name}() داخل لایه‌های «کد» اجرا و مستقیم روی بوم کشیده می‌شود.`,
+    '// مقدارهای قابل‌تغییر در G است؛ صحنه‌ها را جابه‌جا، کوتاه/بلند یا حذف کنید و «▶ اجرا» بزنید.',
+    '', 'const G = {',
+  ];
+  let lastGroup = null;
+  for (const t of tweaks) {
+    if (t.group !== lastGroup) { L.push(`  // ── ${t.group}`); lastGroup = t.group; }
+    L.push(`  ${t.id}: ${lit(t.value)}, // ${cmt(t.label)}`);
+  }
+  L.push('}', `const RUN = ${JSON.stringify(run)}`, '');
+  for (const s of scenes) {
+    L.push(`scene({ name: ${q(s.name)}, at: ${r3(s.t0)}, dur: ${r3(s.t1 - s.t0)} },`,
+      `  imported(PROGRAM(), { run: RUN, start: ${r3(s.t0)}, values: G, title: ${q(s.name)}, name: ${q('🧩 ' + s.name)} }))`, '');
+  }
+  L.push('// ───── کد پایتون اصلی ─────', `function PROGRAM() { return ${JSON.stringify(text)} }`);
+  const found = [
+    { ic: '🎞', label: 'صحنه', n: scenes.length },
+    { ic: '⚙', label: `تابع فریم ${inst.fn.name}()`, n: 1 },
+    { ic: '🎨', label: 'رنگ', n: tweaks.filter(t => t.type === 'color').length },
+    { ic: '🔤', label: 'متن', n: tweaks.filter(t => t.type === 'text').length },
+    { ic: '🔢', label: 'عدد', n: tweaks.filter(t => t.type === 'num').length },
+    ...(audioFn ? [{ ic: '🎵', label: `صدای ساخته‌شده با کد (${audioFn}())`, n: 1 }] : []),
+  ].filter(f => f.n);
+  return {
+    kind: 'python', script: L.join('\n'), error: null, warnings, tweaks, scenes: scenes.map(({ err, ...s }) => s), found,
+    unknown: libs.filter(l => /^(cv2|PIL|scipy|skimage|imageio)$/.test(l)), media: [], audio: [], duration: inst.dur, hasAudio: !!audioFn,
+    canvas: { program: text, T, run }, pyframes: true,
+    source: text,
+  };
+}
+
 function pythonOther(src, name) {
   const files = [...new Set([...src.matchAll(/['"]([\w./\\-]+\.(?:js|mjs|html?|css|png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|ogg|json|txt|ttf|otf))['"]/gi)].map(m => m[1]))];
   const libs = [...new Set([...src.matchAll(/^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w., ]+))/gm)].flatMap(m => (m[1] || m[2]).split(',').map(x => x.trim().split(/\s+as\s+/)[0].split('.')[0])))].filter(Boolean);
@@ -336,6 +420,7 @@ export function importCode(text, { name = 'code', values = null } = {}) {
   let r;
   if (kind === 'motion') r = motionResult(text, P);
   else if (kind === 'moviepy' || kind === 'manim') r = convertPython(kind, text, name, values);
+  else if (kind === 'python' && looksPyCairo(text)) r = convertPyFrames(text, name, values);
   else if (kind === 'python') r = pythonOther(text, name);
   else if (kind === 'html' || kind === 'canvas') r = convertCanvas(kind, text, name, values);
   else r = { kind, script: null, error: 'نوع این کد شناخته نشد (JS بوم، HTML، MoviePy یا Manim).', warnings: [], tweaks: [], scenes: [], found: [], unknown: [], media: [], audio: [], source: text };

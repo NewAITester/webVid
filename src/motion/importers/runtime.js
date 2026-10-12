@@ -1,4 +1,5 @@
 import * as REEL from '../../engine/reelfx.js';
+import { runPyFrame, pyAudio } from './pyframes.js';
 
 /**
  * اجراکنندهٔ «کد وارد‌شده» داخل لایهٔ کد
@@ -181,6 +182,7 @@ const _inst = new Map();
  * RUN: { mode: 'call'|'raf'|'interval'|'static', fn, params, W0, H0, adaptive, start, holder, declared, uses }
  */
 export function runImported(ctx, e, program, T, run) {
+  if (run.lang === 'py') return runPyFrame(ctx, e, program, T, run);
   const w = e.w, h = e.h, t = (run.start || 0) + e.t;
   ctx.save(); ctx.translate(-w / 2, -h / 2);
   try {
@@ -290,6 +292,7 @@ export function analyzeRun(program, T, run, { duration: durHint, thumbs = true, 
 
 /** موسیقی کد (synthTrack) ← بایت‌های WAV */
 export async function synthAudio(program, T, run) {
+  if (run?.lang === 'py') return pyAudio(program, T, run);
   const inst = instantiate(program, T, run);
   if (!inst.out?.synth) return null;
   const buf = await inst.out.synth();

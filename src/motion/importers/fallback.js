@@ -13,7 +13,7 @@ const lum = hex => { const h = hex.replace('#', ''); const [r, g, b] = [0, 2, 4]
 const hx = n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0').toUpperCase();
 
 /** رشته‌های متنی داخل کد (نه مسیر فایل، نه کلیدواژه) با جایشان در متن */
-function literals(src) {
+export function literals(src) {
   const out = [];
   const lines = String(src).split('\n');
   let off = 0, inDoc = false;

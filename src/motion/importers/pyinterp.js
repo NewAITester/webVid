@@ -1,4 +1,4 @@
-import { pyParse } from './pyparse.js';
+import { pyParse, ELLIPSIS } from './pyparse.js';
 
 /**
  * مفسّر کوچک پایتون — برای «خواندن» اسکریپت‌های ساخت ویدیو
@@ -321,6 +321,7 @@ export class Interp {
       case 'BoolOp': { const l = this.eval(e.l, env); if (e.op === 'and') return truthy(l) ? this.eval(e.r, env) : l; return truthy(l) ? l : this.eval(e.r, env); }
       case 'Compare': {
         let l = this.eval(e.l, env);
+        if (e.ops.length === 1) return this.cmp(e.ops[0], l, this.eval(e.rs[0], env));
         for (let i = 0; i < e.ops.length; i++) { const r = this.eval(e.rs[i], env); if (!this.cmp(e.ops[i], l, r)) return false; l = r; }
         return true;
       }
@@ -361,6 +362,10 @@ export class Interp {
   }
   cmp(op, a, b) {
     if (a instanceof Unk || b instanceof Unk) return op === '!=' || op === 'is not' || op === 'not in';
+    if (op !== 'is' && op !== 'is not' && op !== 'in' && op !== 'not in') {      // مقایسهٔ عنصربه‌عنصر (numpy)
+      if (a?.__op) { const r = a.__op('cmp' + op, b, false); if (r !== undefined) return r; }
+      if (b?.__op) { const r = b.__op('cmp' + op, a, true); if (r !== undefined) return r; }
+    }
     switch (op) {
       case '==': return eq(a, b); case '!=': return !eq(a, b);
       case '<': return lt(a, b); case '>': return lt(b, a); case '<=': return !lt(b, a); case '>=': return !lt(a, b);
@@ -583,8 +588,9 @@ export class Interp {
       object: new NativeClass('object'), Exception: new NativeClass('Exception', { init: ([o, m]) => { o.d.args = tup([m]); } }),
       ValueError: new NativeClass('ValueError'), TypeError: new NativeClass('TypeError'), KeyError: new NativeClass('KeyError'), RuntimeError: new NativeClass('RuntimeError'), IndexError: new NativeClass('IndexError'),
       NotImplementedError: new NativeClass('NotImplementedError'), FileNotFoundError: new NativeClass('FileNotFoundError'), ImportError: new NativeClass('ImportError'), OSError: new NativeClass('OSError'), StopIteration: new NativeClass('StopIteration'), ZeroDivisionError: new NativeClass('ZeroDivisionError'),
-      __name__: '__main__', __file__: 'script.py', NotImplemented: null, Ellipsis: null,
+      __name__: '__main__', __file__: 'script.py', NotImplemented: null, Ellipsis: ELLIPSIS,
     };
+    for (const [k, v] of Object.entries(B)) if (typeof v === 'function' && v.__native && !v.__name) v.__name = k;
     return B;
   }
 }
