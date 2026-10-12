@@ -92,8 +92,8 @@ export function runScript(src, { W = 1080, H = 1920, bpm = 120 } = {}) {
     adjust: o => item('adjust', { o: opt(o) }),
     /** کد وارد‌شده: imported(PROGRAM, { run, start, values, tweaks, labels, title }) ← لایهٔ کدی که کد اصلی را اجرا می‌کند */
     imported: (prog, o = {}) => {
-      const { run, start, values, tweaks, title, labels, hide, ...rest } = opt(o);
-      return item('code', { src: importedBody(String(prog || ''), { run, start, values, tweaks, title, labels, hide }), o: rest });
+      const { run, start, values, tweaks, title, labels, hide, part, partName, ...rest } = opt(o);
+      return item('code', { src: importedBody(String(prog || ''), { run, start, values, tweaks, title, labels, hide, part, partName }), o: rest });
     },
     layer: raw => item('raw', { raw }),
     /** ابزار: رنگ‌ها با شفافیت  ← '#RRGGBBAA' */

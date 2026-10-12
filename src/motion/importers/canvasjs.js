@@ -387,8 +387,20 @@ export function importedBody(program, o = {}) {
   for (const [id, v] of glob) lines.push(`const ${id} = ${q(v)}; // ${cm(labels[id] || id)}`);
   lines.push(`const $V = ${JSON.stringify(rest)};`);
   lines.push(`const RUN = ${JSON.stringify(o.run || {})};`);
-  lines.push('// ───── کد اصلی ─────');
-  lines.push('const PROGRAM = [', ...String(program).split('\n').map(l => '  ' + JSON.stringify(l) + ','), "].join('\\n');");
+  const PL = String(program).split('\n'), arr = a => a.map(l => '  ' + JSON.stringify(l) + ',');
+  const part = Array.isArray(o.part) && o.part[0] >= 1 && o.part[1] > o.part[0] && o.part[1] <= PL.length + 1 ? o.part : null;
+  if (part) {
+    // اول کد همین صحنه، بعد بقیهٔ کد (مشترک بین صحنه‌ها) — ترتیب اجرا همان کد اصلی است
+    lines.push(`// ───── کد همین صحنه${o.partName ? ` (${o.partName})` : ''} ─────`);
+    lines.push('const SCENE = [', ...arr(PL.slice(part[0] - 1, part[1] - 1)), '];');
+    lines.push('// ───── بقیهٔ کد اصلی (مشترک بین صحنه‌ها) ─────');
+    lines.push('const BEFORE = [', ...arr(PL.slice(0, part[0] - 1)), '];');
+    lines.push('const AFTER = [', ...arr(PL.slice(part[1] - 1)), '];');
+    lines.push("const PROGRAM = [...BEFORE, ...SCENE, ...AFTER].join('\\n');");
+  } else {
+    lines.push('// ───── کد اصلی ─────');
+    lines.push('const PROGRAM = [', ...arr(PL), "].join('\\n');");
+  }
   lines.push(`return e.runImported(ctx, e, PROGRAM, { ...$V${[...shown].map(k => ', ' + k).join('')} }, { ...RUN, start: START });`);
   return lines.join('\n');
 }

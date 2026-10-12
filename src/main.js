@@ -31,6 +31,7 @@ import { loadUserFonts, userFonts, pickFontFile, removeFont, setLyricFont } from
 import { buildProjectFile, projectFromText } from './ui/projectio.js';
 import { openCodeProjectSheet } from './ui/codeproject.js';
 import { attachCodeSearch } from './ui/codesearch.js';
+import { watchKeyboard } from './ui/keyboard.js';
 import { detectFormat, probeMotion, synthAudio } from './motion/importers/index.js';
 
 import { $, $$, faN } from './ui/dom.js';
@@ -2354,6 +2355,7 @@ $('#noAudioLayers').onclick = () => { $('#noAudio').classList.add('hidden'); go(
 $('#play').onclick = toggle;
 
 window.addEventListener('resize', fit);
+watchKeyboard({ onChange: () => setTimeout(() => { sizePane(); fit(); }, 60) });
 /* اندازهٔ صحنه ممکن است بدون رویداد resize عوض شود (چرخش، نوار
    مرورگر، باز شدن صفحه‌کلید). اندازه‌گیری فوری بعد از تغییر کلاس
    هم مقدار قدیمی می‌داد چون مرورگر هنوز چیدمان را دوباره نچیده

@@ -708,3 +708,14 @@ textarea.code.script{min-height:46vh;direction:ltr;text-align:left;font-size:12.
 .codesearch.closed .cs-row > :not(.cs-open), .codesearch.closed .cs-list, .codesearch.closed .cs-row + .cs-row{display:none}
 .codesearch.closed .cs-open::after{content:' جستجو در کد';font-family:inherit}
 .impcard .imxr.dis{opacity:.55}
+
+/* ⌨ صفحه‌کلید گوشی باز است (ui/keyboard.js): برنامه فقط در بخش دیدنی */
+body.kb #app{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100dvh)}
+body.kb .screen[data-screen="editor"] > .top,
+body.kb .ebody > .transport, body.kb .ebody > .tlwrap, body.kb .ebody > .clipbar, body.kb .nav,
+body.kb .panes > .grab{display:none !important}
+body.kb .ebody > .stagewrap{flex:0 0 36%;min-height:84px}
+body.kb .panes.open{flex:1 1 0 !important;min-height:0}
+body.kb .sheet, body.kb .addsheet{top:var(--vvt,0px);bottom:auto;height:var(--vvh,100dvh)}
+body.kb .sheet .sheetbox, body.kb .addsheet .sbody{max-height:calc(var(--vvh,100dvh) - 12px)}
+body.kb textarea.code{min-height:120px}

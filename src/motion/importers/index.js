@@ -248,6 +248,37 @@ function pyDefRanges(src) {
   }
   return out;
 }
+/** واحدهای سطح بالای فایل پایتون: def/class یا انتساب «نام = …» ← { names, a, b (خط ۱-مبنا، b انحصاری), refs } */
+function pyTopUnits(src) {
+  const lines = String(src).split('\n'), top = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (!l.trim() || /^\s/.test(l) || /^#/.test(l) || /^[)\]}]/.test(l)) continue;
+    top.push(i);
+  }
+  const strip = t => t.replace(/("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')/g, '""').replace(/#[^\n]*/g, '');
+  return top.map((i, k) => {
+    const j = k + 1 < top.length ? top[k + 1] : lines.length, l = lines[i];
+    let names = [], m;
+    if ((m = /^(?:async\s+)?(?:def|class)\s+(\w+)/.exec(l))) names = [m[1]];
+    else if ((m = /^([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*(?::[^=]*)?=(?!=)/.exec(l))) names = m[1].split(',').map(x => x.trim());
+    const body = strip(lines.slice(i, j).join('\n'));
+    return { names, main: /^if\s+__name__\b/.test(l), a: i + 1, b: j + 1, refs: new Set(body.match(/[A-Za-z_]\w*/g) || []) };
+  });
+}
+/** نام‌هایی که از تابع‌های شروع (بدون رفتن داخل تابع‌های ممنوع) قابل‌دسترسی‌اند */
+function pyReach(units, starts, banned) {
+  const def = new Map();
+  for (const u of units) for (const n of u.names) { if (!def.has(n)) def.set(n, []); def.get(n).push(u); }
+  const seen = new Set(), queue = [...starts];
+  while (queue.length) {
+    const n = queue.pop();
+    if (seen.has(n) || banned.has(n)) continue;
+    seen.add(n);
+    for (const u of def.get(n) || []) for (const r of u.refs) if (!seen.has(r) && def.has(r)) queue.push(r);
+  }
+  return seen;
+}
 function convertPyFrames(text, name, values) {
   const tweaks = pyFrameTweaks(text);
   if (values) for (const t of tweaks) if (t.id in values) t.value = values[t.id];
@@ -288,11 +319,32 @@ function convertPyFrames(text, name, values) {
   const ranges = pyDefRanges(text);
   const ownOf = s => { const rg = s.fn && ranges[s.fn]; return rg ? tweaks.filter(t => t.line >= rg[0] && t.line <= rg[1]) : []; };
   const owned = new Set(inst.scenes.flatMap(s => ownOf(s).map(t => t.id)));
+  const units = pyTopUnits(text), sceneFns = new Set(inst.scenes.map(s => s.fn).filter(Boolean));
+  const unitOf = line => units.find(u => line >= u.a && line < u.b);
+  const lineAt = [0]; for (let i = 0; i < text.length; i++) if (text[i] === '\n') lineAt.push(i + 1);
   for (const s of inst.scenes) {
     const own = ownOf(s), mine = new Set(own.map(t => t.id)), hide = [...owned].filter(id => !mine.has(id));
+    // مقدارهای سراسری‌ای که این صحنه اصلاً به آن‌ها نمی‌رسد (مال صحنه‌های دیگرند) ← پنهان
+    if (s.fn && ranges[s.fn] && sceneFns.size > 1) {
+      const reach = pyReach(units, [s.fn, ...(inst.fn.name !== s.fn ? [inst.fn.name] : [])], new Set([...sceneFns].filter(f => f !== s.fn)));
+      for (const t of tweaks) {
+        if (mine.has(t.id) || hide.includes(t.id)) continue;
+        const u = unitOf(t.line);
+        if (u && ((u.names.length && !u.names.some(n => reach.has(n))) || u.main)) { hide.push(t.id); continue; }
+        // جدول صحنه‌ها مثل [(0, s_intro, 'INTRO'), (2.5, s_flow, 'FLOW')] ← فقط ردیف همین صحنه
+        if (u && [...sceneFns].filter(f => u.refs.has(f)).length > 1 && t.s != null) {
+          const before = text.slice(lineAt[u.a - 1] ?? 0, t.s);
+          let last = null, at = -1;
+          for (const f of sceneFns) { const m = [...before.matchAll(new RegExp(`\\b${f}\\b`, 'g'))].pop(); if (m && m.index > at) { at = m.index; last = f; } }
+          if (last && last !== s.fn) hide.push(t.id);
+        }
+      }
+    }
+    const rg = s.fn && sceneFns.size > 1 && ranges[s.fn];
+    const part = rg ? `, part: [${rg[0]}, ${rg[1] + 1}], partName: ${q(s.fn + '()')}` : '';
     const tw = own.length ? `,\n    tweaks: {\n${own.map(t => `      ${t.id}: [G.${t.id}, ${q(cmt(t.label))}],`).join('\n')}\n    }` : '';
     L.push(`scene({ name: ${q(s.name)}, at: ${r3(s.t0)}, dur: ${r3(s.t1 - s.t0)} },`,
-      `  imported(PROGRAM(), { run: RUN, start: ${r3(s.t0)}, values: G, labels: GL${hide.length ? `, hide: ${JSON.stringify(hide)}` : ''}, title: ${q(s.name)}, name: ${q('🧩 ' + s.name)}${tw} }))`, '');
+      `  imported(PROGRAM(), { run: RUN, start: ${r3(s.t0)}, values: G, labels: GL${hide.length ? `, hide: ${JSON.stringify(hide)}` : ''}${part}, title: ${q(s.name)}, name: ${q('🧩 ' + s.name)}${tw} }))`, '');
   }
   L.push('// ───── کد پایتون اصلی ─────', `function PROGRAM() { return ${JSON.stringify(text)} }`);
   const found = [
