@@ -16,7 +16,7 @@ import { FONT_CHOICES } from '../motion/render.js';
 import { frameEnv } from '../motion/evaluate.js';
 import * as M from '../motion/mat.js';
 import { pickFontFile, userFonts, removeFont } from '../motion/fonts.js';
-import { ELEMENT_KINDS, ELEMENT_CATS, colorProp, elementParams, setElementParam, swapElement, findTweaks, setTweak } from '../motion/elements.js';
+import { ELEMENT_KINDS, ELEMENT_CATS, colorProp, elementParams, setElementParam, swapElement, findTweaks, setTweak, makeElementLayer } from '../motion/elements.js';
 import { attachCodeSearch } from './codesearch.js';
 const isImportedCode = code => /e\.runImported\(ctx, e, PROGRAM/.test(code || '');
 import { openScriptSheet } from './scriptpanel.js';
@@ -107,6 +107,21 @@ export class MotionPanel {
   }
 
   /** عنصر آماده (قلب، کانفتی، نوار…) */
+  /** نوشته ← لایهٔ المان ذره‌ای (flowTitle / flowText) با همان نوشته و زمان */
+  textToFlow(L, kind) {
+    const str = String(L.data?.str || '').replace(/\s+/g, ' ').trim() || 'FLOW';
+    const F = makeElementLayer(kind, { text: str }, L.t0, Math.max(0.5, L.t1 - L.t0), this.host.W(), this.host.H());
+    if (F.props.h.v > this.host.H()) F.props.h = { v: this.host.H() };
+    if (F.props.w.v > this.host.W()) F.props.w = { v: this.host.W() };
+    if (L.scene) F.scene = L.scene;
+    this.layers.splice(this.layers.indexOf(L) + 1, 0, F);
+    L.visible = false;
+    this.tab = 'edit';
+    this.host.select(F.id);
+    this.changed(true);
+    return F;
+  }
+
   addElement(el) {
     const t = this.host.getTime(), total = this.host.duration() || 5;
     const t0 = Math.max(0, Math.min(t, Math.max(0, total - 1)));
@@ -159,6 +174,9 @@ export class MotionPanel {
         if (L.type === 'spectrum') L.props.sc = { v: 55 };
         return [L];
       }, 1.6)));
+    const flows = ['flowTitle', 'flowText'].map(k => ELEMENTS.find(el => el.id === 'el_' + k)).filter(Boolean)
+      .map(el => tile(el.ic, el.label, ELEMENT_KINDS[el.kind].desc, run(() => this.addElement(el)),
+        thumb('el:' + el.id, () => { const L = buildElement(el, 0, 5, 600, 400); L.props.w = { v: 600 }; L.props.h = { v: 400 }; L.props.y = { v: 0 }; return [L]; }, el.kind === 'flowTitle' ? 1.6 : 1.9)));
     const ext = extras.map(x => tile(x.ic, x.label, x.desc, run(x.fn, x.openLayers !== false)));
 
     const q = h('input', { class: 'txt', type: 'search', placeholder: 'جستجو: نئون، قلب، برف…',
@@ -173,6 +191,7 @@ export class MotionPanel {
           h('button', { class: 'icon sm', onclick: () => sheet.remove(), title: 'بستن' }, '✕')),
         q,
         h('div', { class: 'sscroll' },
+          grp('🌊 تازه: افکت ذره‌ای FLOW', 'از کد پایتون شوریل — عنوان ریتمیک برای اسم اول ویدیو، جریان برای هر جای ویدیو', ...flows),
           grp('لایهٔ خالی', 'از صفر بسازید', ...basic),
           grp('متن آماده', 'یک ضربه = متن با رنگ، افکت و انیمیشن', ...styles),
           grp('کد و اسکریپت', 'کل ویدیو را با کد بنویسید، بعد دستی ویرایش کنید',
@@ -851,6 +870,16 @@ export class MotionPanel {
       for (const d of E.params) card.append(this._propRow(L, fx.p[d.key], d, `${L.id}.${fx.id}.${d.key}`));
       body.append(card);
     });
+
+    // نوشته ← افکت ذره‌ای FLOW (همان صحنهٔ FLOW شوریل پایتون)
+    if (L.type === 'text' && !opt.noLooks) {
+      body.append(h('div', { class: 'shead sm' }, '🌊 افکت ذره‌ای FLOW برای همین نوشته'));
+      body.append(h('p', { class: 'note' }, 'نوشته با هزاران ذرهٔ رنگی ساخته می‌شود (یک لایهٔ تازه با همین نوشته و همین زمان؛ نوشتهٔ ساده پنهان می‌شود و هر وقت خواستید برش می‌گردانید).'));
+      body.append(this._strip(['flowTitle', 'flowText'].map(kind => this._thumbBtn(
+        thumb('el:el_' + kind, () => { const T = makeElementLayer(kind, {}, 0, 5, 600, 400); T.props.w = { v: 600 }; T.props.h = { v: 400 }; T.props.y = { v: 0 }; return [T]; }, kind === 'flowTitle' ? 1.6 : 1.9),
+        kind === 'flowTitle' ? 'عنوان ریتمیک (اول ویدیو)' : 'جریان FLOW (هر جای ویدیو)', false,
+        () => this.textToFlow(L, kind)))));
+    }
 
     if (L.type !== 'null' && !opt.noLooks) {
       body.append(h('div', { class: 'shead sm' }, 'ظاهر آماده — چند افکت با هم'));
