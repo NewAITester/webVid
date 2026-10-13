@@ -69,3 +69,6 @@ handlers.fetch({request:{url:scope+'runtime/unknown'},respondWith:p => { served=
 assert.equal((await served).status,404);
 assert.equal(fetches,1,'service worker only reads manifest, never downloads binaries');
 console.log('PASS: tool dependency planning, versioned cache, checksum/size validation, retry, cancellation, partial preservation, offline service-worker routing');
+
+// Exercise the actual prebuild generator with modern and legacy lock formats.
+await import('./prepare-tools.test.mjs');

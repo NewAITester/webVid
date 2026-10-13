@@ -36,9 +36,9 @@ const sha = b => createHash('sha256').update(b).digest('hex');
 const src = 'node_modules/pyodide';
 const version = read(join(src, 'package.json')).version;
 const lock = read(join(src, 'pyodide-lock.json'));
-// npm package version can differ from the Pyodide release version.
-const release = lock.info.version;
-if (!release) throw new Error('Missing Pyodide release version');
+// Older locks include info.version; current ABI-based locks (e.g. 314.0.7) do not.
+// In that format the pinned npm version is also the /pyodide/v<VERSION>/full release.
+const release = lock.info?.version || version;
 const coreCDN = `https://cdn.jsdelivr.net/npm/pyodide@${version}/`;
 const wheelCDN = `https://cdn.jsdelivr.net/pyodide/v${release}/full/`;
 const entries = {}, imports = {}, pkgs = {};
