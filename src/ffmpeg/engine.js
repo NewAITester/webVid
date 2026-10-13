@@ -5,17 +5,17 @@
  * استفاده شده چون در WebView اندروید SharedArrayBuffer همیشه در
  * دسترس نیست.
  *
- * فایل‌های هسته (حدود ۳۱ مگابایت) موقع بیلد از node_modules در
- * public/ffmpeg کپی می‌شوند (scripts/copy-ffmpeg.mjs) تا بدون
- * اینترنت هم کار کند. اگر نبودند، از CDN بار می‌شوند.
+ * هسته فقط با تأیید کاربر دانلود و در حافظهٔ جدا ذخیره می‌شود.
+ * هیچ fallback شبکه‌ای خودکار وجود ندارد.
  *
  * فقط وقتی بار می‌شود که کاربر واقعاً لازمش داشته باشد — حجم اولیهٔ
  * برنامه تغییری نمی‌کند.
  */
 
-const CDN = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+import { runtimeBase } from '../tools/manager.js';
 let ff = null;
 let loading = null;
+let running = false;
 
 /** آیا این دستگاه می‌تواند ffmpeg.wasm را اجرا کند؟ */
 export function ffmpegSupported() {
@@ -31,22 +31,16 @@ export async function loadFFmpeg(onStatus = () => {}) {
   if (loading) return loading;
   loading = (async () => {
     onStatus('در حال بار کردن FFmpeg…');
-    const [{ FFmpeg }, { toBlobURL }] = await Promise.all([import('@ffmpeg/ffmpeg'), import('@ffmpeg/util')]);
-    const local = `${import.meta.env.BASE_URL}ffmpeg`;
-    let lastErr = null;
-    for (const base of [local, CDN]) {
-      try {
-        const inst = new FFmpeg();
-        await inst.load({
-          coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
-          wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
-        });
-        ff = inst;
-        onStatus(base === local ? 'FFmpeg آماده است (آفلاین)' : 'FFmpeg آماده است (از اینترنت)');
-        return ff;
-      } catch (e) { lastErr = e; }
-    }
-    throw new Error('FFmpeg بار نشد: ' + (lastErr?.message || lastErr));
+    const base = await runtimeBase('ffmpeg');
+    const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+    const inst = new FFmpeg();
+    try {
+      // Same-origin URLs are served from verified storage; no network fallback.
+      await inst.load({ coreURL: base + 'ffmpeg-core.js', wasmURL: base + 'ffmpeg-core.wasm' });
+      ff = inst;
+      onStatus('FFmpeg آماده است (از حافظهٔ ابزارها)');
+      return ff;
+    } catch (e) { inst.terminate(); throw e; }
   })();
   try { return await loading; } finally { loading = null; }
 }
@@ -57,11 +51,18 @@ export function probeDuration(blob) {
     const isAudio = blob.type?.startsWith('audio');
     const el = document.createElement(isAudio ? 'audio' : 'video');
     const url = URL.createObjectURL(blob);
-    const done = v => { URL.revokeObjectURL(url); res(Number.isFinite(v) ? v : 0); };
+    let finished = false, timer;
+    const done = v => {
+      if (finished) return;
+      finished = true; clearTimeout(timer);
+      el.onloadedmetadata = el.onerror = null;
+      el.removeAttribute('src'); el.load(); URL.revokeObjectURL(url);
+      res(Number.isFinite(v) ? v : 0);
+    };
     el.preload = 'metadata';
     el.onloadedmetadata = () => done(el.duration);
     el.onerror = () => done(0);
-    setTimeout(() => done(el.duration || 0), 6000);
+    timer = setTimeout(() => done(el.duration || 0), 6000);
     el.src = url;
   });
 }
@@ -80,7 +81,12 @@ export function probeDuration(blob) {
  * @returns {Promise<Blob>}
  */
 export async function runFFmpeg({ input, inName, args, outName, mime, onProgress = () => {}, onLog = () => {}, signal }) {
-  const f = await loadFFmpeg(onLog);
+  if (signal?.aborted) throw new Error('لغو شد');
+  if (running) throw new Error('FFmpeg مشغول اجرای دستور دیگری است');
+  running = true;
+  let f;
+  try { f = await loadFFmpeg(onLog); } catch (e) { running = false; throw e; }
+  if (signal?.aborted) { running = false; throw new Error('لغو شد'); }
   const onP = ({ progress }) => onProgress(Math.max(0, Math.min(1, progress || 0)));
   const onL = ({ message }) => onLog(message);
   f.on('progress', onP);
@@ -96,11 +102,12 @@ export async function runFFmpeg({ input, inName, args, outName, mime, onProgress
     return new Blob([data.buffer ?? data], { type: mime });
   } finally {
     signal?.removeEventListener('abort', abort);
-    if (ff) {
-      f.off('progress', onP); f.off('log', onL);
+    try { f.off('progress', onP); f.off('log', onL); } catch { /* terminated worker */ }
+    if (ff === f) {
       // حافظهٔ wasm محدود است؛ فایل‌ها را پاک کن
       try { await f.deleteFile(inName); } catch { /* */ }
       try { await f.deleteFile(outName); } catch { /* */ }
     }
+    running = false;
   }
 }

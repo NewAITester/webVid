@@ -53,6 +53,7 @@ jobs:
           node tests/engine.test.mjs
           node tests/song.test.mjs
           node tests/motion.test.mjs
+          node tests/tools.test.mjs
 
       - name: بیلد وب
         run: npm run build
@@ -69,12 +70,13 @@ jobs:
           test -f android/app/src/main/assets/public/data/Neghab.mp3
           test -f android/app/src/main/assets/public/fonts/IRANSansX-Black.ttf
           test -f android/app/src/main/assets/public/data/lyrics.lrc
-          # پایتون واقعی (Pyodide + numpy) داخل اپ
-          test -f android/app/src/main/assets/public/pyodide/pyodide.asm.wasm
-          test -f android/app/src/main/assets/public/pyodide/python_stdlib.zip
-          ls android/app/src/main/assets/public/pyodide/numpy-*.whl
-          ls android/app/src/main/assets/public/pyodide/opencv_python-*.whl android/app/src/main/assets/public/pyodide/matplotlib-*.whl
+          # Only small manifests, never Python/FFmpeg binaries in app updates.
+          test -f android/app/src/main/assets/public/tools-manifest.json
+          test -f android/app/src/main/assets/public/tools-sw.js
           test -f android/app/src/main/assets/public/pyodide/bundled.json
+          test ! -f android/app/src/main/assets/public/pyodide/pyodide.asm.wasm
+          test ! -d android/app/src/main/assets/public/ffmpeg
+          ! find android/app/src/main/assets/public -name '*.whl' | grep -q .
           # فونت‌های همراه برنامه
           test -f android/app/src/main/assets/public/webfonts/fonts.json
           ls android/app/src/main/assets/public/webfonts/*.ttf | wc -l

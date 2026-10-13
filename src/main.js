@@ -1,3 +1,4 @@
+import { mountToolManager } from './ui/toolmanager.js';
 import { Stage } from './engine/stage.js';
 import { Renderer } from './engine/renderer.js';
 import { Analysis } from './engine/analysis.js';
@@ -2462,3 +2463,6 @@ boot().catch(err => {
   $('#loading').textContent = 'خطا: ' + err.message;
 });
 
+
+// Metadata and downloads are lazy; startup never downloads a runtime.
+mountToolManager();

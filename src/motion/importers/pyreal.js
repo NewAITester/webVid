@@ -1,12 +1,11 @@
 /**
  * پایتون واقعی (CPython + numpy/scipy/Pillow روی WebAssembly با Pyodide)
  * ─────────────────────────────────────────────────────────────
- * فایل‌های Pyodide داخل خود برنامه‌اند (public/pyodide ← scripts/copy-pyodide.mjs)،
- * پس چیزی از اینترنت دانلود نمی‌شود. کد پایتون وارد‌شده همان‌طور که هست با پایتون
- * واقعی اجرا می‌شود: صدا (wave / scipy.io.wavfile) دقیقاً همان خروجی اجرای اصلی است و
- * فریم‌ها با numpy واقعی حساب می‌شوند؛ فقط cairo به بوم برنامه وصل است (cairoBridge).
- * تا وقتی پایتون واقعی آماده نشده (یا اگر فایل‌هایش نبود) مفسر داخلی کار می‌کند.
+ * دانلود فقط با تأیید کاربر از مدیر ابزارها انجام می‌شود؛ فایل‌ها در Cache Storage
+ * مستقل از بستهٔ اپ نگه داشته می‌شوند. فایل‌های کامل با SHA-256 اعتبارسنجی می‌شوند.
+ * تا نصب ابزار، مفسر داخلی در دسترس است. پل cairo همچنان به بوم برنامه متصل است.
  */
+import { runtimeBase, requireTools } from '../../tools/manager.js';
 import { cairoBridge } from './pyframes.js';
 import { addPending } from './domframes.js';
 import { initWebfonts, familiesIn, bundledFaces } from '../webfonts.js';
@@ -15,15 +14,16 @@ import { initWebfonts, familiesIn, bundledFaces } from '../webfonts.js';
 let BUNDLED = { imports: { numpy: 'numpy', scipy: 'scipy', PIL: 'pillow' }, pkgs: { numpy: { name: 'numpy' }, scipy: { name: 'scipy' }, pillow: { name: 'pillow' } } };
 const FDIR = '/usr/share/fonts/truetype/wv';
 
-let PY = null, B = null, W = null, loading = null, failed = null;
+let PY = null, B = null, W = null, loading = null, failed = null, cachedBase = null;
+if (typeof window !== 'undefined') window.addEventListener('wv-tools-changed', () => { failed = null; fire(); });
 const loaded = new Set(), pkgJobs = new Map(), insts = new Map();
 
 export function pyodideBase() {
-  if (globalThis.WV_PYODIDE_URL) return globalThis.WV_PYODIDE_URL;
+  if (cachedBase) return cachedBase;
   try { return new URL('pyodide/', document.baseURI).href; } catch { return './pyodide/'; }
 }
 const fire = () => { try { window.dispatchEvent(new Event('wv-dom-frame')); } catch { /* */ } };
-export const realState = () => (PY ? 'ready' : failed ? 'failed' : loading ? 'loading' : 'idle');
+export const realState = () => (failed ? 'failed' : PY ? 'ready' : loading ? 'loading' : 'idle');
 export const realError = () => failed;
 
 const GLUE = String.raw`
@@ -720,15 +720,23 @@ def wv_frame(g, name, W, H, bgr, *args):
 
 /** بار کردن Pyodide (یک بار) */
 export function loadReal() {
+  if (PY) return Promise.resolve(PY);
+  if (failed) return Promise.resolve(null);
   if (loading) return loading;
   if (typeof document === 'undefined' || globalThis.WV_NO_REAL_PY) { failed = 'unavailable'; return (loading = Promise.resolve(null)); }
   loading = (async () => {
-    const base = pyodideBase();
-    try { const r = await fetch(base + 'bundled.json'); if (r.ok) { const j = await r.json(); if (j?.imports) BUNDLED = j; } } catch { /* فهرست پیش‌فرض */ }
+    const base = cachedBase = await runtimeBase('python');
+    const r = await fetch(new URL('pyodide/bundled.json', document.baseURI));
+    if (!r.ok) throw new Error('فهرست کتابخانه‌های پایتون در بیلد پیدا نشد');
+    const j = await r.json();
+    if (!j?.imports || !j?.pkgs) throw new Error('فهرست کتابخانه‌های پایتون معتبر نیست');
+    BUNDLED = j;
     initWebfonts();
     const { loadPyodide } = await import(/* @vite-ignore */ base + 'pyodide.mjs');
     const py = await loadPyodide({ indexURL: base, stdout: () => {}, stderr: () => {} });
-    await py.loadPackage(['numpy'], { messageCallback: () => {} });
+    const errors = [];
+    await py.loadPackage(['numpy'], { messageCallback: () => {}, errorCallback:e => errors.push(String(e)) });
+    if (errors.length) throw new Error(errors.join('\n'));
     loaded.add('numpy');
     B = cairoBridge();
     B.same = (a, b) => a === b;
@@ -740,7 +748,7 @@ export function loadReal() {
     PY = py;
     fire();
     return py;
-  })().catch(e => { failed = String(e?.message || e); console.warn('Pyodide:', e); return null; });
+  })().catch(e => { failed = String(e?.message || e); console.warn('Pyodide:', e); return null; }).finally(() => { loading = null; });
   return loading;
 }
 
@@ -766,12 +774,16 @@ function ensurePkgs(list) {
     const base = pyodideBase();
     const built = list.filter(k => !BUNDLED.pkgs?.[k]?.file).map(k => BUNDLED.pkgs?.[k]?.name || k);
     const wheels = list.filter(k => BUNDLED.pkgs?.[k]?.file).map(k => base + BUNDLED.pkgs[k].file);
-    const opt = { messageCallback: () => {}, errorCallback: () => {} };
+    const errors = [];
+    const opt = { messageCallback: () => {}, errorCallback:e => errors.push(String(e)) };
     pkgJobs.set(key, (async () => {
+      await requireTools(list);
       if (built.length) await PY.loadPackage(built, opt);
       if (wheels.length) await PY.loadPackage(wheels, opt);
+      if (errors.length) throw new Error(errors.join('\n'));
     })().then(() => { list.forEach(p => loaded.add(p)); fire(); })
-      .catch(e => { console.warn('Pyodide packages', list, e); list.forEach(p => loaded.add(p)); }));
+      .catch(e => { failed = String(e?.message || e); console.warn('Pyodide packages', list, e); throw e; })
+      .finally(() => pkgJobs.delete(key)));
   }
   return pkgJobs.get(key);
 }
@@ -839,8 +851,8 @@ function makeInst(src, fn) {
 export function realInst(src, fn) {
   if (failed) return null;
   // همهٔ مرحله‌ها (Pyodide ← بسته‌ها ← فونت‌ها) در یک انتظار، تا خروجی فقط یک بار صبر کند
-  if (!PY) { addPending(loadReal().then(py => py && prepare(src))); return null; }
-  if (needPkgs(src).length || needFonts(src).length) { addPending(prepare(src)); return null; }
+  if (!PY) { addPending(loadReal().then(py => py && prepare(src)).catch(e => { failed = String(e?.message || e); })); return null; }
+  if (needPkgs(src).length || needFonts(src).length) { addPending(prepare(src).catch(e => { failed = String(e?.message || e); })); return null; }
   return makeInst(src, fn);
 }
 export async function realInstAsync(src, fn) {

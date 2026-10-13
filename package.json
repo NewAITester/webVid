@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/copy-ffmpeg.mjs && node scripts/copy-pyodide.mjs && node scripts/copy-fonts.mjs",
+    "prebuild": "node scripts/prepare-tools.mjs && node scripts/copy-fonts.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/engine.test.mjs && node tests/song.test.mjs && node tests/motion.test.mjs"
+    "test": "node tests/engine.test.mjs && node tests/song.test.mjs && node tests/motion.test.mjs && node tests/tools.test.mjs",
+    "test:tools-browser": "node tests/tools.browser.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.2",
