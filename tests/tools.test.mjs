@@ -62,7 +62,13 @@ const cachedKey = cacheKey(file,scope);
 const context = vm.createContext({ self:swSelf, URL, Response,
   fetch:async () => { fetches++; return Response.json({entries:{ffmpeg:{files:[file]}}}); },
   caches:{open:async () => ({match:async k => k === cachedKey ? ok.clone() : undefined})} });
-vm.runInContext(readFileSync(new URL('../public/tools-sw.js',import.meta.url),'utf8'),context);
+const swSource = readFileSync(new URL('../public/tools-sw.js',import.meta.url),'utf8');
+// Public assets are copied verbatim, so no build transform can fix modern syntax.
+// Prevent the operators that caused Android's generic 'script evaluation failed'.
+assert(!/\|\|=|&&=|\?\?=|\?\./.test(swSource), 'raw SW must avoid ES2020/2021 operators');
+assert.match(readFileSync(new URL('../vite.config.js',import.meta.url),'utf8'), /target:\s*['"]chrome80['"]/,
+  'bundled app and workers must target the API 30 WebView baseline');
+vm.runInContext(swSource,context);
 handlers.fetch({request:{url:scope+'runtime/'+file.path},respondWith:p => { served=p; }});
 assert.equal((await served).status,200);
 handlers.fetch({request:{url:scope+'runtime/unknown'},respondWith:p => { served=p; }});

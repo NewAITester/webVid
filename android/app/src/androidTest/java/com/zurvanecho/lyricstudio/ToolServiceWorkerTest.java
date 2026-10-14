@@ -32,6 +32,8 @@ public class ToolServiceWorkerTest {
                 assertTrue("App origin did not load", System.currentTimeMillis() < deadline);
                 Thread.sleep(150);
             }
+            String webViewInfo = evaluate(scenario, "navigator.userAgent");
+            System.out.println("Tool ServiceWorker test WebView: " + webViewInfo);
             // Force a fresh script request to reproduce the original failure even if a
             // previous test registered a worker. No real runtime is downloaded by this test.
             evaluate(scenario,
@@ -57,7 +59,7 @@ public class ToolServiceWorkerTest {
                 assertTrue("ServiceWorker registration timed out", System.currentTimeMillis() < deadline);
                 Thread.sleep(200);
             }
-            assertTrue(result.optString("error", "ServiceWorker did not start"), result.getBoolean("ok"));
+            assertTrue(result.optString("error", "ServiceWorker did not start") + " | WebView: " + webViewInfo, result.getBoolean("ok"));
             int status = result.getInt("status");
             // 409 is the intentional 'not installed' result. 503 would mean the
             // service worker still cannot fetch its own packaged manifest.

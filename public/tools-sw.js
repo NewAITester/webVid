@@ -1,14 +1,15 @@
 /* Serve ONLY verified, explicitly downloaded runtimes. Never fetch a missing binary. */
+// Kept ES2019-compatible: public assets bypass Vite transpilation.
 const CACHE = 'wv-tools-sha256-v1';
 let manifestJob;
-self.addEventListener('message', e => { if (e.data?.type === 'reset-manifest') manifestJob = null; });
+self.addEventListener('message', e => { if (e.data && e.data.type === 'reset-manifest') manifestJob = null; });
 self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url), base = new URL(self.registration.scope);
   if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname + 'runtime/')) return;
   e.respondWith((async () => {
-    manifestJob ||= fetch(new URL('tools-manifest.json', base), { cache:'no-store' }).then(r => {
+    if (!manifestJob) manifestJob = fetch(new URL('tools-manifest.json', base), { cache:'no-store' }).then(r => {
       if (!r.ok) throw new Error('Manifest unavailable');
       return r.json();
     }).catch(err => { manifestJob = null; throw err; });
