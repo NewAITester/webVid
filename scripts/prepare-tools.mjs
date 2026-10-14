@@ -91,14 +91,22 @@ const ffVersion = read('node_modules/@ffmpeg/core/package.json').version;
 const ffCDN = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${ffVersion}/dist/esm/`;
 entries.ffmpeg = { name:'FFmpeg', version:ffVersion, deps:[], files:['ffmpeg-core.js','ffmpeg-core.wasm'].map(f =>
   local(`ffmpeg/${ffVersion}/${f}`, ffCDN + f, 'node_modules/@ffmpeg/core/dist/esm/' + f)) };
-// Exact wheel sizes for the UI before consent; fail the build instead of guessing.
+// Content-Length from CDN HEAD can describe gzip/Brotli transfer bytes, not
+// the decoded file delivered by fetch(). Measure unknown wheel sizes from the
+// decoded stream and verify the upstream SHA. This is CI/build-time only: no
+// runtime binaries are written to public/ or included in app updates.
 const unknown = Object.values(entries).flatMap(e => e.files).filter(f => !f.bytes);
 let cursor = 0;
 await Promise.all(Array.from({ length:4 }, async () => {
   while (cursor < unknown.length) {
-    const f = unknown[cursor++], r = await get(f.url, 'HEAD');
-    f.bytes = Number(r.headers.get('content-length'));
-    if (!f.bytes) throw new Error(`Download size unavailable: ${f.url}`);
+    const f = unknown[cursor++], r = await get(f.url);
+    if (!r.body) throw new Error(`Download body unavailable: ${f.url}`);
+    const hash = createHash('sha256'); let bytes = 0;
+    for await (const chunk of r.body) { bytes += chunk.byteLength; hash.update(chunk); }
+    if (!bytes || hash.digest('hex') !== f.sha256) {
+      throw new Error(`Wheel integrity mismatch while measuring decoded size: ${f.url}`);
+    }
+    f.bytes = bytes;
   }
 }));
 for (const [k,e] of Object.entries(entries)) if (!['python','ffmpeg'].includes(k)) e.deps = [...new Set(['python', ...e.deps])];

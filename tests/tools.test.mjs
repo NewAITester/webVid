@@ -19,13 +19,13 @@ assert.equal(CACHE,'wv-tools-sha256-v1');
 
 // Run the actual download worker with isolated Web APIs; no network required.
 let source = readFileSync(new URL('../src/tools/download-worker.js',import.meta.url),'utf8').replace(/^import .*\n/,'');
-async function workerRun({ response = () => new Response(body), cached, files=[file], action } = {}) {
+async function workerRun({ response = () => new Response(body), cached, files=[file], action, Controller=AbortController } = {}) {
   const entries = new Map(); if (cached) entries.set(cacheKey(file,'https://host.test/app/'),cached);
   const messages = []; let requests = 0;
   const self = { postMessage:x => { messages.push(x); action?.(x,self); } };
   const cache = { match:async k => entries.get(k)?.clone(), put:async (k,r) => { entries.set(k,r); } };
   const context = vm.createContext({ self, CACHE, cacheKey, valid, caches:{ open:async () => cache },
-    fetch:async () => { requests++; return response(); }, Response, Blob, AbortController,
+    fetch:async () => { requests++; return response(); }, Response, Blob, AbortController:Controller,
     performance, crypto:webcrypto, setTimeout, clearTimeout, URL, Uint8Array, console });
   vm.runInContext(source,context);
   await self.onmessage({ data:{files,base:'https://host.test/app/'} });
@@ -35,6 +35,17 @@ let result = await workerRun();
 assert.equal(result.messages.at(-1).type,'done');
 assert.equal(result.requests,1);
 assert(valid([...result.entries.values()][0],file));
+result = await workerRun({ response:() => new Response(body,{headers:{'content-length':'3','content-encoding':'br'}}) });
+assert.equal(result.messages.at(-1).type,'done','decoded file size must not be compared to compressed response headers');
+result = await workerRun({ response:() => new Response(new Uint8Array(body.length).fill(120)) });
+assert.equal(result.messages.at(-1).type,'error','equal-size wrong SHA must still fail');
+assert.equal(result.entries.size,0);
+assert.equal(result.messages.at(-1).file.path,file.path,'error must identify the current file');
+class LegacyAbortController extends AbortController {
+  constructor() { super(); this.signal.throwIfAborted = undefined; }
+}
+result = await workerRun({ Controller:LegacyAbortController });
+assert.equal(result.messages.at(-1).type,'done','older WebView without throwIfAborted remains supported');
 result = await workerRun({ cached:ok });
 assert.equal(result.requests,0,'complete tools do not download again');
 assert.equal(result.messages[0].type,'cached');
@@ -55,13 +66,16 @@ assert.equal(result.entries.size,1,'a later failure preserves previously complet
 assert.equal(result.messages.at(-1).type,'error');
 
 // Verify the actual SW refuses network fallback and handles nested application paths.
-const handlers = {}; let served, fetches = 0;
+const handlers = {}; let served, fetches = 0, manifestOffline = false;
+const manifestCache = new Map();
 const scope = 'https://host.test/nested/app/';
 const swSelf = { registration:{scope}, addEventListener:(name,fn) => { handlers[name]=fn; }, skipWaiting:async () => {}, clients:{claim:async () => {}} };
 const cachedKey = cacheKey(file,scope);
 const context = vm.createContext({ self:swSelf, URL, Response,
-  fetch:async () => { fetches++; return Response.json({entries:{ffmpeg:{files:[file]}}}); },
-  caches:{open:async () => ({match:async k => k === cachedKey ? ok.clone() : undefined})} });
+  fetch:async () => { fetches++; if (manifestOffline) throw new Error('offline'); return Response.json({entries:{ffmpeg:{files:[file]}}}); },
+  caches:{open:async name => name === 'wv-tools-manifest-v1'
+    ? {match:async k => manifestCache.get(k)?.clone(),put:async (k,r)=>manifestCache.set(k,r)}
+    : {match:async k => k === cachedKey ? ok.clone() : undefined}} });
 const swSource = readFileSync(new URL('../public/tools-sw.js',import.meta.url),'utf8');
 // Public assets are copied verbatim, so no build transform can fix modern syntax.
 // Prevent the operators that caused Android's generic 'script evaluation failed'.
@@ -74,6 +88,9 @@ assert.equal((await served).status,200);
 handlers.fetch({request:{url:scope+'runtime/unknown'},respondWith:p => { served=p; }});
 assert.equal((await served).status,404);
 assert.equal(fetches,1,'service worker only reads manifest, never downloads binaries');
+manifestOffline = true; handlers.message({data:{type:'reset-manifest'}});
+handlers.fetch({request:{url:scope+'runtime/'+file.path},respondWith:p => { served=p; }});
+assert.equal((await served).status,200,'persisted manifest must support offline runtime after reset/reload');
 console.log('PASS: tool dependency planning, versioned cache, checksum/size validation, retry, cancellation, partial preservation, offline service-worker routing');
 
 // Exercise the actual prebuild generator with modern and legacy lock formats.

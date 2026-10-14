@@ -29,6 +29,7 @@ export async function openToolManager(preselect = []) {
   body.append(el('p', 'برنامه بدون دانلود این ابزارها هم باز می‌شود. پایتون واقعی و FFmpeg فقط بعد از انتخاب و تأیید دانلود شما فعال می‌شوند. ابزارهای کامل در آپدیت معمولی حفظ می‌شوند؛ تغییر نسخهٔ ابزار ممکن است فایل‌های تازه لازم داشته باشد.', 'note'));
   body.append(el('p', 'پاک کردن داده‌ها، حذف برنامه یا پاک‌سازی حافظه توسط مرورگر می‌تواند ابزارها را حذف کند. ذخیرهٔ پایدار در صورت پشتیبانی درخواست می‌شود.', 'note'));
   const rows = el('div'), total = el('div', '', 'msg'), status = el('div', 'در حال بررسی ابزارها…', 'msg');
+  status.style.whiteSpace = 'pre-line';
   status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const progress = document.createElement('progress'); progress.max = 1; progress.value = 0;
   progress.style.width = '100%';
@@ -40,9 +41,24 @@ export async function openToolManager(preselect = []) {
   start.disabled = true; cancel.disabled = !downloadActive();
   cancel.onclick = cancelDownload;
   buttons.append(start, cancel, retry); body.append(rows, total, buttons, progress, status); box.append(head, body); overlay.append(box); document.body.append(overlay);
+  const selectAll = el('button', 'انتخاب همه', 'btn sm ghost');
+  selectAll.disabled = true; body.insertBefore(selectAll, rows);
   const checks = new Map(); let generation = 0;
   const selected = () => [...checks].filter(([,c]) => c.checked).map(([id]) => id);
+  function syncSelection() {
+    const allSelected = checks.size > 0 && [...checks.values()].every(c => c.checked);
+    selectAll.textContent = allSelected ? 'لغو انتخاب همه' : 'انتخاب همه';
+    selectAll.disabled = !checks.size || downloadActive();
+    selectAll.setAttribute('aria-pressed', String(allSelected));
+  }
+  selectAll.onclick = () => {
+    if (downloadActive()) return;
+    const value = [...checks.values()].some(c => !c.checked);
+    checks.forEach(c => { c.checked = value; });
+    recalc();
+  };
   async function recalc() {
+    syncSelection();
     const run = ++generation;
     try {
       const missing = await missingFiles(selected());
@@ -54,11 +70,11 @@ export async function openToolManager(preselect = []) {
   function paint(data) {
     if (!data) return;
     const f = data.file;
+    if (data.type === 'error') { status.textContent = data.message; return; }
     if (f) {
       status.textContent = `${f.name} — ${f.path.split('/').pop()}\n${bytes(data.received || 0)} از ${bytes(f.bytes)} — ${data.type === 'verifying' ? 'بررسی سلامت فایل' : data.type === 'installed' || data.type === 'cached' ? 'ذخیره شد' : 'در حال دانلود'}`;
       progress.value = f.bytes ? Math.min(1,(data.received || 0) / f.bytes) : 0;
-    } else if (data.type === 'error') status.textContent = data.message;
-    else if (data.type === 'done') { status.textContent = '✓ دانلود و بررسی سلامت ابزارهای انتخاب‌شده تمام شد.'; progress.value = 1; }
+    } else if (data.type === 'done') { status.textContent = '✓ دانلود و بررسی سلامت ابزارهای انتخاب‌شده تمام شد.'; progress.value = 1; }
   }
   const onStatus = e => paint(e.detail);
   const onChanged = async () => {
@@ -94,6 +110,7 @@ export async function openToolManager(preselect = []) {
       row.append(c, el('b', `${e.name} · ${e.version || ''}`), el('span', bytes(e.files.reduce((s,f) => s + f.bytes,0)), 'pill'), el('span', '', 'tool-installed note'));
       rows.append(row);
     }
+    syncSelection();
     status.textContent = 'ابزارهای دلخواه را انتخاب کنید؛ حجم مجموع شامل وابستگی‌ها محاسبه می‌شود.';
     paint(lastStatus);
     await refreshInstalled();
@@ -110,7 +127,7 @@ export async function openToolManager(preselect = []) {
         if (!missing.length) return;
         const names = [...new Set(missing.map(f => f.name))].join('، ');
         if (!confirm(`دانلود اختیاری ${names}\nحجم: ${bytes(missing.reduce((s,f) => s + f.bytes,0))}\nشروع شود؟`)) return;
-        start.disabled = true; cancel.disabled = false;
+        start.disabled = true; cancel.disabled = false; selectAll.disabled = true;
         checks.forEach(c => { c.disabled = true; });
         await downloadTools(ids);
       } catch (e) { status.textContent = e.message; }

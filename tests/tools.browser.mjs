@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { chromium } from 'playwright';
 const root = new URL('../', import.meta.url);
-const body = Buffer.from('export const installed = 42;');
+const body = Buffer.from('export const installed = 42;' + ' '.repeat(2048));
 const file = { path:'ffmpeg/1/core.js', url:'', bytes:body.length, sha256:createHash('sha256').update(body).digest('hex'), name:'FFmpeg' };
 const counts = new Map(); let corrupt = false;
 const server = createServer(async (req,res) => {
@@ -17,12 +18,16 @@ const server = createServer(async (req,res) => {
       data = '<html lang="fa" dir="rtl"><body><section data-screen="library"><header class="top"></header></section><script type="module">import {mountToolManager} from "./src/ui/toolmanager.js";mountToolManager();window.m=await import("./src/tools/manager.js");</script></body></html>';
     } else if (path === '/app/tools-manifest.json') {
       type='application/json';
-      data=JSON.stringify({pythonVersion:'1',ffmpegVersion:'1',entries:{ffmpeg:{name:'FFmpeg',version:'1',deps:[],files:[file]}}});
+      data=JSON.stringify({pythonVersion:'1',ffmpegVersion:'1',entries:{ffmpeg:{name:'FFmpeg',version:'1',deps:[],files:[file]},helper:{name:'Helper',version:'1',deps:['ffmpeg'],files:[{...file,path:'helpers/1/core.js'}]}}});
     } else if (path === '/payload.js') data=corrupt ? 'bad' : body;
     else if (path === '/app/tools-sw.js') data=await readFile(new URL('public/tools-sw.js',root));
     else if (/^\/app\/src\/[a-zA-Z0-9/.-]+\.js$/.test(path) && !path.includes('..')) data=await readFile(new URL(path.slice('/app/'.length),root));
     else { res.writeHead(404).end(); return; }
-    res.writeHead(200,{'content-type':type});res.end(data);
+    if (path === '/payload.js') {
+      const compressed = gzipSync(data);
+      res.writeHead(200,{'content-type':type,'content-encoding':'gzip','content-length':String(compressed.length)});
+      res.end(compressed);
+    } else { res.writeHead(200,{'content-type':type});res.end(data); }
   } catch { res.writeHead(500).end(); }
 });
 await new Promise(r => server.listen(0,'127.0.0.1',r));
@@ -32,14 +37,26 @@ let browser;
 try {
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH || undefined,args:['--no-sandbox']});
   const context=await browser.newContext(), page=await context.newPage(), errors=[];
-  page.on('pageerror',e => errors.push(String(e)));page.on('dialog',d => d.accept());
+  let confirmations = 0;
+  page.on('pageerror',e => errors.push(String(e)));page.on('dialog',d => ++confirmations === 1 ? d.dismiss() : d.accept());
   await page.goto(base+'/app/');await page.waitForFunction('!!window.m');
   assert.equal(counts.get('/payload.js')||0,0);
   await page.locator('button').click();await page.waitForFunction('document.querySelector("input[type=checkbox]")');
   assert.equal(counts.get('/payload.js')||0,0);
   assert.equal(await page.locator('progress').count(),1);
-  assert.match(await page.locator('.pill').innerText(),/مگابایت/);
-  await page.locator('input[type=checkbox]').check();
+  assert.match(await page.locator('.pill').first().innerText(),/مگابایت/);
+  assert.equal(await page.locator('input[type=checkbox]').count(),2);
+  await page.getByText('انتخاب همه',{exact:true}).click();
+  assert.equal(await page.locator('input[type=checkbox]:checked').count(),2);
+  assert.equal(counts.get('/payload.js')||0,0,'selecting all is not download consent');
+  await page.getByText('لغو انتخاب همه',{exact:true}).click();
+  assert.equal(await page.locator('input[type=checkbox]:checked').count(),0);
+  await page.getByText('انتخاب همه',{exact:true}).click();
+  const firstDialog = page.waitForEvent('dialog');
+  await page.getByText('دانلود انتخاب‌شده‌ها',{exact:true}).click();
+  await firstDialog;
+  assert.equal(counts.get('/payload.js')||0,0,'declined confirmation must not download');
+  assert.equal(confirmations,1,'first explicit consent was declined');
   await page.getByText('دانلود انتخاب‌شده‌ها',{exact:true}).click();
   await page.waitForFunction('document.querySelector(".tool-installed").textContent.includes("آماده")');
   assert.equal(counts.get('/payload.js'),1);
@@ -71,13 +88,13 @@ try {
   await retryPage.goto(base+'/app/');await retryPage.waitForFunction('!!window.m');
   await retryPage.locator('button').click();
   await retryPage.getByText('تلاش دوباره برای اتصال',{exact:true}).waitFor({state:'visible'});
-  assert.equal(await retryPage.locator('input[type=checkbox]').count(),1);
-  await retryPage.locator('input[type=checkbox]').check();
+  assert.equal(await retryPage.locator('input[type=checkbox]').count(),2);
+  await retryPage.getByText('انتخاب همه',{exact:true}).click();
   assert(await retryPage.getByText('دانلود انتخاب‌شده‌ها',{exact:true}).isDisabled());
   assert.equal(counts.get('/payload.js'),beforeRetry);
   await retryPage.getByText('تلاش دوباره برای اتصال',{exact:true}).click();
   await retryPage.waitForFunction('document.querySelector("input[type=checkbox]")?.checked && ![...document.querySelectorAll("button")].find(b=>b.textContent === "دانلود انتخاب‌شده‌ها").disabled');
   assert.equal(counts.get('/payload.js'),beforeRetry);
   await retryContext.close();
-  console.log('PASS browser: consent, sizes/progress, worker download, SW import, reload/offline reuse, corrupt rejection and retry');
+  console.log('PASS browser: select/deselect all, declined consent, compressed CDN body, worker download, SW import, reload/offline reuse, corrupt rejection and retry');
 } finally { await browser?.close();await new Promise(r => server.close(r)); }
