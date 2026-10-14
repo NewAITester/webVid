@@ -8,6 +8,9 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // افزونهٔ محلی باید قبل از super ثبت شود
         registerPlugin(MediaSaverPlugin.class);
+        // Load the SW asset bridge before the first page, including a cold start
+        // with a previously registered worker controlling https://localhost.
+        registerPlugin(ToolServiceWorkerPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

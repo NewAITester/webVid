@@ -9,6 +9,10 @@ on:
         description: 'ساخت ریلیز با APK'
         type: boolean
         default: false
+      test_webview:
+        description: 'تست ثبت ابزارها در WebView واقعی شبیه‌ساز'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -85,7 +89,33 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon --stacktrace
+
+      - name: دسترسی به شتاب‌دهی شبیه‌ساز
+        if: github.ref == 'refs/heads/feature/optional-runtime-downloads' || (github.event_name == 'workflow_dispatch' && inputs.test_webview)
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: تست ابزارها در WebView واقعی APK
+        if: github.ref == 'refs/heads/feature/optional-runtime-downloads' || (github.event_name == 'workflow_dispatch' && inputs.test_webview)
+        uses: reactivecircus/android-emulator-runner@v2
+        timeout-minutes: 20
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          working-directory: android
+          script: ./gradlew connectedDebugAndroidTest --no-daemon --stacktrace
+
+      - name: گزارش تست Android
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-tool-tests
+          path: |
+            android/app/build/reports/tests/
+            android/app/build/reports/androidTests/
+          if-no-files-found: ignore
 
       - name: نام‌گذاری و گزارش
         id: apk

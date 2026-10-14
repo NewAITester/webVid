@@ -56,5 +56,28 @@ try {
   corrupt=false;await page.evaluate(() => m.downloadTools(['ffmpeg']));
   assert.equal(await page.evaluate(async () => (await m.missingFiles(['ffmpeg'])).length),0);
   assert.deepEqual(errors,[]);
+  // Reproduce the screenshot's failed registration: metadata must remain visible,
+  // no download may start, and retry must recover after the backend is available.
+  const retryContext = await browser.newContext();
+  const retryPage = await retryContext.newPage();
+  await retryPage.addInitScript(() => {
+    const register = navigator.serviceWorker.register.bind(navigator.serviceWorker);
+    let calls = 0;
+    navigator.serviceWorker.register = (...args) => ++calls === 1
+      ? Promise.reject(new Error('An unknown error occurred when fetching the script'))
+      : register(...args);
+  });
+  const beforeRetry = counts.get('/payload.js');
+  await retryPage.goto(base+'/app/');await retryPage.waitForFunction('!!window.m');
+  await retryPage.locator('button').click();
+  await retryPage.getByText('تلاش دوباره برای اتصال',{exact:true}).waitFor({state:'visible'});
+  assert.equal(await retryPage.locator('input[type=checkbox]').count(),1);
+  await retryPage.locator('input[type=checkbox]').check();
+  assert(await retryPage.getByText('دانلود انتخاب‌شده‌ها',{exact:true}).isDisabled());
+  assert.equal(counts.get('/payload.js'),beforeRetry);
+  await retryPage.getByText('تلاش دوباره برای اتصال',{exact:true}).click();
+  await retryPage.waitForFunction('document.querySelector("input[type=checkbox]")?.checked && ![...document.querySelectorAll("button")].find(b=>b.textContent === "دانلود انتخاب‌شده‌ها").disabled');
+  assert.equal(counts.get('/payload.js'),beforeRetry);
+  await retryContext.close();
   console.log('PASS browser: consent, sizes/progress, worker download, SW import, reload/offline reuse, corrupt rejection and retry');
 } finally { await browser?.close();await new Promise(r => server.close(r)); }

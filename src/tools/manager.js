@@ -13,7 +13,19 @@ export function setupTools() {
     if (!window.isSecureContext || !navigator.serviceWorker || !globalThis.caches || !globalThis.Worker) {
       throw new Error('ذخیرهٔ آفلاین ابزارها در این مرورگر/WebView پشتیبانی نمی‌شود. از HTTPS یا WebView به‌روز استفاده کنید.');
     }
-    const registration = await navigator.serviceWorker.register(new URL('tools-sw.js', base()), { scope:new URL('./', base()).pathname });
+    let registration, registerTimer;
+    try {
+      registration = await Promise.race([
+        navigator.serviceWorker.register(new URL('tools-sw.js', base()), { scope:new URL('./', base()).pathname }),
+        new Promise((_, reject) => { registerTimer = setTimeout(() => reject(new Error('ServiceWorker registration timed out')), 12000); }),
+      ]);
+    } catch (error) {
+      const nativeAndroid = window.Capacitor?.getPlatform?.() === 'android';
+      const hint = nativeAndroid
+        ? 'اتصال فایل‌های داخلی ابزارها به WebView برقرار نشد. APK اصلاح‌شده را با همان امضا نصب کنید؛ پاک کردن داده‌ها لازم نیست.'
+        : 'اتصال حافظهٔ آفلاین ابزارها برقرار نشد. دسترسی مرورگر به فایل tools-sw.js را بررسی کنید.';
+      throw new Error(hint + '\n' + String(error?.message || error));
+    } finally { clearTimeout(registerTimer); }
     if (!navigator.serviceWorker.controller) {
       await new Promise((resolve, reject) => {
         const done = () => { clearTimeout(timer); navigator.serviceWorker.removeEventListener('controllerchange', done); resolve(); };

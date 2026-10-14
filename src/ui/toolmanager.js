@@ -33,10 +33,13 @@ export async function openToolManager(preselect = []) {
   const progress = document.createElement('progress'); progress.max = 1; progress.value = 0;
   progress.style.width = '100%';
   const buttons = el('div', '', 'frow btns');
+  let storageReady = false;
   const start = el('button', 'دانلود انتخاب‌شده‌ها', 'btn primary'), cancel = el('button', 'لغو دانلود', 'btn sm');
+  const retry = el('button', 'تلاش دوباره برای اتصال', 'btn sm ghost');
+  retry.hidden = true; retry.classList.add('hidden');
   start.disabled = true; cancel.disabled = !downloadActive();
   cancel.onclick = cancelDownload;
-  buttons.append(start, cancel); body.append(rows, total, buttons, progress, status); box.append(head, body); overlay.append(box); document.body.append(overlay);
+  buttons.append(start, cancel, retry); body.append(rows, total, buttons, progress, status); box.append(head, body); overlay.append(box); document.body.append(overlay);
   const checks = new Map(); let generation = 0;
   const selected = () => [...checks].filter(([,c]) => c.checked).map(([id]) => id);
   async function recalc() {
@@ -45,7 +48,7 @@ export async function openToolManager(preselect = []) {
       const missing = await missingFiles(selected());
       if (run !== generation || !overlay.isConnected) return;
       total.textContent = `حجم دانلود جدید با وابستگی‌ها: ${bytes(missing.reduce((s,f) => s + f.bytes,0))}`;
-      start.disabled = downloadActive() || !missing.length;
+      start.disabled = !storageReady || downloadActive() || !missing.length;
     } catch (e) { status.textContent = e.message; start.disabled = true; }
   }
   function paint(data) {
@@ -75,11 +78,13 @@ export async function openToolManager(preselect = []) {
     window.removeEventListener('wv-tools-status', onStatus);
     window.removeEventListener('wv-tools-changed', onChanged);
   }
+  retry.onclick = () => { const ids = selected(); dismiss(); openToolManager(ids); };
   close.onclick = dismiss; overlay.onclick = e => { if (e.target === overlay) dismiss(); };
   window.addEventListener('wv-tools-status', onStatus);
   window.addEventListener('wv-tools-changed', onChanged);
   try {
-    await setupTools();
+    // The metadata is a packaged asset and can be shown even if WebView's
+    // separate ServiceWorker request path is unavailable.
     const manifest = await getManifest();
     if (!overlay.isConnected) return;
     for (const [id,e] of Object.entries(manifest.entries).sort(([a],[b]) => (a === 'python' ? -1 : b === 'python' ? 1 : a.localeCompare(b)))) {
@@ -91,7 +96,14 @@ export async function openToolManager(preselect = []) {
     }
     status.textContent = 'ابزارهای دلخواه را انتخاب کنید؛ حجم مجموع شامل وابستگی‌ها محاسبه می‌شود.';
     paint(lastStatus);
-    await refreshInstalled(); await recalc();
+    await refreshInstalled();
+    status.textContent = 'در حال اتصال حافظهٔ آفلاین ابزارها…';
+    await setupTools();
+    if (!overlay.isConnected) return;
+    storageReady = true;
+    status.textContent = 'ابزارهای دلخواه را انتخاب کنید؛ دانلود فقط پس از تأیید شما آغاز می‌شود.';
+    paint(lastStatus);
+    await recalc();
     start.onclick = async () => {
       try {
         const ids = selected(), missing = await missingFiles(ids);
@@ -104,5 +116,7 @@ export async function openToolManager(preselect = []) {
       } catch (e) { status.textContent = e.message; }
       finally { await onChanged(); }
     };
-  } catch (e) { status.textContent = e.message; }
+  } catch (e) {
+    status.textContent = e.message; start.disabled = true; retry.hidden = false; retry.classList.remove('hidden');
+  }
 }
