@@ -104,7 +104,18 @@ jobs:
           api-level: 30
           target: google_apis
           arch: x86_64
+          # Do not inherit the system image's oversized userdata partition.
+          disk-size: 2048M
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
           working-directory: android
+          pre-emulator-launch-script: |
+            df -h "$HOME/.android/avd"
+            AVAILABLE_MB=$(df -Pm "$HOME/.android/avd" | awk 'NR==2 {print $4}')
+            if [ "$AVAILABLE_MB" -lt 4096 ]; then
+              echo "::error::Insufficient disk space for emulator: ${AVAILABLE_MB} MiB free; at least 4096 MiB required for the 2 GiB userdata partition and overhead."
+              exit 1
+            fi
           script: ./gradlew connectedDebugAndroidTest --no-daemon --stacktrace
 
       - name: گزارش تست Android
