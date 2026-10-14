@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { createRenderProfile } from '../src/engine/render-profile.js';
 import { loadPyodide } from 'pyodide';
 import { PY_PREVIEW } from '../src/motion/importers/py-preview.js';
 import { previewQuality, setPreviewQuality, previewSize, pythonPreviewLimit, PREVIEW_KEY } from '../src/engine/preview.js';
@@ -49,7 +50,7 @@ assert.equal(box.limit,480,'preview passes the selected limit to Python');
 // Stop before codec selection: this checks quality isolation, not successful MP4 delivery.
 const exporting = await readFile(new URL('../src/engine/export.js',import.meta.url),'utf8');
 const stop = new Error('test stopped before encoder');
-const ex = {performance, W:1920,H:1080,document:{createElement:()=>({})},ArrayBufferTarget:class {}};
+const ex = {performance, createRenderProfile, W:1920,H:1080,document:{createElement:()=>({})},ArrayBufferTarget:class {}};
 ex.Stage=class {constructor(canvas){ex.canvas=canvas;} resize(w,h){ex.size=[w,h];}};
 ex.Renderer=class {constructor(){ex.renderer=this;}setSong(){return this;}};
 vm.createContext(ex);
@@ -61,6 +62,18 @@ assert.deepEqual(ex.size,[1920,1080]);
 assert.equal(ex.canvas.width,1920);
 assert.equal(ex.canvas.height,1080);
 assert.equal(ex.renderer.exporting,true);
+assert.equal(ex.renderer.profile,null,'export without logger keeps profiling disabled');
+// Import-stripped VM must receive the real profiler dependency, in both export modes.
+for (const optimized of [false,true]) {
+  const details = {};
+  const log = {detail:(key,value)=>{details[key]=value;}};
+  await assert.rejects(ex.exportVideo({song:{},width:1920,height:1080,optimized,log}),e=>e===stop);
+  assert.equal(ex.renderer.exporting,true);
+  assert.equal(ex.renderer.profile.data,details.renderProfile);
+  assert.equal(details.renderProfile.renderCalls,0,'initializer stops before drawing');
+  assert.equal(details.renderProfile.incompleteSpans,0,'profiler cleaned on setup failure');
+  assert.deepEqual(ex.size,[1920,1080],'profiling does not change export resolution');
+}
 
 // Actual Pyodide, not a Python mock: sizes change before dependent globals initialize.
 const py = await loadPyodide();
