@@ -3,6 +3,7 @@ import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {chooseVideoConfig,configureVideoEncoder} from '../src/engine/export-mode.js';
 import {saveNativeBlob} from '../src/engine/save.js';
+import {createRenderProfile} from '../src/engine/render-profile.js';
 import {startExportLog,fingerprint} from '../src/engine/export-log.js';
 
 const logs=[];
@@ -27,7 +28,7 @@ const source=await readFile(new URL('../src/engine/export.js',import.meta.url),'
 let failEncode=false;
 class FakeFrame{constructor(canvas,opts){this.timestamp=opts.timestamp;this.closed=false;}close(){this.closed=true;}}
 const sandbox={console,performance,setTimeout,DOMException,Blob,chooseVideoConfig,configureVideoEncoder,W:320,H:180,
- document:{createElement:()=>({})},VideoFrame:FakeFrame,
+ createRenderProfile,document:{createElement:()=>({})},VideoFrame:FakeFrame,
  Stage:class{constructor(c){this.canvas=c;}resize(w,h){this.canvas.width=w;this.canvas.height=h;}},
  Renderer:class{constructor(stage){this.stage=stage;}setSong(){return this;}renderFrame(){assert.equal(this.exporting,true);}},
  domSettle:async()=>false,
@@ -46,7 +47,7 @@ for(const optimized of [false,true]) {
  assert.equal(log.report.details.videoEncoderConfig.hardwareAcceleration,optimized?'prefer-hardware':undefined);
  assert.equal(log.report.details.actualHardwareEncoder,null);
  const result=await log.finish('success');assert.equal(snapshots[0].status,'running');assert.equal(snapshots.at(-1).status,'success');
- assert.equal(result.status,'success');assert(result.timingsMs.videoWall>=0);assert(result.timingsMs.total>=0);
+ assert.equal(result.details.renderProfile.renderCalls,4);assert.equal(result.details.renderProfile.incompleteSpans,0);assert(result.timingsMs.uiYield>=0);assert(result.timingsMs.videoEncodeSubmit>=0);assert.equal(result.status,'success');assert(result.timingsMs.videoWall>=0);assert(result.timingsMs.total>=0);
  logs.push(result);
 }
 for(const status of ['cancelled','failed']) {

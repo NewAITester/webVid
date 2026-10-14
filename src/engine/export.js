@@ -1,3 +1,4 @@
+import { createRenderProfile } from './render-profile.js';
 import { chooseVideoConfig, configureVideoEncoder } from './export-mode.js';
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { Stage } from './stage.js';
@@ -112,7 +113,7 @@ export async function exportVideo({
   onProgress = () => {}, signal = null, optimized = false, log = null,
 } = {}) {
   const t0 = performance.now();
-  let venc = null, aenc = null;
+  let venc = null, aenc = null, renderProfile = null;
   const abortEncoders=()=>{try{if(venc && venc.state!=='closed')venc.close();}catch{}try{if(aenc && aenc.state!=='closed')aenc.close();}catch{}};
   signal?.addEventListener('abort',abortEncoders,{once:true});
   try {
@@ -150,6 +151,8 @@ export async function exportVideo({
   // لایه‌های موشن (تصویر، ویدیو، شکل، کد…)
   R.layers = layers || [];
   R.media = media;
+  renderProfile = createRenderProfile(log, R.layers);
+  R.profile = renderProfile;
   R.exporting = true;          // دستگیره‌ها و راهنماها کشیده نمی‌شوند
   R.frameDur = 1 / fps;        // تاری حرکت با نرخ فریم واقعی
   if (look) {
@@ -177,7 +180,8 @@ export async function exportVideo({
   venc = new VideoEncoder({
     output: (chunk, meta) => {
       try {
-        muxer.addVideoChunk(chunk, meta);
+        const muxAt=performance.now();
+        try { muxer.addVideoChunk(chunk, meta); } finally { log?.add('videoMuxChunk',performance.now()-muxAt); }
         log?.count('encodedVideoChunks');
         const at = frameSubmitted.get(chunk.timestamp);
         if(at != null) { log?.add('encoderOutputLatencySum',performance.now()-at); frameSubmitted.delete(chunk.timestamp); }
@@ -206,13 +210,13 @@ export async function exportVideo({
     if (media && R.layers.length) await media.prepare(R.layers, t);
     log?.add('mediaPrepare',performance.now()-mediaAt);
     const renderAt = performance.now();
-    R.renderFrame(t);
+    if(renderProfile)renderProfile.frame(()=>R.renderFrame(t),false,{index:i,timeSeconds:t});else R.renderFrame(t);
     log?.add('render',performance.now()-renderAt); log?.count('renderedFrames');
     // لایه‌های صفحهٔ وب (DOM) فریمشان را ناهمگام می‌سازند ← صبر و کشیدن دوباره
     const settleAt = performance.now();
     const redraw = R.layers.length && await domSettle();
     log?.add('asyncFrameWait',performance.now()-settleAt);
-    if(redraw) {const at=performance.now();R.renderFrame(t);log?.add('render',performance.now()-at);log?.count('extraRedraws');}
+    if(redraw) {const at=performance.now();if(renderProfile)renderProfile.frame(()=>R.renderFrame(t),true,{index:i,timeSeconds:t});else R.renderFrame(t);log?.add('render',performance.now()-at);log?.count('extraRedraws');}
 
     const copyAt = performance.now();
     const frame = new VideoFrame(canvas, {
@@ -222,7 +226,8 @@ export async function exportVideo({
     // هر ۲ ثانیه یک کی‌فریم — مثل -g 120 در نسخهٔ پایتون
     log?.add('videoFrameCopy',performance.now()-copyAt);
     frameSubmitted.set(Math.round(i * FRAME_US),performance.now());
-    try { venc.encode(frame, { keyFrame: i % (fps * 2) === 0 }); } finally { frame.close(); }
+    const encodeAt=performance.now();
+    try { venc.encode(frame, { keyFrame: i % (fps * 2) === 0 }); } finally { frame.close();log?.add('videoEncodeSubmit',performance.now()-encodeAt); }
     log?.detail('maxVideoQueue',Math.max(log?.report?.details.maxVideoQueue || 0,venc.encodeQueueSize));
 
     // صف را خالی نگه دار تا حافظه نترکد
@@ -244,7 +249,9 @@ export async function exportVideo({
         fps: (i + 1) / Math.max(0.001, el),
         eta: el / Math.max(1, i + 1) * (total - i - 1),
       });
-      await new Promise(r => setTimeout(r, 0));   // رابط کاربری نفس بکشد
+      const yieldAt=performance.now();
+      await new Promise(r => setTimeout(r, 0));
+      log?.add('uiYield',performance.now()-yieldAt);   // رابط کاربری نفس بکشد
     }
   }
   const flushAt = performance.now();
@@ -302,6 +309,7 @@ export async function exportVideo({
   log?.detail('outputBytes',blob.size); log?.add('exportWall',performance.now()-t0);
   return blob;
   } finally {
+    renderProfile?.finish();
     signal?.removeEventListener('abort',abortEncoders);
     try { if(venc && venc.state !== 'closed')venc.close(); } catch { /* cleanup */ }
     try { if(aenc && aenc.state !== 'closed')aenc.close(); } catch { /* cleanup */ }

@@ -1,3 +1,4 @@
+import { profileContext } from '../../engine/render-profile.js';
 import { PY_PREVIEW } from './py-preview.js';
 /**
  * پایتون واقعی (CPython + numpy/scipy/Pillow روی WebAssembly با Pyodide)
@@ -874,24 +875,27 @@ function canvas(w, h) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
 }
 /** تصویر خروجی پایتون (RGBA) روی قاب W0×H0 — با حفظ نسبت */
-function drawOut(ctx, O, W0, H0) {
+function drawOut(ctx, O, W0, H0, pc = null) {
   let src = null, w = 0, h = 0;
   if (O.surf) { src = O.surf.canvas; if (!src) return; w = src.width; h = src.height; }
   else {
     w = O.w; h = O.h;
     if (!tmpC || tmpC.width !== w || tmpC.height !== h) tmpC = canvas(w, h);
     const g = tmpC.getContext('2d');
-    g.putImageData(new ImageData(new Uint8ClampedArray(O.u8.buffer, O.u8.byteOffset, w * h * 4), w, h), 0, 0);
+    const upload=pc?.profile.begin('python.pixelUpload',pc.layer);
+    try { g.putImageData(new ImageData(new Uint8ClampedArray(O.u8.buffer, O.u8.byteOffset, w * h * 4), w, h), 0, 0); } finally { pc?.profile.end(upload); }
     src = tmpC;
   }
   const s = Math.min(W0 / w, H0 / h), dw = w * s, dh = h * s;
   if (Math.abs(dw - W0) > 1 || Math.abs(dh - H0) > 1) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W0, H0); }
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(src, (W0 - dw) / 2, (H0 - dh) / 2, dw, dh);
+  const composite=pc?.profile.begin('python.composite',pc.layer);
+  try { ctx.drawImage(src, (W0 - dw) / 2, (H0 - dh) / 2, dw, dh); } finally { pc?.profile.end(composite); }
 }
 
 /** یک فریم با پایتون واقعی (fn: همان اطلاعات تابع فریم که مفسر داخلی پیدا کرده) */
 export function realFrame(RI, fn, ctx, t, { fps = 30, dur = 10, W0 = 1920, H0 = 1080 } = {}) {
+  const pc=profileContext(ctx);
   const name = fn.anim ? '__wv_anim__' : fn.name;
   if (!fn.anim && !RI.g.has(name)) throw new Error(`تابع ${fn.name} در پایتون واقعی پیدا نشد`);
   const fi = Math.max(0, Math.round(t * fps));
@@ -912,7 +916,8 @@ export function realFrame(RI, fn, ctx, t, { fps = 30, dur = 10, W0 = 1920, H0 = 
     if (fn.ctxArg) { const s = B.surface(); const p = W.wrap('ctx', B.context(s)); made.push(p); args.unshift(p); }
     else if (fn.surfArg) { const p = W.wrap('surface', B.surface()); made.push(p); args.unshift(p); }
     for (const n of fn.extra || []) args.push(/^fps$/i.test(n) ? fps : /w/i.test(n) ? W0 : H0);
-    try { W.frame(RI.g, name, RI.pixelSize?.w || W0, RI.pixelSize?.h || H0, RI.bgr, ...args); } catch (e) { if (!B.R.done && !/__wv_frame_done__/.test(String(e?.message))) throw e; }
+    const frame=pc?.profile.begin('python.frameAndPack',pc.layer);
+    try { W.frame(RI.g, name, RI.pixelSize?.w || W0, RI.pixelSize?.h || H0, RI.bgr, ...args); } catch (e) { if (!B.R.done && !/__wv_frame_done__/.test(String(e?.message))) throw e; } finally { pc?.profile.end(frame); }
     RI.frames++;
   } finally {
     O = B.R.out; B.R.out = null;
@@ -923,7 +928,7 @@ export function realFrame(RI, fn, ctx, t, { fps = 30, dur = 10, W0 = 1920, H0 = 
   }
   try {
     if (g !== ctx) ctx.drawImage(offC, 0, 0, W0, H0);
-    if (O) drawOut(ctx, O, W0, H0);
+    if (O) drawOut(ctx, O, W0, H0, pc);
   } finally { ctx.restore(); }
 }
 

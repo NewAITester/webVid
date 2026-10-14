@@ -1,3 +1,4 @@
+import { withProfileContext } from '../engine/render-profile.js';
 import { evalLayer, frameEnv, needsBuffer } from './evaluate.js';
 import { solidText } from './solidtext.js';
 import { compileCode, codeEnv } from './codeapi.js';
@@ -360,16 +361,19 @@ function drawSpectrum(ctx, st, env) {
 /* ── لایهٔ کد ─────────────────────────────────────────────── */
 function drawCode(ctx, st, env, errors) {
   const { L } = st;
-  const { fn, error } = compileCode(L.data.code);
+  const p=env.profile;
+  const compiled=p ? p.run('code.compile',L,()=>compileCode(L.data.code)) : compileCode(L.data.code);
+  const { fn, error } = compiled;
   if (error) { errors.set(L.id, error); return; }
   if (!fn) return;
   try {
     ctx.save();
-    fn(ctx, codeEnv({
+    const execution=p?.begin('code.execute',L);
+    try { fn(ctx, codeEnv({
       ctx, lt: st.lt, time: env.time, dur: st.dur, kick: env.kick, rms: env.rms, low: env.low,
       beat: env.beat, pulse: env.pulse, W: env.W, H: env.H, P: st.P, acc: env.acc, song: env.song,
       lineText: env.lineText, fx: env.fx, exporting: !!env.exporting,
-    }));
+    })); } finally { p?.end(execution); }
     ctx.restore();
     errors.delete(L.id);
   } catch (err) {
@@ -443,6 +447,12 @@ export class MotionRenderer {
 
   /** محتوای لایه + افکت‌های «draw» (تکرار، آینه) با ترنسفرم فعلی ctx */
   _content(ctx, st, env, media) {
+    const p=env.profile;
+    if(!p)return this._contentImpl(ctx,st,env,media);
+    return p.run('layer.content',st.L,()=>withProfileContext(ctx,p,st.L,()=>this._contentImpl(ctx,st,env,media)));
+  }
+
+  _contentImpl(ctx, st, env, media) {
     const draw = () => {
       switch (st.L.type) {
         case 'text': drawText(ctx, st); break;
@@ -508,6 +518,11 @@ export class MotionRenderer {
 
   /** لایه را (با تاری حرکت اگر لازم است) روی یک بوم شفاف تازه می‌کشد */
   _renderToBuffer(name, cw, ch, L, st, t, env, base, byId, media) {
+    if(!env.profile)return this._renderToBufferImpl(name,cw,ch,L,st,t,env,base,byId,media);
+    return env.profile.run('layer.buffer',L,()=>this._renderToBufferImpl(name,cw,ch,L,st,t,env,base,byId,media));
+  }
+
+  _renderToBufferImpl(name, cw, ch, L, st, t, env, base, byId, media) {
     const buf = this._scratch(name, cw, ch);
     const bx = buf.getContext('2d');
     const mb = clamp((L.mblur || 0) / 100);
@@ -534,6 +549,11 @@ export class MotionRenderer {
 
   /** زنجیرهٔ افکت‌های تصویری روی بافر */
   _filters(src, st, px, env, geo = null) {
+    if(!env.profile)return this._filtersImpl(src,st,px,env,geo);
+    return env.profile.run('layer.filters',st.L,()=>this._filtersImpl(src,st,px,env,geo));
+  }
+
+  _filtersImpl(src, st, px, env, geo = null) {
     const cw = src.width, ch = src.height;
     let cur = src;
     // کادر لایه روی بافر (پیکسل) — برای افکت‌هایی که به جا و اندازهٔ لایه وابسته‌اند
@@ -946,8 +966,10 @@ export class MotionRenderer {
       const L = layers[i];
       if (!!L.behind !== behind || L.visible === false || L.type === 'null') continue;
       if (t < L.t0 || t >= L.t1 || maskOnly.has(L.id)) continue;
+      const p=env.profile, layerToken=p?.begin('layer.total',L);
+      try {
       const e2 = { ...env, index: i };
-      const st = evalLayer(L, t, e2, byId, memo);
+      const st = p ? p.run('layer.evaluate',L,()=>evalLayer(L,t,e2,byId,memo)) : evalLayer(L,t,e2,byId,memo);
       if (st.alpha <= 0.002) continue;
 
       ctx.save();
@@ -960,7 +982,7 @@ export class MotionRenderer {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.globalAlpha = st.alpha;
           ctx.globalCompositeOperation = L.blend || 'source-over';
-          ctx.drawImage(res, 0, 0);
+          if(p)p.run('layer.composite',L,()=>ctx.drawImage(res,0,0));else ctx.drawImage(res, 0, 0);
         } else if (!needsBuffer(st)) {
           ctx.globalAlpha *= st.alpha;
           ctx.globalCompositeOperation = L.blend || 'source-over';
@@ -983,12 +1005,13 @@ export class MotionRenderer {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.globalAlpha *= st.alpha;
           ctx.globalCompositeOperation = L.blend || 'source-over';
-          ctx.drawImage(buf, 0, 0);
+          if(p)p.run('layer.composite',L,()=>ctx.drawImage(buf,0,0));else ctx.drawImage(buf, 0, 0);
         }
       } catch (err) {
         this.errors.set(L.id, String(err?.message || err));
       }
       ctx.restore();
+      } finally { p?.end(layerToken); }
     }
   }
 

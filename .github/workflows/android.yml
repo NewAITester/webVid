@@ -60,6 +60,7 @@ jobs:
           node tests/tools.test.mjs
           node tests/preview.test.mjs
           node tests/export-modes.test.mjs
+          node tests/render-profile.test.mjs
           node tests/emulator-host.test.mjs
 
       - name: نصب مرورگر آزمون خروجی
@@ -68,7 +69,7 @@ jobs:
           if ! command -v ffprobe >/dev/null || ! command -v ffmpeg >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg; fi
 
       - name: تست ویدیوی واقعی در هر دو روش
-        run: node tests/export-modes.browser.mjs
+        run: npm run test:export-browser
 
       - name: ذخیرهٔ لاگ‌ها و ویدیوهای آزمون خروجی
         if: always()
