@@ -1,3 +1,5 @@
+import { previewSize } from './engine/preview.js';
+import { mountPreviewQuality } from './ui/previewquality.js';
 import { mountToolManager } from './ui/toolmanager.js';
 import { Stage } from './engine/stage.js';
 import { Renderer } from './engine/renderer.js';
@@ -229,7 +231,8 @@ function fit() {
   canvas.style.width = cw + 'px';
   canvas.style.height = ch + 'px';
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  stage.resize(cw * dpr, ch * dpr);
+  const backing = previewSize(cw * dpr, ch * dpr);
+  stage.resize(backing.width, backing.height);
   if (!app.playing) draw();
 }
 
@@ -2466,3 +2469,4 @@ boot().catch(err => {
 
 // Metadata and downloads are lazy; startup never downloads a runtime.
 mountToolManager();
+mountPreviewQuality(fit);

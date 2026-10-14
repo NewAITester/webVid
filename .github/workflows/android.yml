@@ -58,6 +58,7 @@ jobs:
           node tests/song.test.mjs
           node tests/motion.test.mjs
           node tests/tools.test.mjs
+          node tests/preview.test.mjs
           node tests/emulator-host.test.mjs
 
       - name: بیلد وب

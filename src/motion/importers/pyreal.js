@@ -1,3 +1,4 @@
+import { PY_PREVIEW } from './py-preview.js';
 /**
  * پایتون واقعی (CPython + numpy/scipy/Pillow روی WebAssembly با Pyodide)
  * ─────────────────────────────────────────────────────────────
@@ -620,7 +621,7 @@ def _patch(src):
         try: fn()
         except Exception as e: print('wv patch', key, e)
 
-def wv_load(src, limit=40, fn=None):
+def wv_load(src, limit=40, fn=None, preview_max=0):
     g = {'__name__': 'webvid', '__file__': '/home/pyodide/code.py', '__builtins__': builtins}
     sys.argv = ['code.py']
     _patch(src)
@@ -630,7 +631,7 @@ def wv_load(src, limit=40, fn=None):
     err = None
     _guard(limit)
     try:
-        exec(compile(src, 'code.py', 'exec'), g)
+        exec(_wv_preview_compile(src, preview_max), g)
     except _WVStop:
         pass
     except SystemExit as e:
@@ -743,6 +744,7 @@ export function loadReal() {
     py.registerJsModule('_wvc', B);
     const ns = py.globals.get('dict')();
     py.runPython(GLUE, { globals: ns });
+    py.runPython(PY_PREVIEW, { globals: ns });
     py.runPython(GLUE2, { globals: ns });
     W = { ns, load: ns.get('wv_load'), wrap: ns.get('wv_wrap'), audio: ns.get('wv_audio'), frame: ns.get('wv_frame'), fonts: ns.get('wv_fonts') };
     PY = py;
@@ -832,28 +834,33 @@ async function prepare(src) {
 const hashStr = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(36) + ':' + s.length; };
 
 const imports = (src, n) => new RegExp(`^\\s*(?:import\\s+[^\\n#]*\\b${n}\\b|from\\s+${n}\\b)`, 'm').test(src);
-function makeInst(src, fn) {
-  const key = hashStr(src) + '|' + (fn || '');
+function makeInst(src, fn, previewMax = 0) {
+  const key = hashStr(src) + '|' + (fn || '') + '|preview:' + previewMax;
   let RI = insts.get(key);
   if (RI) return RI;
-  const r = W.load(src, 40, fn || null);
+  const r = W.load(src, 40, fn || null, previewMax);
   const g = r.get(0), err = r.get(1), ok = r.get(2);
   r.destroy();
   // خطای بالای فایل بعد از تعریف تابع فریم (مثلاً حلقهٔ ساخت ویدیو که کامل نشد) ← فقط هشدار
   RI = { key, g, error: err && !ok ? new Error(err) : null, warning: err && ok ? err : null, frames: 0,
     pix: /\.get_data\s*\(/.test(src), bgr: imports(src, 'cv2') && !['PIL', 'imageio', 'matplotlib', 'pygame', 'skimage'].some(n => imports(src, n)) };
+  // Raw byte frames need the effective Python dimensions, not design-space W0/H0.
+  if (previewMax) {
+    const w = g.get('W'), h = g.get('H');
+    if (Number.isInteger(w) && w > 0 && Number.isInteger(h) && h > 0) RI.pixelSize = { w, h };
+  }
   insts.set(key, RI);
   if (insts.size > 4) { const [k0, o] = insts.entries().next().value; try { o.g.destroy(); } catch { /* */ } insts.delete(k0); }
   return RI;
 }
 
 /** نمونهٔ آماده (هم‌زمان) یا null — اگر آماده نیست بار کردن شروع می‌شود */
-export function realInst(src, fn) {
+export function realInst(src, fn, previewMax = 0) {
   if (failed) return null;
   // همهٔ مرحله‌ها (Pyodide ← بسته‌ها ← فونت‌ها) در یک انتظار، تا خروجی فقط یک بار صبر کند
   if (!PY) { addPending(loadReal().then(py => py && prepare(src)).catch(e => { failed = String(e?.message || e); })); return null; }
   if (needPkgs(src).length || needFonts(src).length) { addPending(prepare(src).catch(e => { failed = String(e?.message || e); })); return null; }
-  return makeInst(src, fn);
+  return makeInst(src, fn, previewMax);
 }
 export async function realInstAsync(src, fn) {
   if (!(await loadReal())) return null;
@@ -905,7 +912,7 @@ export function realFrame(RI, fn, ctx, t, { fps = 30, dur = 10, W0 = 1920, H0 = 
     if (fn.ctxArg) { const s = B.surface(); const p = W.wrap('ctx', B.context(s)); made.push(p); args.unshift(p); }
     else if (fn.surfArg) { const p = W.wrap('surface', B.surface()); made.push(p); args.unshift(p); }
     for (const n of fn.extra || []) args.push(/^fps$/i.test(n) ? fps : /w/i.test(n) ? W0 : H0);
-    try { W.frame(RI.g, name, W0, H0, RI.bgr, ...args); } catch (e) { if (!B.R.done && !/__wv_frame_done__/.test(String(e?.message))) throw e; }
+    try { W.frame(RI.g, name, RI.pixelSize?.w || W0, RI.pixelSize?.h || H0, RI.bgr, ...args); } catch (e) { if (!B.R.done && !/__wv_frame_done__/.test(String(e?.message))) throw e; }
     RI.frames++;
   } finally {
     O = B.R.out; B.R.out = null;

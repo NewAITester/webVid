@@ -96,12 +96,12 @@ export const MATH = {
 
 /**
  * ساخت e برای یک فریم از لایهٔ کد
- * @param {object} o  { ctx, lt, time, dur, kick, rms, low, beat, pulse, W, H, P, acc, song, fx }
+ * @param {object} o  { ctx, lt, time, dur, kick, rms, low, beat, pulse, W, H, P, acc, song, fx, exporting }
  */
 export function codeEnv(o) {
   const time = o.time ?? o.lt;
   return {
-    t: o.lt, time, p: clamp(o.lt / (o.dur || 1)), dur: o.dur,
+    t: o.lt, time, p: clamp(o.lt / (o.dur || 1)), dur: o.dur, exporting: !!o.exporting,
     kick: o.kick || 0, rms: o.rms || 0, low: o.low || 0, beat: o.beat || 0, pulse: o.pulse || 0,
     W: o.W, H: o.H, w: o.P?.w ?? 800, h: o.P?.h ?? 800,
     c1: o.P?.c1 ?? '#E4142A', c2: o.P?.c2 ?? '#F6F3EC',

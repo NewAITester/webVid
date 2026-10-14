@@ -368,7 +368,7 @@ function drawCode(ctx, st, env, errors) {
     fn(ctx, codeEnv({
       ctx, lt: st.lt, time: env.time, dur: st.dur, kick: env.kick, rms: env.rms, low: env.low,
       beat: env.beat, pulse: env.pulse, W: env.W, H: env.H, P: st.P, acc: env.acc, song: env.song,
-      lineText: env.lineText, fx: env.fx,
+      lineText: env.lineText, fx: env.fx, exporting: !!env.exporting,
     }));
     ctx.restore();
     errors.delete(L.id);

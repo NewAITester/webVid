@@ -37,6 +37,7 @@ jobs:
           node tests/song.test.mjs
           node tests/motion.test.mjs
           node tests/tools.test.mjs
+          node tests/preview.test.mjs
 
       - name: بیلد
         run: npm run build

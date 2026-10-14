@@ -379,6 +379,13 @@
       <div class="frow" id="pjLenRow"><label>طول (بی‌صدا)</label>
         <input id="pjLen" type="number" min="1" max="600" step="1" value="15"><span class="dim">ثانیه</span></div>
       <button id="pjSave" class="btn primary wide">ذخیره</button>
+      <div class="shead sm">پیش‌نمایش — فقط روی این دستگاه</div>
+      <div class="frow"><label for="previewQuality">وضوح پیش‌نمایش</label><select id="previewQuality" aria-describedby="previewQualityNote">
+        <option value="original">اصلی — بدون کاهش وضوح</option>
+        <option value="light">سبک — حداکثر ضلع بلند ۹۶۰ پیکسل</option>
+        <option value="tiny">خیلی سبک — حداکثر ضلع بلند ۴۸۰ پیکسل</option>
+      </select></div>
+      <p id="previewQualityNote" class="note">انتخاب فوراً اعمال و روی این دستگاه ذخیره می‌شود؛ نیازی به زدن «ذخیره» نیست. این تنظیم فقط وضوح پیش‌نمایش را تغییر می‌دهد؛ وضوح و کیفیت خروجی نهایی همان تنظیمات خروجی است. کاهش هزینهٔ رندر داخلی پایتون برای کدهای مقیاس‌پذیر پشتیبانی‌شده اعمال می‌شود؛ کدهای دیگر ممکن است همچنان سنگین باشند.</p>
       <div class="shead sm">فایل پروژه</div>
       <p class="note">کل پروژه (شعر، زمان‌ها، لایه‌ها، افکت‌ها و فایل‌ها) در یک فایل؛ بعداً از صفحهٔ اول «وارد کردن» بزنید.</p>
       <div class="frow btns">
