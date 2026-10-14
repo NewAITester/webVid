@@ -60,7 +60,7 @@ const pySource=await readFile(new URL('../src/motion/importers/pyreal.js',import
 const pyBox={console,performance,profileContext,document:{createElement:()=>canvas},ImageData:class{constructor(bytes,w,h){this.data=bytes;this.width=w;this.height=h;}},setTimeout};
 vm.createContext(pyBox);vm.runInContext(pySource.replace(/^import .*;\n/gm,'').replace(/^export /gm,'')+`\nglobalThis.realFrame=realFrame;globalThis.mockBridge=()=>{B={R:{},begin(){},end(){}};W={frame(){B.R.out={w:2,h:2,u8:new Uint8Array(16)};}};};`,pyBox);pyBox.mockBridge();
 report={};const pyLayer={type:'code'};const pyProfile=createRenderProfile({detail:(k,v)=>report[k]=v},[pyLayer]);
-withProfileContext(canvasCtx,pyProfile,pyLayer,()=>pyBox.realFrame({g:{has:()=>true},frames:0},{name:'frame',mode:'t'},canvasCtx,.5,{W0:32,H0:18}));
-pyProfile.finish();for(const stage of ['python.frameAndPack','python.pixelUpload','python.composite'])assert(pyProfile.data.buckets.some(r=>r.stage===stage),stage);assert.equal(pyProfile.data.incompleteSpans,0);reports.push({pythonBridgeFixture:true,renderProfile:report.renderProfile});
+withProfileContext(canvasCtx,pyProfile,pyLayer,()=>pyBox.realFrame({g:{has:()=>true},frames:0,optimizationCount:2},{name:'frame',mode:'t'},canvasCtx,.5,{W0:32,H0:18}));
+pyProfile.finish();assert.equal(pyProfile.data.optimizedPythonCalls,1);for(const stage of ['python.frameAndPack','python.pixelUpload','python.composite'])assert(pyProfile.data.buckets.some(r=>r.stage===stage),stage);assert.equal(pyProfile.data.incompleteSpans,0);reports.push({pythonBridgeFixture:true,renderProfile:report.renderProfile});
 await mkdir('artifacts/export-tests',{recursive:true});await writeFile('artifacts/export-tests/render-profiles.json',JSON.stringify({synthetic:true,runs:reports},null,2));
 console.log('PASS render profiling: nested inclusive/self times, privacy, bounded memory, preview off, both modes, redraw, motion-blur/mask attribution, scene stages and Python bridge spans');

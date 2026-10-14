@@ -1,5 +1,6 @@
 import { profileContext } from '../../engine/render-profile.js';
 import { PY_PREVIEW } from './py-preview.js';
+import { PY_EXPORT_OPT } from './py-export-opt.js';
 /**
  * پایتون واقعی (CPython + numpy/scipy/Pillow روی WebAssembly با Pyodide)
  * ─────────────────────────────────────────────────────────────
@@ -622,7 +623,7 @@ def _patch(src):
         try: fn()
         except Exception as e: print('wv patch', key, e)
 
-def wv_load(src, limit=40, fn=None, preview_max=0):
+def wv_load(src, limit=40, fn=None, preview_max=0, optimize=False):
     g = {'__name__': 'webvid', '__file__': '/home/pyodide/code.py', '__builtins__': builtins}
     sys.argv = ['code.py']
     _patch(src)
@@ -632,7 +633,12 @@ def wv_load(src, limit=40, fn=None, preview_max=0):
     err = None
     _guard(limit)
     try:
-        exec(_wv_preview_compile(src, preview_max), g)
+        compiled, optimized = _wv_export_compile(src, preview_max, optimize)
+        if optimized:
+            g['_wv_mask_minimum'] = _wv_mask_minimum
+            g['_wv_can_inplace'] = _wv_can_inplace
+        g['__wv_export_optimizations__'] = optimized
+        exec(compiled, g)
     except _WVStop:
         pass
     except SystemExit as e:
@@ -746,6 +752,7 @@ export function loadReal() {
     const ns = py.globals.get('dict')();
     py.runPython(GLUE, { globals: ns });
     py.runPython(PY_PREVIEW, { globals: ns });
+    py.runPython(PY_EXPORT_OPT, { globals: ns });
     py.runPython(GLUE2, { globals: ns });
     W = { ns, load: ns.get('wv_load'), wrap: ns.get('wv_wrap'), audio: ns.get('wv_audio'), frame: ns.get('wv_frame'), fonts: ns.get('wv_fonts') };
     PY = py;
@@ -835,15 +842,15 @@ async function prepare(src) {
 const hashStr = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(36) + ':' + s.length; };
 
 const imports = (src, n) => new RegExp(`^\\s*(?:import\\s+[^\\n#]*\\b${n}\\b|from\\s+${n}\\b)`, 'm').test(src);
-function makeInst(src, fn, previewMax = 0) {
-  const key = hashStr(src) + '|' + (fn || '') + '|preview:' + previewMax;
+function makeInst(src, fn, previewMax = 0, optimize = false) {
+  const key = hashStr(src) + '|' + (fn || '') + '|preview:' + previewMax + '|optimize:' + !!optimize;
   let RI = insts.get(key);
   if (RI) return RI;
-  const r = W.load(src, 40, fn || null, previewMax);
+  const r = W.load(src, 40, fn || null, previewMax, !!optimize);
   const g = r.get(0), err = r.get(1), ok = r.get(2);
   r.destroy();
   // خطای بالای فایل بعد از تعریف تابع فریم (مثلاً حلقهٔ ساخت ویدیو که کامل نشد) ← فقط هشدار
-  RI = { key, g, error: err && !ok ? new Error(err) : null, warning: err && ok ? err : null, frames: 0,
+  RI = { key, g, optimizationCount: optimize ? (Number(g.get('__wv_export_optimizations__')) || 0) : 0, error: err && !ok ? new Error(err) : null, warning: err && ok ? err : null, frames: 0,
     pix: /\.get_data\s*\(/.test(src), bgr: imports(src, 'cv2') && !['PIL', 'imageio', 'matplotlib', 'pygame', 'skimage'].some(n => imports(src, n)) };
   // Raw byte frames need the effective Python dimensions, not design-space W0/H0.
   if (previewMax) {
@@ -856,12 +863,12 @@ function makeInst(src, fn, previewMax = 0) {
 }
 
 /** نمونهٔ آماده (هم‌زمان) یا null — اگر آماده نیست بار کردن شروع می‌شود */
-export function realInst(src, fn, previewMax = 0) {
+export function realInst(src, fn, previewMax = 0, optimize = false) {
   if (failed) return null;
   // همهٔ مرحله‌ها (Pyodide ← بسته‌ها ← فونت‌ها) در یک انتظار، تا خروجی فقط یک بار صبر کند
   if (!PY) { addPending(loadReal().then(py => py && prepare(src)).catch(e => { failed = String(e?.message || e); })); return null; }
   if (needPkgs(src).length || needFonts(src).length) { addPending(prepare(src).catch(e => { failed = String(e?.message || e); })); return null; }
-  return makeInst(src, fn, previewMax);
+  return makeInst(src, fn, previewMax, optimize);
 }
 export async function realInstAsync(src, fn) {
   if (!(await loadReal())) return null;
@@ -896,6 +903,9 @@ function drawOut(ctx, O, W0, H0, pc = null) {
 /** یک فریم با پایتون واقعی (fn: همان اطلاعات تابع فریم که مفسر داخلی پیدا کرده) */
 export function realFrame(RI, fn, ctx, t, { fps = 30, dur = 10, W0 = 1920, H0 = 1080 } = {}) {
   const pc=profileContext(ctx);
+  if(pc && RI.optimizationCount) {
+    pc.profile.data.optimizedPythonCalls = (pc.profile.data.optimizedPythonCalls || 0) + 1;
+  }
   const name = fn.anim ? '__wv_anim__' : fn.name;
   if (!fn.anim && !RI.g.has(name)) throw new Error(`تابع ${fn.name} در پایتون واقعی پیدا نشد`);
   const fi = Math.max(0, Math.round(t * fps));

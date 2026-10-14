@@ -12,7 +12,7 @@ export function createRenderProfile(log, layers = [], {clock=()=>performance.now
   if (!log) return null;
   const rows=[], buckets=new Map(), ordinals=new WeakMap(), stack=[];
   layers.forEach((L,index)=>{if(L && typeof L==='object')ordinals.set(L,index);});
-  const data={version:1,enabled:true,clock:'performance.now',renderCalls:0,redrawCalls:0,slowestFrames:[],instrumentationOps:0,droppedSpans:0,incompleteSpans:0,buckets:rows,
+  const data={version:1,enabled:true,clock:'performance.now',renderCalls:0,redrawCalls:0,optimizedPythonCalls:0,slowestFrames:[],instrumentationOps:0,droppedSpans:0,incompleteSpans:0,buckets:rows,
     semantics:'Synchronous wall time. inclusiveMs includes children; selfMs excludes nested profiled spans. Do not sum inclusive rows. Canvas GPU execution may be deferred. python.frameAndPack includes Python execution and frame packing/bridge, not Python function-only time.'};
   log.detail('renderProfile',data);
   function begin(stage,L=null) {

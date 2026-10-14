@@ -38,13 +38,15 @@ assert.equal(box.captured.exporting,true,'export flag survives the code-layer bo
 const frames = await readFile(new URL('../src/motion/importers/pyframes.js',import.meta.url),'utf8');
 box.getPyInst=()=>({src:'source',fn:{name:'frame'},W0:1920,H0:1080});
 box.pythonPreviewLimit=pythonPreviewLimit;
-box.realInst=(_src,_fn,limit)=>{box.limit=limit;return {};};
+box.realInst=(_src,_fn,limit,optimize)=>{box.limit=limit;box.optimize=optimize;return {};};
 box.realFrame=()=>{};
 vm.runInContext(frames.slice(frames.indexOf('export function runPyFrame('),frames.indexOf('/** تصویر کوچک')).replace('export ',''),box);
 box.runPyFrame(ctx,box.captured,'source',{},{});
-assert.equal(box.limit,0,'export uses original Python even with tiny preference');
+assert.equal(box.limit,0,'export uses full-size Python even with tiny preference');
+assert.equal(box.optimize,true,'lossless allocation optimization enabled only for export');
 box.runPyFrame(ctx,box.codeEnv({ctx,P:{w:1920,h:1080},exporting:false}),'source',{},{});
 assert.equal(box.limit,480,'preview passes the selected limit to Python');
+assert.equal(box.optimize,false,'preview still uses the existing compiler');
 
 // Actual export initializer creates a separate full-size canvas and marks its renderer.
 // Stop before codec selection: this checks quality isolation, not successful MP4 delivery.
@@ -126,5 +128,8 @@ assert.equal(low.pixelSize.w,480);
 assert.equal(low.pixelSize.h,270);
 assert.equal(original.pixelSize,undefined);
 assert.equal(cache.makeInst('source','frame',0),original);
+const optimized=cache.makeInst('source','frame',0,true);
+assert.notEqual(optimized,original,'optimized export cannot contaminate preview/audio cache');
+assert.equal(cache.makeInst('source','frame',0,true),optimized);
 assert.match(real,/export async function realInstAsync[\s\S]*?return makeInst\(src, fn\);/);
 console.log('PASS: preview sizing, persistence, export flag pipeline, real Pyodide scaling, source preservation and isolated runtime caches');

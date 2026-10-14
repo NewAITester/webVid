@@ -1,0 +1,13 @@
+# Lossless Python export optimization
+
+This is a runtime performance/memory-traffic change, not just a debugging change. It applies to real-Python video export in both hardware/save modes. Preview and audio retain their original compiler/cache. Source stored in the project is never rewritten.
+
+Recognized showreel frame suffix: a freshly allocated float32 RGB NumPy buffer, channel rolls, float32 vignette multiplication plus Gaussian grain, fade, clip, uint8 output. The compiler replaces temporary float32 multiplication/addition/clip buffers with in-place operations, retaining the same operation order, RNG call and dtype rounding. Fast path requires ordinary float32 ndarray VIG and NumPy Generator; other types take the original expression path. Supersampling, resolution, FPS, frame call count, grain distribution/sequence and final pixels are not intentionally changed.
+
+The supplied text scene's `Image.fromarray(np.minimum(np.array(layer), np.array(mask)))` is replaced with Pillow's native `ImageChops.darker` for same-size ordinary L-mode images, which has identical per-pixel minimum semantics. Other input modes/types/sizes use the original NumPy expression/error behavior. This removes the large mask-array copies and the conversion back to Pillow.
+
+Recognition is deliberately conservative. Standard NumPy/Pillow imports, no module/helper shadowing, exact frame suffix, and no preceding aliases to the fresh buffer are required. Unknown scripts are not forcibly optimized. Internal optimized instances use separate cache keys; audio's `realInstAsync` still loads the original instance.
+
+The existing report's `details.renderProfile.optimizedPythonCalls` counts calls to instances with a recognized optimization plan; runtime dtype checks may still choose the original expression fallback. It is not a speed multiplier or a count of saved allocations. Existing per-layer Python spans and build/scene fingerprints remain the comparison evidence.
+
+`tests/py-export-opt.test.mjs` uses real Pyodide, NumPy and Pillow. It checks all six supplied scenes at small dimensions, full 1920x1080 text-scene frames at 2x supersampling, identical RNG state, float64 fallback, preview exclusion, unknown/shadowed code rejection and L/RGB mask equality. It records an alternating original/optimized full-size benchmark under `artifacts/export-tests/python-export-opt.json`; no wall-time threshold is asserted. Results are fixture/environment-specific and do not guarantee phone speed or thermal improvement. The optimization targets redundant allocation and data movement; scene drawing, Lanczos resize and Gaussian generation still run.
