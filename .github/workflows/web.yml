@@ -36,8 +36,32 @@ jobs:
           node tests/engine.test.mjs
           node tests/song.test.mjs
           node tests/motion.test.mjs
+          node tests/tools.test.mjs
+          node tests/preview.test.mjs
+          node tests/export-modes.test.mjs
+          node tests/render-profile.test.mjs
+          node tests/py-export-opt.test.mjs
+
+      - name: نصب مرورگر آزمون خروجی
+        run: |
+          npx playwright install --with-deps chromium
+          if ! command -v ffprobe >/dev/null || ! command -v ffmpeg >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg; fi
+
+      - name: تست ویدیوی واقعی در هر دو روش
+        run: npm run test:export-browser
+
+      - name: ذخیرهٔ لاگ‌ها و ویدیوهای آزمون خروجی
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-mode-tests-web
+          path: artifacts/export-tests/
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: بیلد
+        env:
+          VITE_BUILD_SHA: ${{ github.sha }}
         run: npm run build
 
       - name: گزارش حجم خروجی

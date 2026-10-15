@@ -78,6 +78,13 @@ public class MediaSaverPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /** No permissions requested; unsupported measurements remain null. */
+    @PluginMethod
+    public void systemSnapshot(PluginCall call) {
+        try { call.resolve(new JSObject(ExportStats.capture(getContext()).toString())); }
+        catch (Exception e) { call.reject("export-system-snapshot-unavailable", e); }
+    }
+
     private File resolve(String p) {
         Uri u = Uri.parse(p);
         String path = u.getPath();

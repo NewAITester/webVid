@@ -1,3 +1,5 @@
+import { createRenderProfile } from './render-profile.js';
+import { chooseVideoConfig, configureVideoEncoder } from './export-mode.js';
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { Stage } from './stage.js';
 import { Renderer } from './renderer.js';
@@ -45,14 +47,11 @@ const AUDIO_CODECS = [
   { codec: 'opus',      mux: 'opus', label: 'Opus' },
 ];
 
-async function pickVideo(bitrate = 12_000_000, width = W, height = H, fps = FPS) {
+async function pickVideo(bitrate = 12_000_000, width = W, height = H, fps = FPS, optimized = false, log = null) {
   for (const c of VIDEO_CODECS) {
     try {
-      // نرخ فریم باید همانی باشد که واقعاً انکود می‌کنیم (قبلاً همیشه ۶۰ بود)
-      const r = await VideoEncoder.isConfigSupported({
-        codec: c.codec, width, height, bitrate, framerate: fps,
-      });
-      if (r.supported) return c;
+      const selected = await chooseVideoConfig(c, { width, height, bitrate, framerate: fps }, optimized, log);
+      if (selected) return selected;
     } catch { /* کدک بعدی */ }
   }
   return null;
@@ -72,11 +71,11 @@ async function pickAudio() {
 }
 
 /** آیا این مرورگر می‌تواند خروجی بگیرد؟ */
-export async function canExport() {
+export async function canExport({bitrate=12_000_000,width=W,height=H,fps=FPS} = {}) {
   if (typeof VideoEncoder === 'undefined') {
     return { ok: false, why: 'مرورگر از WebCodecs پشتیبانی نمی‌کند' };
   }
-  const v = await pickVideo();
+  const v = await pickVideo(bitrate,width,height,fps);
   if (!v) return { ok: false, why: 'هیچ انکودر ویدیویی در دسترس نیست' };
   const a = await pickAudio();
   return { ok: true, video: v.label, audio: a ? a.label : null };
@@ -111,9 +110,15 @@ export async function exportVideo({
   bitrate = 12_000_000, grain = 0.024, overrides = null,
   sections = null, look = null, customSet = null, lineFx = null, texts = null,
   layers = null, media = null,
-  onProgress = () => {}, signal = null,
+  onProgress = () => {}, signal = null, optimized = false, log = null,
 } = {}) {
   const t0 = performance.now();
+  let venc = null, aenc = null, renderProfile = null;
+  const abortEncoders=()=>{try{if(venc && venc.state!=='closed')venc.close();}catch{}try{if(aenc && aenc.state!=='closed')aenc.close();}catch{}};
+  signal?.addEventListener('abort',abortEncoders,{once:true});
+  try {
+  if(signal?.aborted)throw new DOMException('لغو شد','AbortError');
+  log?.detail('activeStage','setup');
   // ابعاد باید زوج باشند وگرنه انکودر رد می‌کند
   width = Math.round(width / 2) * 2;
   height = Math.round(height / 2) * 2;
@@ -146,6 +151,8 @@ export async function exportVideo({
   // لایه‌های موشن (تصویر، ویدیو، شکل، کد…)
   R.layers = layers || [];
   R.media = media;
+  renderProfile = createRenderProfile(log, R.layers);
+  R.profile = renderProfile;
   R.exporting = true;          // دستگیره‌ها و راهنماها کشیده نمی‌شوند
   R.frameDur = 1 / fps;        // تاری حرکت با نرخ فریم واقعی
   if (look) {
@@ -155,9 +162,10 @@ export async function exportVideo({
   }
 
   const target = new ArrayBufferTarget();
-  const vc = await pickVideo(bitrate, width, height, fps);
+  const vc = await pickVideo(bitrate, width, height, fps, optimized, log);
   if (!vc) throw new Error('هیچ انکودر ویدیویی در دسترس نیست');
   const ac = audioUrl ? await pickAudio() : null;
+  if(audioUrl && !ac)log?.warn('audio-encoder-unavailable-output-silent');
 
   const muxer = new Muxer({
     target,
@@ -168,42 +176,71 @@ export async function exportVideo({
 
   /* ── تصویر ─────────────────────────────────────────────── */
   let encErr = null;
-  const venc = new VideoEncoder({
-    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+  const frameSubmitted = new Map();
+  venc = new VideoEncoder({
+    output: (chunk, meta) => {
+      try {
+        const muxAt=performance.now();
+        try { muxer.addVideoChunk(chunk, meta); } finally { log?.add('videoMuxChunk',performance.now()-muxAt); }
+        log?.count('encodedVideoChunks');
+        const at = frameSubmitted.get(chunk.timestamp);
+        if(at != null) { log?.add('encoderOutputLatencySum',performance.now()-at); frameSubmitted.delete(chunk.timestamp); }
+      } catch(e) { encErr=e; }
+    },
     error: e => { encErr = e; },
   });
-  venc.configure({
-    codec: vc.codec, width, height,
-    bitrate, framerate: fps,
-    latencyMode: 'quality',
+  const configured = configureVideoEncoder(venc, {
+    ...vc.config, latencyMode: 'quality',
     ...(vc.mux === 'avc' ? { avc: { format: 'avc' } } : {}),
-  });
+  }, log);
+  log?.detail('videoEncoderConfig',configured);
+  log?.detail('actualHardwareEncoder',null); // No portable WebCodecs API can verify this.
+  log?.detail('audioCodec',ac?.codec || null);
+  log?.detail('activeStage','video');
+  const videoStarted = performance.now();
 
   const FRAME_US = 1e6 / fps;
   for (let i = 0; i < total; i++) {
-    if (signal?.aborted) { venc.close(); throw new Error('لغو شد'); }
+    if (signal?.aborted) throw new DOMException('لغو شد','AbortError');
     if (encErr) throw encErr;
 
     const t = from + i / fps;
     // ویدیوهای داخل لایه‌ها باید دقیقاً روی همین لحظه باشند
+    const mediaAt = performance.now();
     if (media && R.layers.length) await media.prepare(R.layers, t);
-    R.renderFrame(t);
+    log?.add('mediaPrepare',performance.now()-mediaAt);
+    const renderAt = performance.now();
+    if(renderProfile)renderProfile.frame(()=>R.renderFrame(t),false,{index:i,timeSeconds:t});else R.renderFrame(t);
+    log?.add('render',performance.now()-renderAt); log?.count('renderedFrames');
     // لایه‌های صفحهٔ وب (DOM) فریمشان را ناهمگام می‌سازند ← صبر و کشیدن دوباره
-    if (R.layers.length && await domSettle()) R.renderFrame(t);
+    const settleAt = performance.now();
+    const redraw = R.layers.length && await domSettle();
+    log?.add('asyncFrameWait',performance.now()-settleAt);
+    if(redraw) {const at=performance.now();if(renderProfile)renderProfile.frame(()=>R.renderFrame(t),true,{index:i,timeSeconds:t});else R.renderFrame(t);log?.add('render',performance.now()-at);log?.count('extraRedraws');}
 
+    const copyAt = performance.now();
     const frame = new VideoFrame(canvas, {
       timestamp: Math.round(i * FRAME_US),
       duration: Math.round(FRAME_US),
     });
     // هر ۲ ثانیه یک کی‌فریم — مثل -g 120 در نسخهٔ پایتون
-    venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
-    frame.close();
+    log?.add('videoFrameCopy',performance.now()-copyAt);
+    frameSubmitted.set(Math.round(i * FRAME_US),performance.now());
+    const encodeAt=performance.now();
+    try { venc.encode(frame, { keyFrame: i % (fps * 2) === 0 }); } finally { frame.close();log?.add('videoEncodeSubmit',performance.now()-encodeAt); }
+    log?.detail('maxVideoQueue',Math.max(log?.report?.details.maxVideoQueue || 0,venc.encodeQueueSize));
 
     // صف را خالی نگه دار تا حافظه نترکد
+    const queueAt = performance.now();
     if (venc.encodeQueueSize > 8) {
       await new Promise(r => setTimeout(r, 0));
-      while (venc.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 4));
+      while (venc.encodeQueueSize > 4) {
+        if(signal?.aborted)throw new DOMException('لغو شد','AbortError');
+        if(encErr)throw encErr;
+        await new Promise(r => setTimeout(r, 4));
+      }
     }
+    log?.add('videoQueueWait',performance.now()-queueAt);
     if (i % 10 === 0 || i === total - 1) {
       const el = (performance.now() - t0) / 1000;
       onProgress({
@@ -212,17 +249,27 @@ export async function exportVideo({
         fps: (i + 1) / Math.max(0.001, el),
         eta: el / Math.max(1, i + 1) * (total - i - 1),
       });
-      await new Promise(r => setTimeout(r, 0));   // رابط کاربری نفس بکشد
+      const yieldAt=performance.now();
+      await new Promise(r => setTimeout(r, 0));
+      log?.add('uiYield',performance.now()-yieldAt);   // رابط کاربری نفس بکشد
     }
   }
+  const flushAt = performance.now();
   await venc.flush();
+  log?.add('videoFlush',performance.now()-flushAt);
+  log?.add('videoWall',performance.now()-videoStarted);
   venc.close();
 
   /* ── صدا ───────────────────────────────────────────────── */
+  if (signal?.aborted) throw new DOMException('لغو شد','AbortError');
   if (ac && audioUrl) {
+    log?.detail('activeStage','audio');
+    const audioStarted = performance.now();
     onProgress({ phase: 'audio', pct: 1, done: total, total });
+    const audioAt=performance.now();
     const rendered = await loadAudioSlice(audioUrl, from, to);
-    const aenc = new AudioEncoder({
+    log?.add('audioPrepare',performance.now()-audioAt);
+    aenc = new AudioEncoder({
       output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
       error: e => { encErr = e; },
     });
@@ -233,23 +280,39 @@ export async function exportVideo({
     const L = rendered.getChannelData(0);
     const Rr = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : L;
     for (let off = 0; off < L.length; off += BLOCK) {
+      if(signal?.aborted)throw new DOMException('لغو شد','AbortError');
+      if(encErr)throw encErr;
       const n = Math.min(BLOCK, L.length - off);
       const inter = new Float32Array(n * CH);
       for (let j = 0; j < n; j++) { inter[j * CH] = L[off + j]; inter[j * CH + 1] = Rr[off + j]; }
-      aenc.encode(new AudioData({
+      const audioFrame = new AudioData({
         format: 'f32', sampleRate: SR, numberOfFrames: n, numberOfChannels: CH,
         timestamp: Math.round((off / SR) * 1e6), data: inter,
-      }));
+      });
+      try { aenc.encode(audioFrame); } finally { audioFrame.close(); }
       if (aenc.encodeQueueSize > 16) await new Promise(r => setTimeout(r, 2));
     }
     await aenc.flush();
     aenc.close();
+    log?.add('audioWall',performance.now()-audioStarted);
   }
 
   if (encErr) throw encErr;
+  if(signal?.aborted)throw new DOMException('لغو شد','AbortError');
+  log?.detail('activeStage','mux-finalize');
+  const muxAt=performance.now();
   muxer.finalize();
+  log?.add('muxFinalize',performance.now()-muxAt);
   onProgress({ phase: 'done', pct: 1, done: total, total, codec: vc.label,
                seconds: (performance.now() - t0) / 1000 });
-  return new Blob([target.buffer], { type: 'video/mp4' });
+  const blob=new Blob([target.buffer], { type: 'video/mp4' });
+  log?.detail('outputBytes',blob.size); log?.add('exportWall',performance.now()-t0);
+  return blob;
+  } finally {
+    renderProfile?.finish();
+    signal?.removeEventListener('abort',abortEncoders);
+    try { if(venc && venc.state !== 'closed')venc.close(); } catch { /* cleanup */ }
+    try { if(aenc && aenc.state !== 'closed')aenc.close(); } catch { /* cleanup */ }
+  }
 }
 

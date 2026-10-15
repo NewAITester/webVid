@@ -15,5 +15,7 @@ export default defineConfig({
   // پیش‌بستهٔ Vite این مسیر را می‌شکند، پس از آن مستثنا می‌شود.
   optimizeDeps: { exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'] },
   worker: { format: 'es' },
-  build: { target: 'es2022', outDir: 'dist', assetsDir: 'a' },
+  // Android API 30 images can ship Chrome/WebView 80. Avoid ES2021+ syntax
+  // in app and bundled workers. public/tools-sw.js is separately kept ES2019-safe.
+  build: { target: 'chrome80', outDir: 'dist', assetsDir: 'a' },
 });

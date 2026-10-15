@@ -1,3 +1,8 @@
+import { startExportLog, fingerprint } from './engine/export-log.js';
+import { mountExportOptions } from './ui/exportoptions.js';
+import { previewSize } from './engine/preview.js';
+import { mountPreviewQuality } from './ui/previewquality.js';
+import { mountToolManager } from './ui/toolmanager.js';
 import { Stage } from './engine/stage.js';
 import { Renderer } from './engine/renderer.js';
 import { Analysis } from './engine/analysis.js';
@@ -228,7 +233,8 @@ function fit() {
   canvas.style.width = cw + 'px';
   canvas.style.height = ch + 'px';
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  stage.resize(cw * dpr, ch * dpr);
+  const backing = previewSize(cw * dpr, ch * dpr);
+  stage.resize(backing.width, backing.height);
   if (!app.playing) draw();
 }
 
@@ -1448,6 +1454,7 @@ $('#exAll').onclick = () => {
 };
 
 let exAbort = null;
+let exportBusy = false;
 let lastExport = null;        // آخرین ویدیوی ساخته‌شده {blob, name}
 const setMsg = (t, cls = '') => { $('#exMsg').textContent = t; $('#exMsg').className = 'msg ' + cls; };
 
@@ -1456,10 +1463,16 @@ $('#exGo').onclick = async () => {
   const to = Math.min(app.duration, parseFloat($('#exTo').value) || 0);
   if (!app.song) { setMsg('این پروژه هنوز آهنگ ندارد', 'err'); return; }
   if (to <= from) { setMsg('بازهٔ زمانی نامعتبر است', 'err'); return; }
-  const cap = await canExport();
-  if (!cap.ok) { setMsg('این دستگاه نمی‌تواند خروجی بگیرد: ' + cap.why, 'err'); return; }
-
+  if(exportBusy)return;
+  exportBusy=true;
   pause();
+  const optimized=$('#exOptimized').checked;
+  $('#exOptimized').disabled=true;
+  let log=null, status='failed', failure=null;
+  const settings={resolutionId:curRes().id,mode:optimized?'optimized':'original',from,to,width:outW(),height:outH(),fps:parseInt($('#exFps').value,10),bitrate:parseInt($('#exBr').value,10)*1e6,audioPresent:!!app.audioUrl,layerCount:layers.length};
+  // Only a SHA-256 is logged; project content and media addresses never enter the report.
+  settings.sceneFingerprint=await fingerprint({layers,look,lineFx,texts,sections:R.sections,overrides:OV,lines:app.song.lines});
+  try { log=await startExportLog(settings); } catch { $('#exLogMsg').textContent='گزارش‌گیری در این محیط در دسترس نیست؛ خروجی همچنان اجرا می‌شود.'; }
   $('#exShare')?.classList.add('hidden');
   exAbort = new AbortController();
   $('#exGo').classList.add('hidden');
@@ -1467,12 +1480,13 @@ $('#exGo').onclick = async () => {
   $('#exBar').classList.remove('hidden');
   const fill = $('#exBar').querySelector('i');
   try {
+    const cap=await canExport(settings);
+    if(!cap.ok)throw new Error('این دستگاه نمی‌تواند خروجی بگیرد: '+cap.why);
     const blob = await exportVideo({
       song: app.song, from, to,
       audioUrl: app.audioUrl,
-      width: outW(), height: outH(),
-      fps: parseInt($('#exFps').value, 10),
-      bitrate: parseInt($('#exBr').value, 10) * 1e6,
+      width: settings.width, height: settings.height,
+      fps: settings.fps, bitrate: settings.bitrate, optimized, log,
       grain: look.grain, overrides: OV, sections: R.sections, customSet: CSET,
       lineFx, texts, layers, media: MEDIA,
       look,
@@ -1486,11 +1500,15 @@ $('#exGo').onclick = async () => {
       },
     });
     const mb = (blob.size / 1048576).toFixed(1);
-    const name = `${(app.song.title || 'clip').replace(/\s+/g, '_')}_${from | 0}-${to | 0}_${curRes().id}p.mp4`;
+    const name = `${(app.song.title || 'clip').replace(/\s+/g, '_')}_${from | 0}-${to | 0}_${settings.resolutionId}p.mp4`;
     setMsg(`در حال ذخیره… (${faN(mb)} مگابایت)`);
     lastExport = { blob, name };      // ورودی آمادهٔ FFmpeg
     if (app.pane === 'export') { FF.src = 'last'; FF.duration = 0; FF.render(); }
-    const res = await saveFile(blob, name, p => { fill.style.width = (p * 100).toFixed(0) + '%'; });
+    log?.detail('activeStage','save');
+    const saveAt=performance.now();
+    const res = await saveFile(blob, name, p => { fill.style.width = (p * 100).toFixed(0) + '%'; }, {optimized,log,signal:exAbort.signal});
+    log?.add('saveWall',performance.now()-saveAt); log?.detail('saveOutcome',res.where);
+    status=res.where==='cache'?'partial-save':'success';
     if (res.where === 'browser') setMsg(`آماده شد — ${faN(mb)} مگابایت، در پوشهٔ Downloads`, 'ok');
     else if (res.where === 'downloads') setMsg(`✓ ذخیره شد در ${res.path} — ${faN(mb)} مگابایت`, 'ok');
     else setMsg(`${faN(mb)} مگابایت ساخته شد ولی در Downloads ذخیره نشد. از اشتراک‌گذاری استفاده کنید.`, 'warn');
@@ -1500,12 +1518,21 @@ $('#exGo').onclick = async () => {
       sh.onclick = () => shareFile(res.uri);
     }
   } catch (e) {
+    failure=e;status=exAbort?.signal.aborted || e.name==='AbortError' ? 'cancelled' : 'failed';
     console.error(e);
     setMsg('خطا: ' + e.message, 'err');
   } finally {
     $('#exGo').classList.remove('hidden');
     $('#exCancel').classList.add('hidden');
     exAbort = null;
+    if(log)try {
+      const endHash=await fingerprint({layers,look,lineFx,texts,sections:R.sections,overrides:OV,lines:app.song?.lines});
+      log.detail('sceneFingerprintEnd',endHash);
+      if(endHash && settings.sceneFingerprint && endHash!==settings.sceneFingerprint)log.warn('scene-changed-during-export');
+      const report=await log.finish(status,failure);
+      $('#exLogMsg').textContent=report.persistenceErrors?.length ? 'بخشی از ذخیرهٔ گزارش در دسترس نبود؛ گزینهٔ ارسال گزارش را امتحان کنید.' : 'گزارش این اجرا خودکار ذخیره شد؛ برای مقایسه از «ذخیره / ارسال گزارش‌ها» استفاده کنید.';
+    }catch{$('#exLogMsg').textContent='ذخیرهٔ گزارش ناموفق بود؛ خروجی ویدیو مستقل از گزارش است.';}
+    exportBusy=false;$('#exOptimized').disabled=false;
   }
 };
 $('#exCancel').onclick = () => exAbort?.abort();
@@ -2462,3 +2489,9 @@ boot().catch(err => {
   $('#loading').textContent = 'خطا: ' + err.message;
 });
 
+
+// Metadata and downloads are lazy; startup never downloads a runtime.
+mountToolManager();
+mountPreviewQuality(fit);
+
+mountExportOptions({save:saveFile,share:shareFile,onMessage:message=>{$('#exLogMsg').textContent=message;}});

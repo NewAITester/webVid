@@ -63,46 +63,54 @@ function browserSave(blob, filename) {
 /**
  * @returns {Promise<{where:string, path:string, uri?:string, canShare?:boolean}>}
  */
-export async function saveFile(blob, filename, onProgress = () => {}) {
-  if (!isNative()) return browserSave(blob, filename);
-
+export async function saveFile(blob, filename, onProgress = () => {}, options = {}) {
+  if (!isNative()) {
+    options.log?.detail('storagePath', 'browser-download');
+    if(options.optimized)options.log?.warn('optimized-native-storage-unavailable-in-browser');
+    return browserSave(blob, filename);
+  }
   const { Filesystem, Directory } = await import('@capacitor/filesystem');
   const { registerPlugin } = await import('@capacitor/core');
   const MediaSaver = registerPlugin('MediaSaver');
+  return saveNativeBlob(blob, filename, onProgress, { ...options, Filesystem, Directory, MediaSaver });
+}
 
+/** Injectable native boundary lets CI verify both paths byte-for-byte. */
+export async function saveNativeBlob(blob, filename, onProgress, { Filesystem, Directory, MediaSaver, optimized = false, log = null, signal = null }) {
   const tmp = 'export_tmp_' + filename;
-  const buf = new Uint8Array(await blob.arrayBuffer());
-
-  // ۱) نوشتن تکه‌تکه در حافظهٔ موقت خصوصی
-  await Filesystem.writeFile({
-    path: tmp, data: '', directory: Directory.Cache, recursive: true,
-  });
-  for (let off = 0; off < buf.length; off += CHUNK) {
-    await Filesystem.appendFile({
-      path: tmp,
-      data: toB64(buf.subarray(off, Math.min(off + CHUNK, buf.length))),
-      directory: Directory.Cache,
-    });
-    onProgress(Math.min(1, (off + CHUNK) / buf.length));
-  }
-
-  const { uri: srcUri } = await Filesystem.getUri({
-    path: tmp, directory: Directory.Cache,
-  });
-
-  // ۲) انتقال به پوشهٔ عمومی Downloads
+  const chunk = optimized ? 1024 * 1024 : CHUNK;
+  const check = () => { if(signal?.aborted)throw new DOMException('لغو شد','AbortError'); };
+  const measure = (key, fn) => log ? log.measure(key,fn) : fn();
+  log?.detail('storagePath', optimized ? 'native-blob-slices-1MiB' : 'native-whole-buffer-3MiB');
+  log?.detail('saveChunkBytes',chunk);
+  log?.detail('saveInputBytes',blob.size);
+  let created = false;
   try {
-    const res = await MediaSaver.saveToDownloads({
-      sourcePath: srcUri, filename, mimeType: mimeOf(blob, filename),
-    });
-    return { where: 'downloads', path: res.path, uri: res.uri, canShare: true };
-  } catch (e) {
-    // اگر به هر دلیل نشد، دست‌کم فایل را از دست ندهیم
-    console.warn('MediaSaver ناموفق:', e);
-    return {
-      where: 'cache', path: 'حافظهٔ موقت اپ', uri: srcUri, canShare: true,
-      warn: e?.message || String(e),
-    };
+    check();
+    // Legacy path retained; optimized path NEVER materializes the entire Blob again.
+    const buf = optimized ? null : new Uint8Array(await measure('saveRead',()=>blob.arrayBuffer()));
+    await measure('saveWrite',()=>Filesystem.writeFile({path:tmp,data:'',directory:Directory.Cache,recursive:true})); created=true;
+    for(let off=0;off<blob.size;off+=chunk) {
+      check();
+      const bytes=optimized ? new Uint8Array(await measure('saveRead',()=>blob.slice(off,off+chunk).arrayBuffer())) : buf.subarray(off,Math.min(off+chunk,buf.length));
+      const t=performance.now(),data=toB64(bytes);log?.add('saveBase64',performance.now()-t);
+      await measure('saveWrite',()=>Filesystem.appendFile({path:tmp,data,directory:Directory.Cache}));
+      log?.count('saveChunks'); log?.count('saveBase64Characters',data.length);
+      onProgress(Math.min(1,(off+chunk)/blob.size));
+    }
+    check();
+    const {uri:srcUri}=await Filesystem.getUri({path:tmp,directory:Directory.Cache});
+    try {
+      const res=await measure('savePublish',()=>MediaSaver.saveToDownloads({sourcePath:srcUri,filename,mimeType:mimeOf(blob,filename)}));
+      if(signal?.aborted)log?.warn('cancel-requested-after-publication');
+      return {where:'downloads',path:res.path,uri:res.uri,canShare:true};
+    } catch(e) {
+      log?.warn('downloads-publish-failed-cache-preserved');
+      return {where:'cache',path:'حافظهٔ موقت اپ',uri:srcUri,canShare:true,warn:e?.message||String(e)};
+    }
+  } catch(e) {
+    if(created)try{await Filesystem.deleteFile({path:tmp,directory:Directory.Cache});}catch{/* cleanup best effort */}
+    throw e;
   }
 }
 

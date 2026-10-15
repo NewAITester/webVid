@@ -1,12 +1,14 @@
+import { profileContext } from '../../engine/render-profile.js';
+import { PY_PREVIEW } from './py-preview.js';
+import { PY_EXPORT_OPT } from './py-export-opt.js';
 /**
  * پایتون واقعی (CPython + numpy/scipy/Pillow روی WebAssembly با Pyodide)
  * ─────────────────────────────────────────────────────────────
- * فایل‌های Pyodide داخل خود برنامه‌اند (public/pyodide ← scripts/copy-pyodide.mjs)،
- * پس چیزی از اینترنت دانلود نمی‌شود. کد پایتون وارد‌شده همان‌طور که هست با پایتون
- * واقعی اجرا می‌شود: صدا (wave / scipy.io.wavfile) دقیقاً همان خروجی اجرای اصلی است و
- * فریم‌ها با numpy واقعی حساب می‌شوند؛ فقط cairo به بوم برنامه وصل است (cairoBridge).
- * تا وقتی پایتون واقعی آماده نشده (یا اگر فایل‌هایش نبود) مفسر داخلی کار می‌کند.
+ * دانلود فقط با تأیید کاربر از مدیر ابزارها انجام می‌شود؛ فایل‌ها در Cache Storage
+ * مستقل از بستهٔ اپ نگه داشته می‌شوند. فایل‌های کامل با SHA-256 اعتبارسنجی می‌شوند.
+ * تا نصب ابزار، مفسر داخلی در دسترس است. پل cairo همچنان به بوم برنامه متصل است.
  */
+import { runtimeBase, requireTools } from '../../tools/manager.js';
 import { cairoBridge } from './pyframes.js';
 import { addPending } from './domframes.js';
 import { initWebfonts, familiesIn, bundledFaces } from '../webfonts.js';
@@ -15,15 +17,16 @@ import { initWebfonts, familiesIn, bundledFaces } from '../webfonts.js';
 let BUNDLED = { imports: { numpy: 'numpy', scipy: 'scipy', PIL: 'pillow' }, pkgs: { numpy: { name: 'numpy' }, scipy: { name: 'scipy' }, pillow: { name: 'pillow' } } };
 const FDIR = '/usr/share/fonts/truetype/wv';
 
-let PY = null, B = null, W = null, loading = null, failed = null;
+let PY = null, B = null, W = null, loading = null, failed = null, cachedBase = null;
+if (typeof window !== 'undefined') window.addEventListener('wv-tools-changed', () => { failed = null; fire(); });
 const loaded = new Set(), pkgJobs = new Map(), insts = new Map();
 
 export function pyodideBase() {
-  if (globalThis.WV_PYODIDE_URL) return globalThis.WV_PYODIDE_URL;
+  if (cachedBase) return cachedBase;
   try { return new URL('pyodide/', document.baseURI).href; } catch { return './pyodide/'; }
 }
 const fire = () => { try { window.dispatchEvent(new Event('wv-dom-frame')); } catch { /* */ } };
-export const realState = () => (PY ? 'ready' : failed ? 'failed' : loading ? 'loading' : 'idle');
+export const realState = () => (failed ? 'failed' : PY ? 'ready' : loading ? 'loading' : 'idle');
 export const realError = () => failed;
 
 const GLUE = String.raw`
@@ -620,7 +623,7 @@ def _patch(src):
         try: fn()
         except Exception as e: print('wv patch', key, e)
 
-def wv_load(src, limit=40, fn=None):
+def wv_load(src, limit=40, fn=None, preview_max=0, optimize=False):
     g = {'__name__': 'webvid', '__file__': '/home/pyodide/code.py', '__builtins__': builtins}
     sys.argv = ['code.py']
     _patch(src)
@@ -630,7 +633,12 @@ def wv_load(src, limit=40, fn=None):
     err = None
     _guard(limit)
     try:
-        exec(compile(src, 'code.py', 'exec'), g)
+        compiled, optimized = _wv_export_compile(src, preview_max, optimize)
+        if optimized:
+            g['_wv_mask_minimum'] = _wv_mask_minimum
+            g['_wv_can_inplace'] = _wv_can_inplace
+        g['__wv_export_optimizations__'] = optimized
+        exec(compiled, g)
     except _WVStop:
         pass
     except SystemExit as e:
@@ -720,27 +728,37 @@ def wv_frame(g, name, W, H, bgr, *args):
 
 /** بار کردن Pyodide (یک بار) */
 export function loadReal() {
+  if (PY) return Promise.resolve(PY);
+  if (failed) return Promise.resolve(null);
   if (loading) return loading;
   if (typeof document === 'undefined' || globalThis.WV_NO_REAL_PY) { failed = 'unavailable'; return (loading = Promise.resolve(null)); }
   loading = (async () => {
-    const base = pyodideBase();
-    try { const r = await fetch(base + 'bundled.json'); if (r.ok) { const j = await r.json(); if (j?.imports) BUNDLED = j; } } catch { /* فهرست پیش‌فرض */ }
+    const base = cachedBase = await runtimeBase('python');
+    const r = await fetch(new URL('pyodide/bundled.json', document.baseURI));
+    if (!r.ok) throw new Error('فهرست کتابخانه‌های پایتون در بیلد پیدا نشد');
+    const j = await r.json();
+    if (!j?.imports || !j?.pkgs) throw new Error('فهرست کتابخانه‌های پایتون معتبر نیست');
+    BUNDLED = j;
     initWebfonts();
     const { loadPyodide } = await import(/* @vite-ignore */ base + 'pyodide.mjs');
     const py = await loadPyodide({ indexURL: base, stdout: () => {}, stderr: () => {} });
-    await py.loadPackage(['numpy'], { messageCallback: () => {} });
+    const errors = [];
+    await py.loadPackage(['numpy'], { messageCallback: () => {}, errorCallback:e => errors.push(String(e)) });
+    if (errors.length) throw new Error(errors.join('\n'));
     loaded.add('numpy');
     B = cairoBridge();
     B.same = (a, b) => a === b;
     py.registerJsModule('_wvc', B);
     const ns = py.globals.get('dict')();
     py.runPython(GLUE, { globals: ns });
+    py.runPython(PY_PREVIEW, { globals: ns });
+    py.runPython(PY_EXPORT_OPT, { globals: ns });
     py.runPython(GLUE2, { globals: ns });
     W = { ns, load: ns.get('wv_load'), wrap: ns.get('wv_wrap'), audio: ns.get('wv_audio'), frame: ns.get('wv_frame'), fonts: ns.get('wv_fonts') };
     PY = py;
     fire();
     return py;
-  })().catch(e => { failed = String(e?.message || e); console.warn('Pyodide:', e); return null; });
+  })().catch(e => { failed = String(e?.message || e); console.warn('Pyodide:', e); return null; }).finally(() => { loading = null; });
   return loading;
 }
 
@@ -766,12 +784,16 @@ function ensurePkgs(list) {
     const base = pyodideBase();
     const built = list.filter(k => !BUNDLED.pkgs?.[k]?.file).map(k => BUNDLED.pkgs?.[k]?.name || k);
     const wheels = list.filter(k => BUNDLED.pkgs?.[k]?.file).map(k => base + BUNDLED.pkgs[k].file);
-    const opt = { messageCallback: () => {}, errorCallback: () => {} };
+    const errors = [];
+    const opt = { messageCallback: () => {}, errorCallback:e => errors.push(String(e)) };
     pkgJobs.set(key, (async () => {
+      await requireTools(list);
       if (built.length) await PY.loadPackage(built, opt);
       if (wheels.length) await PY.loadPackage(wheels, opt);
+      if (errors.length) throw new Error(errors.join('\n'));
     })().then(() => { list.forEach(p => loaded.add(p)); fire(); })
-      .catch(e => { console.warn('Pyodide packages', list, e); list.forEach(p => loaded.add(p)); }));
+      .catch(e => { failed = String(e?.message || e); console.warn('Pyodide packages', list, e); throw e; })
+      .finally(() => pkgJobs.delete(key)));
   }
   return pkgJobs.get(key);
 }
@@ -820,28 +842,33 @@ async function prepare(src) {
 const hashStr = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(36) + ':' + s.length; };
 
 const imports = (src, n) => new RegExp(`^\\s*(?:import\\s+[^\\n#]*\\b${n}\\b|from\\s+${n}\\b)`, 'm').test(src);
-function makeInst(src, fn) {
-  const key = hashStr(src) + '|' + (fn || '');
+function makeInst(src, fn, previewMax = 0, optimize = false) {
+  const key = hashStr(src) + '|' + (fn || '') + '|preview:' + previewMax + '|optimize:' + !!optimize;
   let RI = insts.get(key);
   if (RI) return RI;
-  const r = W.load(src, 40, fn || null);
+  const r = W.load(src, 40, fn || null, previewMax, !!optimize);
   const g = r.get(0), err = r.get(1), ok = r.get(2);
   r.destroy();
   // خطای بالای فایل بعد از تعریف تابع فریم (مثلاً حلقهٔ ساخت ویدیو که کامل نشد) ← فقط هشدار
-  RI = { key, g, error: err && !ok ? new Error(err) : null, warning: err && ok ? err : null, frames: 0,
+  RI = { key, g, optimizationCount: optimize ? (Number(g.get('__wv_export_optimizations__')) || 0) : 0, error: err && !ok ? new Error(err) : null, warning: err && ok ? err : null, frames: 0,
     pix: /\.get_data\s*\(/.test(src), bgr: imports(src, 'cv2') && !['PIL', 'imageio', 'matplotlib', 'pygame', 'skimage'].some(n => imports(src, n)) };
+  // Raw byte frames need the effective Python dimensions, not design-space W0/H0.
+  if (previewMax) {
+    const w = g.get('W'), h = g.get('H');
+    if (Number.isInteger(w) && w > 0 && Number.isInteger(h) && h > 0) RI.pixelSize = { w, h };
+  }
   insts.set(key, RI);
   if (insts.size > 4) { const [k0, o] = insts.entries().next().value; try { o.g.destroy(); } catch { /* */ } insts.delete(k0); }
   return RI;
 }
 
 /** نمونهٔ آماده (هم‌زمان) یا null — اگر آماده نیست بار کردن شروع می‌شود */
-export function realInst(src, fn) {
+export function realInst(src, fn, previewMax = 0, optimize = false) {
   if (failed) return null;
   // همهٔ مرحله‌ها (Pyodide ← بسته‌ها ← فونت‌ها) در یک انتظار، تا خروجی فقط یک بار صبر کند
-  if (!PY) { addPending(loadReal().then(py => py && prepare(src))); return null; }
-  if (needPkgs(src).length || needFonts(src).length) { addPending(prepare(src)); return null; }
-  return makeInst(src, fn);
+  if (!PY) { addPending(loadReal().then(py => py && prepare(src)).catch(e => { failed = String(e?.message || e); })); return null; }
+  if (needPkgs(src).length || needFonts(src).length) { addPending(prepare(src).catch(e => { failed = String(e?.message || e); })); return null; }
+  return makeInst(src, fn, previewMax, optimize);
 }
 export async function realInstAsync(src, fn) {
   if (!(await loadReal())) return null;
@@ -855,24 +882,30 @@ function canvas(w, h) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
 }
 /** تصویر خروجی پایتون (RGBA) روی قاب W0×H0 — با حفظ نسبت */
-function drawOut(ctx, O, W0, H0) {
+function drawOut(ctx, O, W0, H0, pc = null) {
   let src = null, w = 0, h = 0;
   if (O.surf) { src = O.surf.canvas; if (!src) return; w = src.width; h = src.height; }
   else {
     w = O.w; h = O.h;
     if (!tmpC || tmpC.width !== w || tmpC.height !== h) tmpC = canvas(w, h);
     const g = tmpC.getContext('2d');
-    g.putImageData(new ImageData(new Uint8ClampedArray(O.u8.buffer, O.u8.byteOffset, w * h * 4), w, h), 0, 0);
+    const upload=pc?.profile.begin('python.pixelUpload',pc.layer);
+    try { g.putImageData(new ImageData(new Uint8ClampedArray(O.u8.buffer, O.u8.byteOffset, w * h * 4), w, h), 0, 0); } finally { pc?.profile.end(upload); }
     src = tmpC;
   }
   const s = Math.min(W0 / w, H0 / h), dw = w * s, dh = h * s;
   if (Math.abs(dw - W0) > 1 || Math.abs(dh - H0) > 1) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W0, H0); }
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(src, (W0 - dw) / 2, (H0 - dh) / 2, dw, dh);
+  const composite=pc?.profile.begin('python.composite',pc.layer);
+  try { ctx.drawImage(src, (W0 - dw) / 2, (H0 - dh) / 2, dw, dh); } finally { pc?.profile.end(composite); }
 }
 
 /** یک فریم با پایتون واقعی (fn: همان اطلاعات تابع فریم که مفسر داخلی پیدا کرده) */
 export function realFrame(RI, fn, ctx, t, { fps = 30, dur = 10, W0 = 1920, H0 = 1080 } = {}) {
+  const pc=profileContext(ctx);
+  if(pc && RI.optimizationCount) {
+    pc.profile.data.optimizedPythonCalls = (pc.profile.data.optimizedPythonCalls || 0) + 1;
+  }
   const name = fn.anim ? '__wv_anim__' : fn.name;
   if (!fn.anim && !RI.g.has(name)) throw new Error(`تابع ${fn.name} در پایتون واقعی پیدا نشد`);
   const fi = Math.max(0, Math.round(t * fps));
@@ -893,7 +926,8 @@ export function realFrame(RI, fn, ctx, t, { fps = 30, dur = 10, W0 = 1920, H0 = 
     if (fn.ctxArg) { const s = B.surface(); const p = W.wrap('ctx', B.context(s)); made.push(p); args.unshift(p); }
     else if (fn.surfArg) { const p = W.wrap('surface', B.surface()); made.push(p); args.unshift(p); }
     for (const n of fn.extra || []) args.push(/^fps$/i.test(n) ? fps : /w/i.test(n) ? W0 : H0);
-    try { W.frame(RI.g, name, W0, H0, RI.bgr, ...args); } catch (e) { if (!B.R.done && !/__wv_frame_done__/.test(String(e?.message))) throw e; }
+    const frame=pc?.profile.begin('python.frameAndPack',pc.layer);
+    try { W.frame(RI.g, name, RI.pixelSize?.w || W0, RI.pixelSize?.h || H0, RI.bgr, ...args); } catch (e) { if (!B.R.done && !/__wv_frame_done__/.test(String(e?.message))) throw e; } finally { pc?.profile.end(frame); }
     RI.frames++;
   } finally {
     O = B.R.out; B.R.out = null;
@@ -904,7 +938,7 @@ export function realFrame(RI, fn, ctx, t, { fps = 30, dur = 10, W0 = 1920, H0 = 
   }
   try {
     if (g !== ctx) ctx.drawImage(offC, 0, 0, W0, H0);
-    if (O) drawOut(ctx, O, W0, H0);
+    if (O) drawOut(ctx, O, W0, H0, pc);
   } finally { ctx.restore(); }
 }
 

@@ -202,6 +202,7 @@ export class Renderer {
       ...frameEnv(song, t, W, H),
       song, acc,
       playing: this.playing, exporting: this.exporting, frameDur: this.frameDur,
+      profile: this.exporting ? this.profile : null,
       fx: TOOLBOX,
       lineText: cur >= 0 ? song.lines[cur].text : '',
     };
@@ -217,6 +218,14 @@ export class Renderer {
   }
 
   renderFrame(t) {
+    const profile = this.exporting ? this.profile : null;
+    let token = null;
+    const phase = stage => { if(profile){profile.end(token);token=profile.begin(stage);} };
+    phase('scene.background');
+    try { return this._renderFrame(t, phase); } finally { profile?.end(token); }
+  }
+
+  _renderFrame(t, phase) {
     const ctx = this.stage.begin();
     const song = this.song;
     if (!song) { this.stage.end(); return null; }
@@ -271,8 +280,10 @@ export class Renderer {
     const venv = menv || this.motionEnv(t, acc);
     const vfx = this._vfxAt(t, this.soloStyle ? null : sec, curLine, venv);
     const lyr = fn => this._withFx(ctx, vfx.lyric, t, venv, fn);
+    phase('scene.behind');
     if (menv) this.motion.draw(ctx, this.layers, t, menv, { behind: true, media: this.media });
 
+    phase('scene.lyrics');
     /* ۲) دوربین */
     const sx = Math.sin(t * 127) * 10 * S() * kick;
     const sy = Math.cos(t * 97) * 7 * S() * kick;
@@ -320,6 +331,7 @@ export class Renderer {
     }
     ctx.restore();
 
+    phase('scene.idle');
     /* ۳٫۵) بین‌خوانی: وقتی شعری خوانده نمی‌شود، روی هر سبکی سوار می‌شود (بیرون از دوربین و تنظیم خط) */
     if (!this.soloStyle || this.idlePreview) {
       const ids = sec[4]?.idle ?? this.idle;
@@ -328,8 +340,11 @@ export class Renderer {
 
     /* لایه‌های متن آزاد — بیرون از ترنسفرم دوربین، چون جایشان را
        خودتان تعیین کرده‌اید و نباید با لرزش ضرب تکان بخورند. */
+    phase('scene.text');
     drawLayers(ctx, this.texts, t, acc);
+    phase('scene.front');
     if (menv) this.motion.draw(ctx, this.layers, t, menv, { behind: false, media: this.media });
+    phase('scene.screenFx');
     if (vfx.screen.length) this._screenFx(ctx, vfx.screen, t, venv);
     if (this.editMode) {
       ctx.save();
@@ -342,6 +357,7 @@ export class Renderer {
       if (L) outlineLayer(ctx, L, t);
     }
 
+    phase('scene.finish');
     /* ۴) فلاش */
     if (kick > 0.6 && !invert) {
       rect(ctx, 0, 0, W, H, C.BONE, 0.05 * (kick - 0.6) / 0.4);
@@ -350,7 +366,7 @@ export class Renderer {
     this.stage.end();
 
     /* ۵) گرید */
-    this._grade(t);
+    this._grade(t, phase);
 
     /* دستگیره‌های لایهٔ انتخاب‌شده — بعد از گرید تا تار و رنگی نشوند */
     if (this.selLayer && !this.exporting && menv) {
@@ -375,7 +391,7 @@ export class Renderer {
    * در پایتون همهٔ این‌ها با numpy روی پیکسل‌ها بود و گران. اینجا
    * فیلترهای SVG روی GPU اجرا می‌شوند.
    */
-  _grade(t) {
+  _grade(t, phase = () => {}) {
     const cv = this.stage.canvas;
     const ctx = this.stage.ctx;
     const w = cv.width, h = cv.height;
@@ -383,6 +399,7 @@ export class Renderer {
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
+    phase('grade.bloom');
     /* ۱) بلوم با آستانه */
     if (this.bloom > 0.01) {
       const bw = Math.max(4, w >> 2), bh = Math.max(4, h >> 2);
@@ -414,6 +431,7 @@ export class Renderer {
       ctx.restore();
     }
 
+    phase('grade.tone');
     /* ۲) انحراف رنگی + منحنی تُن — در یک پاس */
     if (this.tone) {
       // انحراف باید با رزولوشن مقیاس بخورد: ۱ پیکسل در ۱۹۲۰
@@ -441,6 +459,7 @@ export class Renderer {
       ctx.restore();
     }
 
+    phase('grade.vignette');
     /* ۳) ویگنت — در پایتون ضربی بود، پس اینجا هم multiply */
     const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.30,
                                         w / 2, h / 2, Math.hypot(w, h) * 0.56);
@@ -450,6 +469,7 @@ export class Renderer {
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, w, h);
 
+    phase('grade.grain');
     /* ۴) دانه
        دو نکته که اول اشتباه کرده بودم:
 

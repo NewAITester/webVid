@@ -1,3 +1,4 @@
+import { pythonPreviewLimit } from '../../engine/preview.js';
 /**
  * پایتون «فریم‌به‌فریم» با pycairo (+ numpy)
  * ─────────────────────────────────────────────────────────────
@@ -624,7 +625,7 @@ export function runPyFrame(ctx, e, program, T, run) {
     ctx.translate(-w / 2, -h / 2);
     const s = Math.max(w / inst.W0, h / inst.H0);
     ctx.translate((w - inst.W0 * s) / 2, (h - inst.H0 * s) / 2); ctx.scale(s, s);
-    const RI = run.real === false ? null : realInst(inst.src, inst.fn.anim ? '__wv_anim__' : inst.fn.name);
+    const RI = run.real === false ? null : realInst(inst.src, inst.fn.anim ? '__wv_anim__' : inst.fn.name, pythonPreviewLimit(e), !!e.exporting);
     if (RI && !RI.error) {
       try { realFrame(RI, inst.fn, ctx, t, inst); return; } catch (e) { RI.error = e; console.warn('پایتون واقعی (فریم) — برگشت به مفسر داخلی:', e); }
     }

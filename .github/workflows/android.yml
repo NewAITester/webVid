@@ -9,6 +9,10 @@ on:
         description: 'ساخت ریلیز با APK'
         type: boolean
         default: false
+      test_webview:
+        description: 'تست ثبت ابزارها در WebView واقعی شبیه‌ساز'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -53,8 +57,33 @@ jobs:
           node tests/engine.test.mjs
           node tests/song.test.mjs
           node tests/motion.test.mjs
+          node tests/tools.test.mjs
+          node tests/preview.test.mjs
+          node tests/export-modes.test.mjs
+          node tests/render-profile.test.mjs
+          node tests/py-export-opt.test.mjs
+          node tests/emulator-host.test.mjs
+
+      - name: نصب مرورگر آزمون خروجی
+        run: |
+          npx playwright install --with-deps chromium
+          if ! command -v ffprobe >/dev/null || ! command -v ffmpeg >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg; fi
+
+      - name: تست ویدیوی واقعی در هر دو روش
+        run: npm run test:export-browser
+
+      - name: ذخیرهٔ لاگ‌ها و ویدیوهای آزمون خروجی
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-mode-tests-android
+          path: artifacts/export-tests/
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: بیلد وب
+        env:
+          VITE_BUILD_SHA: ${{ github.sha }}
         run: npm run build
 
       - name: همگام‌سازی با پروژهٔ اندروید
@@ -69,12 +98,13 @@ jobs:
           test -f android/app/src/main/assets/public/data/Neghab.mp3
           test -f android/app/src/main/assets/public/fonts/IRANSansX-Black.ttf
           test -f android/app/src/main/assets/public/data/lyrics.lrc
-          # پایتون واقعی (Pyodide + numpy) داخل اپ
-          test -f android/app/src/main/assets/public/pyodide/pyodide.asm.wasm
-          test -f android/app/src/main/assets/public/pyodide/python_stdlib.zip
-          ls android/app/src/main/assets/public/pyodide/numpy-*.whl
-          ls android/app/src/main/assets/public/pyodide/opencv_python-*.whl android/app/src/main/assets/public/pyodide/matplotlib-*.whl
+          # Only small manifests, never Python/FFmpeg binaries in app updates.
+          test -f android/app/src/main/assets/public/tools-manifest.json
+          test -f android/app/src/main/assets/public/tools-sw.js
           test -f android/app/src/main/assets/public/pyodide/bundled.json
+          test ! -f android/app/src/main/assets/public/pyodide/pyodide.asm.wasm
+          test ! -d android/app/src/main/assets/public/ffmpeg
+          ! find android/app/src/main/assets/public -name '*.whl' | grep -q .
           # فونت‌های همراه برنامه
           test -f android/app/src/main/assets/public/webfonts/fonts.json
           ls android/app/src/main/assets/public/webfonts/*.ttf | wc -l
@@ -83,7 +113,40 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon --stacktrace
+
+      - name: آماده‌سازی فضای runner و نصب ایمیج شبیه‌ساز
+        if: github.ref == 'refs/heads/feature/optional-runtime-downloads' || (github.event_name == 'workflow_dispatch' && inputs.test_webview)
+        run: bash scripts/prepare-emulator-host.sh prepare
+
+      - name: دسترسی به شتاب‌دهی شبیه‌ساز
+        if: github.ref == 'refs/heads/feature/optional-runtime-downloads' || (github.event_name == 'workflow_dispatch' && inputs.test_webview)
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: تست ابزارها در WebView واقعی APK
+        if: github.ref == 'refs/heads/feature/optional-runtime-downloads' || (github.event_name == 'workflow_dispatch' && inputs.test_webview)
+        uses: reactivecircus/android-emulator-runner@v2
+        timeout-minutes: 20
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          # Reserve actual disk space; this system image can exceed a requested partition size.
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
+          working-directory: android
+          script: ./gradlew connectedDebugAndroidTest --no-daemon --stacktrace
+
+      - name: گزارش تست Android
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-tool-tests
+          path: |
+            android/app/build/reports/tests/
+            android/app/build/reports/androidTests/
+          if-no-files-found: ignore
 
       - name: نام‌گذاری و گزارش
         id: apk

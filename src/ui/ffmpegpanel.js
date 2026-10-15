@@ -1,3 +1,4 @@
+import { openToolManager } from './toolmanager.js';
 import { h, faN, select, check } from './dom.js';
 import {
   CONTAINERS, VCODECS, ACODECS, PRESETS_X264, TUNES, RECIPES,
@@ -45,6 +46,8 @@ export class FFmpegPanel {
   }
 
   async render() {
+    if (this.abort) return; // Do not detach a running job's progress/cancel controls.
+    const generation = this._renderGeneration = (this._renderGeneration || 0) + 1;
     const R = this.root;
     R.innerHTML = '';
     R.append(h('div', { class: 'phead' }, 'فشرده‌سازی و تبدیل (FFmpeg)'));
@@ -53,11 +56,14 @@ export class FFmpegPanel {
       return;
     }
     R.append(h('p', { class: 'note' }, 'ویدیو را کم‌حجم کنید، قالبش را عوض کنید، گیف یا MP3 بگیرید، برش بزنید و فیلتر بگذارید. '
-      + 'همه روی خود گوشی و بدون اینترنت انجام می‌شود؛ ولی چون پردازنده‌ی گوشی است، برای ویدیوی بلند حوصله لازم است.'));
+      + 'پردازش پس از دانلود اختیاری ابزار، روی خود گوشی و بدون اینترنت انجام می‌شود؛ ولی چون پردازنده‌ی گوشی است، برای ویدیوی بلند حوصله لازم است.'));
+
+    R.append(h('button', { class:'btn sm ghost', onclick:() => openToolManager(['ffmpeg']) }, '↓ مدیریت دانلود FFmpeg'));
 
     /* ورودی */
     const inp = this.input();
     if (inp && !this.duration && inp.blob) this.duration = await probeDuration(inp.blob);
+    if (generation !== this._renderGeneration) return;
     R.append(h('div', { class: 'frow btns' },
       h('button', { class: 'chip' + (this.src === 'last' ? ' on' : ''), onclick: async () => {
         this.src = 'last'; this.duration = 0; this.render();
@@ -247,6 +253,7 @@ export class FFmpegPanel {
   }
 
   async _run(ui) {
+    if (this.abort) return;
     const inp = this.input();
     if (!inp) { ui.msg.textContent = 'ورودی ندارد'; ui.msg.className = 'msg err'; return; }
     const cmd = this._cmd();
@@ -264,6 +271,9 @@ export class FFmpegPanel {
     const fill = ui.bar.querySelector('i');
     const t0 = performance.now();
     const lines = [];
+    let logTimer = null;
+    const flushLog = () => { clearTimeout(logTimer); logTimer = null; ui.log.textContent = lines.join('\n'); };
+    ui.msg.textContent = 'در حال آماده‌سازی FFmpeg از حافظهٔ ابزارها…';
     try {
       const blob = await runFFmpeg({
         input: inp.blob, inName: cmd.inName, args, outName, mime, signal: this.abort.signal,
@@ -277,7 +287,7 @@ export class FFmpegPanel {
         onLog: line => {
           lines.push(line);
           if (lines.length > 400) lines.shift();
-          ui.log.textContent = lines.join('\n');
+          if (!logTimer) logTimer = setTimeout(flushLog, 120);
         },
       });
       const a = inp.blob.size / 1048576, b = blob.size / 1048576;
@@ -303,6 +313,7 @@ export class FFmpegPanel {
       ui.msg.textContent = 'خطا: ' + e.message;
       ui.msg.className = 'msg err';
     } finally {
+      flushLog();
       ui.go.classList.remove('hidden'); ui.cancel.classList.add('hidden');
       this.abort = null;
     }
