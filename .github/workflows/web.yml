@@ -57,7 +57,8 @@ jobs:
           name: export-mode-tests-web
           path: artifacts/export-tests/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
+          continue-on-error: true
 
       - name: بیلد
         env:
@@ -78,7 +79,7 @@ jobs:
         with:
           name: lyricstudio-web
           path: dist
-          retention-days: 30
+          retention-days: 7
 
       # این فقط وقتی ریپو عمومی باشد و Pages فعال باشد کار می‌کند
       - name: آماده‌سازی Pages

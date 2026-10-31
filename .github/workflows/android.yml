@@ -79,7 +79,8 @@ jobs:
           name: export-mode-tests-android
           path: artifacts/export-tests/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
+          continue-on-error: true
 
       - name: بیلد وب
         env:
@@ -147,6 +148,8 @@ jobs:
             android/app/build/reports/tests/
             android/app/build/reports/androidTests/
           if-no-files-found: ignore
+          retention-days: 3
+          continue-on-error: true
 
       - name: نام‌گذاری و گزارش
         id: apk
@@ -165,7 +168,7 @@ jobs:
         with:
           name: lyricstudio-apk
           path: ${{ steps.apk.outputs.path }}
-          retention-days: 30
+          retention-days: 7
 
       - name: انتشار در ریلیز
         if: github.event_name == 'workflow_dispatch' && inputs.release
