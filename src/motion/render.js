@@ -1002,6 +1002,72 @@ export class MotionRenderer {
           if (four) { put(1, -1); put(-1, -1); }
           break;
         }
+        /* ── فاز ۴ هم‌ترازی با Alight Motion ── */
+        case 'sharpen': case 'findEdges': {
+          // کانولوشن ۳×۳ روی کادر لایه (تیزکردن: کرنل تقویت مرکز؛
+          // لبه: سوبل روی روشنایی، خروجی خاکستری)
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const at = (x, y, c) => src[((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4 + c];
+            const lum = (x, y) => at(x, y, 0) * 0.299 + at(x, y, 1) * 0.587 + at(x, y, 2) * 0.114;
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              if (!q[o + 3]) continue;
+              if (f.type === 'sharpen') {
+                const a = v.amt / 100;
+                for (let c = 0; c < 3; c++) q[o + c] = (1 + 4 * a) * at(x, y, c)
+                  - a * (at(x - 1, y, c) + at(x + 1, y, c) + at(x, y - 1, c) + at(x, y + 1, c));
+              } else {
+                const gx = -lum(x - 1, y - 1) - 2 * lum(x - 1, y) - lum(x - 1, y + 1)
+                  + lum(x + 1, y - 1) + 2 * lum(x + 1, y) + lum(x + 1, y + 1);
+                const gy = -lum(x - 1, y - 1) - 2 * lum(x, y - 1) - lum(x + 1, y - 1)
+                  + lum(x - 1, y + 1) + 2 * lum(x, y + 1) + lum(x + 1, y + 1);
+                const m = Math.min(255, Math.hypot(gx, gy) / 4 * (v.amt / 100));
+                q[o] = q[o + 1] = q[o + 2] = m;
+              }
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'spinBlur': {
+          const b = box();
+          smear(d, 12, (ax, u) => {
+            ax.translate(b.cx, b.cy); ax.rotate((v.amt / 100) * 0.6 * (u - 0.5)); ax.translate(-b.cx, -b.cy);
+          });
+          break;
+        }
+        case 'vibrance': {
+          const k = v.amt / 100;
+          pixelOp(d, (q, i) => {
+            const mx = Math.max(q[i], q[i + 1], q[i + 2]), mn = Math.min(q[i], q[i + 1], q[i + 2]);
+            if (mx <= mn) return;
+            const sat = (mx - mn) / mx, avg = (q[i] + q[i + 1] + q[i + 2]) / 3, boost = 1 + k * (1 - sat);
+            q[i] = avg + (q[i] - avg) * boost; q[i + 1] = avg + (q[i + 1] - avg) * boost; q[i + 2] = avg + (q[i + 2] - avg) * boost;
+          });
+          break;
+        }
+        case 'lumaKey': {
+          const lv = v.level / 100, soft = Math.max(0.01, v.soft / 100);
+          pixelOp(d, (q, i) => {
+            const l = (q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114) / 255;
+            const fct = v.mode >= 0.5 ? clamp((lv + soft / 2 - l) / soft) : clamp((l - (lv - soft / 2)) / soft);
+            q[i + 3] *= fct;
+          });
+          break;
+        }
+        case 'wipe': {
+          const b = box(), p = clamp(v.prog / 100, 0, 1);
+          if (p <= 0) break;
+          if (p >= 1) { d.drawImage(cur, 0, 0); break; }
+          const a0 = (v.ang * Math.PI) / 180, r = Math.hypot(b.fw, b.fh);
+          d.save(); d.beginPath(); d.moveTo(b.cx, b.cy);
+          d.arc(b.cx, b.cy, r, a0, a0 + p * Math.PI * 2); d.closePath(); d.clip();
+          d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
