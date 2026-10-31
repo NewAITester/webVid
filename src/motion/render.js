@@ -190,7 +190,9 @@ function drawText(ctx, st) {
 }
 
 /* ── شکل ─────────────────────────────────────────────────────── */
-function shapePath(ctx, kind, w, h, P) {
+/* shapePath را export می‌کنیم تا تست Node بتواند بدون بوم واقعی،
+   مسیر هر شکل تازه را با یک ctx ساختگی بررسی کند. */
+export function shapePath(ctx, kind, w, h, P) {
   const hw = w / 2, hh = h / 2;
   ctx.beginPath();
   switch (kind) {
@@ -236,6 +238,77 @@ function shapePath(ctx, kind, w, h, P) {
       ctx.closePath();
       return 2 * (w + h) + 4 * tw;
     }
+    /* ── شکل‌های تازهٔ فاز ۱ (هم‌ترازی با Alight Motion) ── */
+    case 'roundrect': {
+      const r = Math.min(P.radius, hw, hh);
+      if (r > 0 && ctx.roundRect) ctx.roundRect(-hw, -hh, w, h, r); else ctx.rect(-hw, -hh, w, h);
+      return 2 * (w + h);
+    }
+    case 'quad': {
+      // ذوزنقه: بالای باریک‌تر، پایین پهن — مثل چهارضلعی Alight
+      const tw = hw * 0.6;
+      const p = [[-tw, -hh], [tw, -hh], [hw, hh], [-hw, hh]];
+      p.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      return 2 * w + 2 * h;
+    }
+    case 'pie': {
+      // برش دایره: قطاع ۲۷۰ درجه (سه‌ربع)، از بالای دایره شروع می‌شود
+      ctx.moveTo(0, 0);
+      ctx.ellipse(0, 0, hw, hh, 0, -Math.PI / 2, Math.PI, false);
+      ctx.closePath();
+      return Math.PI * (hw + hh) * 0.75 + hw + hh;
+    }
+    case 'arc': {
+      // کمان باز ۲۷۰ درجه — فقط دورخط کشیده می‌شود، پُر نمی‌شود
+      ctx.ellipse(0, 0, hw, hh, 0, -Math.PI / 2, Math.PI, false);
+      return Math.PI * (hw + hh) * 0.75;
+    }
+    case 'moon': {
+      // هلال: دایرهٔ بیرونی منهای دایرهٔ داخلی با جهت مخالف
+      ctx.ellipse(0, 0, hw, hh, 0, 0, Math.PI * 2, false);
+      ctx.ellipse(hw * 0.35, -hh * 0.1, hw * 0.85, hh * 0.85, 0, 0, Math.PI * 2, true);
+      ctx.closePath();
+      return Math.PI * (hw + hh) * 1.8;
+    }
+    case 'teardrop': {
+      ctx.moveTo(0, -hh);
+      ctx.bezierCurveTo(hw * 0.9, -hh * 0.1, hw, hh * 0.5, 0, hh);
+      ctx.bezierCurveTo(-hw, hh * 0.5, -hw * 0.9, -hh * 0.1, 0, -hh);
+      ctx.closePath();
+      return (w + h) * 1.7;
+    }
+    case 'callout': {
+      // حباب گفتگو: بدنهٔ مستطیل + دمِ پایین
+      const by = hh * 0.65;
+      const p = [[-hw, -hh], [hw, -hh], [hw, by], [hw * 0.25, by],
+                 [-hw * 0.05, hh], [-hw * 0.35, by], [-hw, by]];
+      p.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      return 2 * w + 2 * h;
+    }
+    case 'flower': {
+      // گل چندپر: نوک گلبرگ‌ها و دره‌های بین‌شان با منحنی نرم به هم می‌رسند.
+      // تعداد گلبرگ = sides، عمق دره = inner درصد.
+      const n = Math.max(3, Math.round(P.sides));
+      const pts = [];
+      for (let i = 0; i < n * 2; i++) {
+        const a = (i / (n * 2)) * Math.PI * 2 - Math.PI / 2;
+        const r = i % 2 ? (P.inner / 100) : 1;
+        pts.push([Math.cos(a) * hw * r, Math.sin(a) * hh * r]);
+      }
+      const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      let [mx, my] = mid(pts[pts.length - 1], pts[0]);
+      ctx.moveTo(mx, my);
+      let len = 0, px = mx, py = my;
+      for (let i = 0; i < pts.length; i++) {
+        const [nx, ny] = mid(pts[i], pts[(i + 1) % pts.length]);
+        ctx.quadraticCurveTo(pts[i][0], pts[i][1], nx, ny);
+        len += Math.hypot(nx - px, ny - py); px = nx; py = ny;
+      }
+      ctx.closePath();
+      return len;
+    }
     default: {
       const r = Math.min(P.radius, hw, hh);
       if (r > 0 && ctx.roundRect) ctx.roundRect(-hw, -hh, w, h, r); else ctx.rect(-hw, -hh, w, h);
@@ -249,7 +322,7 @@ function drawShape(ctx, st) {
   const kind = L.data.kind || 'rect';
   const len = shapePath(ctx, kind, P.w, P.h, P);
   const trimmed = P.trimS > 0.01 || P.trimE < 99.99;
-  const isLine = kind === 'line' || kind === 'ring';
+  const isLine = kind === 'line' || kind === 'ring' || kind === 'arc';
 
   if (!isLine && !trimmed && L.data.fillOn !== false) {
     if (L.data.grad === 'linear' || L.data.grad === 'radial') {

@@ -110,6 +110,12 @@ export const LAYER_TYPES = {
 export const SHAPE_KINDS = [
   ['rect', 'مستطیل'], ['ellipse', 'بیضی'], ['polygon', 'چندضلعی'], ['star', 'ستاره'],
   ['ring', 'حلقه'], ['line', 'خط'], ['heart', 'قلب'], ['arrow', 'پیکان'], ['cross', 'به‌علاوه'],
+  // فاز ۱ هم‌ترازی با Alight Motion — شکل‌های تازه، پیاده‌سازی تمیز با ریاضیات
+  // خودمان (نه کپی فایل/کد Alight): pie و arc و moon و teardrop و roundrect و
+  // callout و flower (گل چندپر) و quad (چهارضلعی/ذوزنقه).
+  ['pie', 'برش دایره (Pie)'], ['arc', 'کمان'], ['moon', 'ماه'],
+  ['teardrop', 'قطره'], ['roundrect', 'مستطیل گرد'], ['callout', 'حباب گفتگو'],
+  ['flower', 'گل چندپر'], ['quad', 'چهارضلعی'],
 ];
 
 export const BLEND_MODES = [
