@@ -73,7 +73,9 @@ export const LAYER_TYPES = {
   video: {
     label: 'ویدیو', icon: '▶',
     props: [N('w', 'عرض', 1920, 10, 6000), N('radius', 'گردی گوشه', 0, 0, 1000)],
-    data: () => ({ media: null, speed: 1, trimIn: 0, loop: true }),
+    // فاز ۲ هم‌ترازی با Alight Motion: trimOut نقطهٔ پایان منبع است
+    // (null یعنی تا انتهای فایل). با trimIn پنجرهٔ منبع کلیپ را می‌سازد.
+    data: () => ({ media: null, speed: 1, trimIn: 0, trimOut: null, loop: true }),
   },
   spectrum: {
     label: 'موج صدا', icon: '≋',

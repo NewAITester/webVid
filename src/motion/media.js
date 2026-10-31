@@ -63,12 +63,26 @@ export class MediaPool {
     this.items.delete(id);
   }
 
-  /** زمانی از فایل ویدیو که باید در زمان محلی lt نمایش داده شود */
+  /** پنجرهٔ منبع کلیپ: [شروع، پایان] بر حسب ثانیهٔ فایل.
+   *  trimOut برابر null یعنی تا انتهای فایل (یا it.dur اگر معلوم باشد). */
+  static sourceWindow(L, it) {
+    const start = Math.max(0, L.data?.trimIn || 0);
+    let end = L.data?.trimOut;
+    if (end == null || !(end > start)) end = it?.dur > 0 ? it.dur : start + 1e9;
+    return [start, Math.max(start + 0.01, end)];
+  }
+
+  /** زمانی از فایل ویدیو که باید در زمان محلی lt نمایش داده شود.
+   *  با تکرار: داخل پنجرهٔ [trimIn, trimOut) می‌چرخد؛ بدون تکرار:
+   *  در پایان پنجره می‌ایستد (نه در پایان فایل). */
   static mediaTime(L, lt, it) {
     const sp = L.data?.speed || 1;
-    let mt = (L.data?.trimIn || 0) + lt * sp;
-    if (it?.dur > 0) mt = L.data?.loop !== false ? mt % it.dur : Math.min(mt, it.dur - 0.04);
-    return Math.max(0, mt);
+    const [start, end] = MediaPool.sourceWindow(L, it);
+    const win = end - start;
+    let mt;
+    if (L.data?.loop !== false) mt = start + ((lt * sp) % win + win) % win;
+    else mt = Math.min(start + lt * sp, end - 0.04);
+    return Math.max(start, mt);
   }
 
   /** هم‌زمان کردن ویدیو با زمان پیش‌نمایش (بدون انتظار) */

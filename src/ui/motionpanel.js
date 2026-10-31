@@ -675,12 +675,16 @@ export class MotionPanel {
       if (L.type === 'video') {
         body.append(this._staticNum('سرعت', D.speed, 0.25, 4, 0.05, v => { D.speed = v; }, '×'));
         body.append(this._staticNum('شروع از ثانیهٔ', D.trimIn, 0, Math.max(1, it?.dur || 60), 0.05, v => { D.trimIn = v; }));
+        body.append(this._staticNum('پایان در ثانیهٔ', D.trimOut ?? (it?.dur || 60), 0, Math.max(1, it?.dur || 60), 0.05, v => { D.trimOut = v; }));
+        body.append(h('div', { class: 'frow btns' },
+          h('button', { class: 'btn sm ghost', onclick: () => { D.trimOut = null; this.changed(true); } }, 'پایان = انتهای فایل'));
         body.append(h('div', { class: 'frow btns' },
           check('تکرار', D.loop !== false, v => { D.loop = v; this.changed(); }),
           h('button', { class: 'btn sm ghost', onclick: () => {
             if (!it?.dur) return;
-            L.t1 = +(L.t0 + (it.dur - (D.trimIn || 0)) / (D.speed || 1)).toFixed(2); this.changed(true);
-          } }, 'طول لایه = طول ویدیو')));
+            const end = D.trimOut ?? it.dur;
+            L.t1 = +(L.t0 + (end - (D.trimIn || 0)) / (D.speed || 1)).toFixed(2); this.changed(true);
+          } }, 'طول لایه = تا پایان')); 
         body.append(h('p', { class: 'note' }, 'صدای ویدیو پخش نمی‌شود — صدای پروژه همان آهنگ است. برای حذف پردهٔ سبز در زبانهٔ «✦ افکت» دستهٔ «ترکیب و برش» ← «پردهٔ سبز» را بزنید.'));
       }
       return;

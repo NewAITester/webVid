@@ -63,14 +63,25 @@ export function trimStart(L, newT0) {
     // جلو آمدن شروع: کی‌فریم‌های قبل از صفر بریده می‌شوند (با حفظ مقدار لبه)
     if (dt > 0) trimKeys(tr, (L.t1 - newT0));
   }
-  if (L.type === 'video') L.data.trimIn = Math.max(0, (L.data.trimIn || 0) + dt * (L.data.speed || 1));
+  if (L.type === 'video') {
+    // trimOut مطلقِ منبع است، پس با جلو آمدن شروع تغییر نمی‌کند؛
+    // فقط نگذار trimIn از trimOut جلو بزند.
+    const ni = Math.max(0, (L.data.trimIn || 0) + dt * (L.data.speed || 1));
+    if (L.data.trimOut != null && ni >= L.data.trimOut) L.data.trimOut = ni + 0.05;
+    L.data.trimIn = ni;
+  }
   L.t0 = newT0;
 }
 
-/** پایان لایه را عوض کن؛ کی‌فریم‌های بیرون از بازه حذف می‌شوند */
+/** پایان لایه را عوض کن؛ کی‌فریم‌های بیرون از بازه حذف می‌شوند.
+ *  برای ویدیوی بدون تکرار، پایان تایم‌لاین = trimOut منبع می‌شود،
+ *  تا بریدن (split) دو تکهٔ دقیق از یک پنجرهٔ منبع بسازد. */
 export function trimEnd(L, newT1) {
   L.t1 = Math.max(L.t0 + 0.1, +newT1.toFixed(2));
   for (const tr of tracksOf(L)) trimKeys(tr, L.t1 - L.t0);
+  if (L.type === 'video' && L.data.loop === false) {
+    L.data.trimOut = +((L.data.trimIn || 0) + (L.t1 - L.t0) * (L.data.speed || 1)).toFixed(2);
+  }
 }
 
 /** کپی کامل با شناسهٔ تازه */
