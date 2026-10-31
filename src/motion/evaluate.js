@@ -91,6 +91,8 @@ export function moveMods(fxs, lt, env) {
       parts.push({ dx: Math.cos(a) * (v.r / U), dy: Math.sin(a) * (v.r / U) });
     } else if (f.type === 'zoomPulse') {
       parts.push({ s: 1 + Math.sin(lt * v.freq * Math.PI * 2) * (v.amt / 100) });
+    } else if (f.type === 'drift') {
+      parts.push({ dx: (lt * v.speed) / U, rot: lt * v.rot });
     } else if (f.type === 'strobe') {
       const mix = v.beat / 100;
       const blink = ((lt * v.rate) % 1) < 0.5 ? 1 : 0;

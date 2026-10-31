@@ -940,6 +940,18 @@ export class MotionPanel {
         () => { applyLook(L, lk); ch(); }))));
     }
 
+    // فاز ۱۳ — افکت‌های اخیر (مثل Alight): آخرین افکت‌های استفاده‌شده
+    // بالای گالری می‌مانند تا دوباره زدن‌شان یک ضربه باشد.
+    const recent = (this._recentFx || []).filter(k => avail.some(([id]) => id === k));
+    if (recent.length) {
+      body.append(h('div', { class: 'shead sm' }, '🕘 افکت‌های اخیر'));
+      body.append(h('div', { class: 'fxgal' }, ...recent.map(k => {
+        const E = EFFECTS[k];
+        return h('button', { class: 'fxt', title: E.desc || E.label, onclick: () => {
+          const fx = newEffect(k); L.effects.push(fx); this._openFx = fx.id; ch();
+        } }, h('i', {}, E.ic || '✦'), h('b', {}, E.label));
+      })));
+    }
     body.append(h('div', { class: 'shead sm' }, 'افزودن افکت'));
     const avail = effectsFor(L.type).filter(([, E]) => !opt.kinds || opt.kinds.includes(E.kind));
     const cats = EFFECT_CATS.filter(([c]) => avail.some(([, E]) => E.cat === c));
@@ -960,7 +972,9 @@ export class MotionPanel {
             return [S];
           });
         grid.append(h('button', { class: 'fxt', title: E.desc || E.label, onclick: () => {
-          const fx = newEffect(k); L.effects.push(fx); this._openFx = fx.id; ch();
+          const fx = newEffect(k); L.effects.push(fx); this._openFx = fx.id;
+          this._recentFx = [k, ...(this._recentFx || []).filter(x => x !== k)].slice(0, 8);
+          ch();
         } }, sample || h('i', {}, E.ic || '✦'), h('b', {}, E.label), h('small', {}, E.desc || '')));
       }
     };

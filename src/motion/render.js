@@ -114,6 +114,7 @@ function drawText(ctx, st) {
   const y0 = -m.h / 2 + m.lh / 2;
   const lt = st.lt, fxOf = id => tfx.find(f => f.type === id)?.v;
   const rainbow = fxOf('rainbow'), wave = fxOf('wordWave'), jit = fxOf('jitter');
+  const wpop = fxOf('wordPop');
   const kar = fxOf('karaoke'), flk = fxOf('wordFlicker');
   let karPos = -1;
   if (kar) {
@@ -148,6 +149,7 @@ function drawText(ctx, st) {
           else if (k === 'spin') { rot = (1 - EASINGS.outBack(u)) * -1.6; s = Math.max(0.001, EASINGS.outCubic(u)); }
         }
         if (wave) dy += Math.sin(lt * wave.speed * 2 - idx * wave.gap) * wave.amp;
+        if (wpop) s *= 1 + (wpop.amp / 100) * Math.max(0, Math.sin(lt * wpop.speed * 2 - idx * 0.7));
         if (jit) {
           dx += noise(lt * jit.speed + idx * 13.7) * jit.amt;
           dy += noise(lt * jit.speed + idx * 29.3 + 7) * jit.amt;
@@ -1284,6 +1286,75 @@ export class MotionRenderer {
         }
         case 'invertFx': {
           pixelOp(d, (q, i) => { q[i] = 255 - q[i]; q[i + 1] = 255 - q[i + 1]; q[i + 2] = 255 - q[i + 2]; });
+          break;
+        }
+        case 'pinch': {
+          const amt = v.amt / 100, r = Math.max(box().w, box().h) / 2 * (v.r / 100);
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist >= r || dist < 0.5) return [dx, dy];
+            const k = 1 + amt * (1 - (dist / r) * (dist / r));
+            return [dx * k, dy * k];
+          });
+          break;
+        }
+        case 'bend': {
+          const amt = v.amt * px, hh = Math.max(1, box().h / 2);
+          warp(d, (dx, dy) => [dx + amt * (1 - (dy / hh) * (dy / hh)), dy]);
+          break;
+        }
+        case 'fractal': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), tile = this._noiseTile();
+          for (const [scale, alpha] of [[1, 0.6], [0.35, 0.4]]) {
+            const tmp = this._scratch('frac', cw, ch), tx = tmp.getContext('2d');
+            tx.filter = `blur(${Math.max(1, v.scale * scale / 4 * px)}px)`;
+            tx.drawImage(tile, b.x, b.y, b.w, b.h); tx.filter = 'none';
+            d.save(); d.globalAlpha = (v.amt / 100) * alpha; d.globalCompositeOperation = 'overlay';
+            d.drawImage(tmp, 0, 0); d.restore();
+          }
+          break;
+        }
+        case 'grid': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), s = Math.max(2, v.size * px);
+          d.save(); d.globalAlpha = v.op / 100; d.strokeStyle = v.color; d.lineWidth = Math.max(1, px);
+          d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let x = b.x; x <= b.x + b.w; x += s) { d.moveTo(x, b.y); d.lineTo(x, b.y + b.h); }
+          for (let y = b.y; y <= b.y + b.h; y += s) { d.moveTo(b.x, y); d.lineTo(b.x + b.w, y); }
+          d.stroke(); d.restore();
+          break;
+        }
+        case 'matte': {
+          const lv = v.level / 100, soft = Math.max(0.01, v.soft / 100);
+          pixelOp(d, (q, i) => {
+            const l = (q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114) / 255;
+            const keep = v.mode >= 0.5 ? clamp((lv + soft / 2 - l) / soft) : clamp((l - (lv - soft / 2)) / soft);
+            q[i + 3] *= keep;
+          });
+          break;
+        }
+        case 'edgeGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data;
+            const lum = (x, y) => { const o = ((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4; return q[o] * 0.299 + q[o + 1] * 0.587 + q[o + 2] * 0.114; };
+            const edge = this._scratch('edge', cw, ch), ex = edge.getContext('2d');
+            const eimg = ex.createImageData(b.w, b.h), eq = eimg.data;
+            const col = v.color || '#E4142A';
+            const cr = parseInt(col.slice(1, 3), 16) || 0, cg = parseInt(col.slice(3, 5), 16) || 0, cb = parseInt(col.slice(5, 7), 16) || 0;
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const gx = -lum(x - 1, y - 1) - 2 * lum(x - 1, y) - lum(x - 1, y + 1) + lum(x + 1, y - 1) + 2 * lum(x + 1, y) + lum(x + 1, y + 1);
+              const gy = -lum(x - 1, y - 1) - 2 * lum(x, y - 1) - lum(x + 1, y - 1) + lum(x - 1, y + 1) + 2 * lum(x, y + 1) + lum(x + 1, y + 1);
+              const m = Math.min(255, Math.hypot(gx, gy) / 4);
+              const o = (y * b.w + x) * 4;
+              eq[o] = cr; eq[o + 1] = cg; eq[o + 2] = cb; eq[o + 3] = m;
+            }
+            ex.putImageData(eimg, b.x, b.y);
+            d.save(); d.globalCompositeOperation = 'lighter'; d.globalAlpha = Math.min(1, v.amt / 100);
+            d.drawImage(edge, 0, 0); d.restore();
+          }
           break;
         }
         default: d.drawImage(cur, 0, 0);

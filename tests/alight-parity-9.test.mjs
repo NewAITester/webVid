@@ -39,10 +39,10 @@ ok(!!LAYER_TYPES.draw, 'لایهٔ خط آزاد (draw) هست');
 }
 
 console.log('── افکت‌های تازه ──');
-for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx']) {
+for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx', 'pinch', 'bend', 'fractal', 'grid', 'matte', 'edgeGlow', 'wordPop', 'drift']) {
   ok(!!EFFECTS[k], `افکت ${k} هست`);
 }
-ok(Object.keys(EFFECTS).length === 70, `تعداد افکت‌ها ۷۰ است (بود ${Object.keys(EFFECTS).length})`);
+ok(Object.keys(EFFECTS).length === 78, `تعداد افکت‌ها ۷۸ است (بود ${Object.keys(EFFECTS).length})`);
 ok(Object.keys(LAYER_TYPES).length === 11, `تعداد نوع لایه ۱۱ است (بود ${Object.keys(LAYER_TYPES).length})`);
 
 console.log(fail ? `\n❌ ${fail} تست ناموفق` : '\n✅ همهٔ تست‌ها گذشت');
