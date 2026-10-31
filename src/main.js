@@ -2219,8 +2219,8 @@ $('#cdSnip').onchange = e => {
 let mpSelecting = false;
 
 async function addMediaFile(file) {
-  const type = file.type.startsWith('video') ? 'video' : file.type.startsWith('image') ? 'image' : null;
-  if (!type) { alert('فقط عکس یا ویدیو'); return null; }
+  const type = file.type.startsWith('video') ? 'video' : file.type.startsWith('image') ? 'image' : file.type.startsWith('audio') ? 'audio' : null;
+  if (!type) { alert('فقط عکس، ویدیو یا صدا'); return null; }
   const rec = { id: uid('md'), projectId: app.projectId, type, name: file.name, blob: file };
   try { await Library.putMedia(rec); } catch (e) { console.warn('media save', e); }
   MEDIA.add(rec);

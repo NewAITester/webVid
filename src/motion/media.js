@@ -13,6 +13,8 @@
  *   • هنگام خروجی: قبل از هر فریم صبر می‌کنیم تا ویدیو دقیقاً به آن
  *     لحظه برسد — کندتر، ولی فریم‌به‌فریم دقیق.
  */
+import { audioGain, mediaTime as audioMediaTime } from './audio.js';
+
 export class MediaPool {
   constructor() {
     this.items = new Map();       // id → { id, type, name, url, el, w, h, dur, ready }
@@ -27,12 +29,20 @@ export class MediaPool {
     this.items.clear();
   }
 
-  /** @param {{id, type:'image'|'video', name, blob}} rec */
+  /** @param {{id, type:'image'|'video'|'audio', name, blob}} rec */
   add(rec) {
     if (this.items.has(rec.id)) return this.items.get(rec.id);
     const url = URL.createObjectURL(rec.blob);
     const it = { id: rec.id, type: rec.type, name: rec.name, url, el: null, w: 1, h: 1, dur: 0, ready: false };
-    if (rec.type === 'image') {
+    if (rec.type === 'audio') {
+      // فاز ۶: لایهٔ صوتی Alight — عنصر <audio>، آماده‌شدن با loadedmetadata
+      const a = document.createElement('audio');
+      a.preload = 'auto'; a.crossOrigin = 'anonymous';
+      a.onloadedmetadata = () => { it.dur = a.duration || 0; it.ready = true; this.onUpdate?.(); };
+      a.onseeked = () => this.onUpdate?.();
+      a.src = url;
+      it.el = a;
+    } else if (rec.type === 'image') {
       const img = new Image();
       img.onload = () => { it.w = img.naturalWidth; it.h = img.naturalHeight; it.ready = true; this.onUpdate?.(); };
       img.src = url;
@@ -86,10 +96,14 @@ export class MediaPool {
   }
 
   /** هم‌زمان کردن ویدیو با زمان پیش‌نمایش (بدون انتظار) */
-  sync(L, lt, playing) {
+  sync(L, lt, playing, P = null) {
     const it = this.get(L.data?.media);
     if (!it || it.type !== 'video' || !it.ready) return;
     const v = it.el, mt = MediaPool.mediaTime(L, lt, it);
+    // فاز ۶: صدای ویدیو فقط وقتی روشن است (L.data.sound)؛ وگرنه بی‌صدا
+    // می‌ماند تا با آهنگ پروژه قاطی نشود. بلندی از ویژگی vol می‌آید.
+    v.muted = !L.data?.sound;
+    v.volume = Math.max(0, Math.min(1, audioGain(L, lt, P?.vol ?? L.props?.vol?.v ?? 100)));
     if (playing) {
       v.playbackRate = Math.min(4, Math.max(0.25, L.data?.speed || 1));
       if (v.paused) v.play().catch(() => {});
@@ -100,9 +114,31 @@ export class MediaPool {
     }
   }
 
+  /** هم‌زمان کردن لایهٔ صوتی با زمان پیش‌نمایش (فاز ۶) */
+  syncAudio(L, lt, playing, P = null) {
+    const it = this.get(L.data?.media);
+    if (!it || it.type !== 'audio' || !it.ready) return;
+    const a = it.el, mt = audioMediaTime(L, lt, it.dur);
+    a.volume = Math.max(0, Math.min(1, audioGain(L, lt, P?.vol ?? L.props?.vol?.v ?? 100)));
+    a.playbackRate = Math.min(4, Math.max(0.25, L.data?.speed || 1));
+    if (playing) {
+      if (a.paused) a.play().catch(() => {});
+      if (Math.abs(a.currentTime - mt) > 0.25) a.currentTime = mt;
+    } else {
+      if (!a.paused) a.pause();
+      if (Math.abs(a.currentTime - mt) > 0.02 && !a.seeking) a.currentTime = mt;
+    }
+  }
+
+  /** همهٔ صداها را متوقف کن (وقتی پخش می‌ایستد) */
+  pauseAudioAll() {
+    for (const it of this.items.values())
+      if (it.type === 'audio' && it.el && !it.el.paused) it.el.pause();
+  }
+
   /** همهٔ ویدیوهای فعال را متوقف کن (وقتی پخش می‌ایستد) */
   pauseAll() {
-    for (const it of this.items.values()) if (it.type === 'video' && !it.el.paused) it.el.pause();
+    for (const it of this.items.values()) if ((it.type === 'video' || it.type === 'audio') && it.el && !it.el.paused) it.el.pause();
   }
 
   /** برای خروجی: صبر تا ویدیوهای فعال دقیقاً به لحظهٔ t برسند */

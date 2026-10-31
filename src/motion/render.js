@@ -230,6 +230,27 @@ export function shapePath(ctx, kind, w, h, P) {
       ctx.closePath();
       return 2 * w + 2 * h;
     }
+    case 'plus': {
+      // فاز ۶: به‌علاوهٔ ضخیم Alight — بازوهای پهن‌تر از cross
+      const tw = Math.min(w, h) * 0.42 / 2;
+      const p = [[-tw, -hh], [tw, -hh], [tw, -tw], [hw, -tw], [hw, tw], [tw, tw], [tw, hh],
+                 [-tw, hh], [-tw, tw], [-hw, tw], [-hw, -tw], [-tw, -tw]];
+      p.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      return 2 * (w + h) + 4 * tw;
+    }
+    case 'stamp': {
+      // فاز ۶: مُهر دندانه‌دار — دایره با ۲۴ دندانهٔ کوچک دورش
+      const n = 24, rOut = Math.min(hw, hh), rIn = rOut * 0.88;
+      for (let i = 0; i <= n * 2; i++) {
+        const a = (i / (n * 2)) * Math.PI * 2 - Math.PI / 2;
+        const r = i % 2 ? rIn : rOut;
+        const x = Math.cos(a) * r, y = Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      return Math.PI * (rOut + rIn) * 2;
+    }
     case 'cross': {
       const tw = Math.min(w, h) * 0.3 / 2;
       const p = [[-tw, -hh], [tw, -hh], [tw, -tw], [hw, -tw], [hw, tw], [tw, tw], [tw, hh],
@@ -366,7 +387,7 @@ function drawMedia(ctx, st, media, env) {
     ctx.strokeRect(-w / 2, -h / 2, w, h); ctx.setLineDash([]);
     return;
   }
-  if (L.type === 'video' && !env.exporting) media.sync(L, st.lt, env.playing);
+  if (L.type === 'video' && !env.exporting) media.sync(L, st.lt, env.playing, st.P);
   const h = w * (it.h / Math.max(1, it.w));
   ctx.save();
   if (P.radius > 0) {
@@ -466,6 +487,7 @@ export function layerBounds(ctx, st, media, env) {
       return { w: P.w, h: it?.ready ? P.w * (it.h / Math.max(1, it.w)) : P.w * 0.5625 };
     }
     case 'spectrum': case 'code': return { w: P.w, h: P.h };
+    case 'audio': return { w: 800, h: 60 };
     case 'adjust': return { w: env.W, h: env.H };
     default: return { w: 80, h: 80 };
   }
@@ -674,6 +696,24 @@ export class MotionRenderer {
         d.drawImage(tmp, Math.cos(a) * r * k, Math.sin(a) * r * k);
       }
       d.globalCompositeOperation = 'source-over';
+    };
+    // فاز ۶–۷: تاب‌دادن پیکسلی داخل کادر لایه — fn فاصلهٔ هر پیکسل از
+    // مرکز را می‌گیرد و فاصلهٔ مبدأ را برمی‌گرداند (نمونه‌برداری نزدیک‌ترین)
+    const warp = (d, fn) => {
+      d.drawImage(cur, 0, 0);
+      const b = box();
+      if (b.w < 2 || b.h < 2) return;
+      const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+      const hw = b.w / 2, hh = b.h / 2;
+      for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+        const dx = x - hw, dy = y - hh;
+        const [sx, sy] = fn(dx, dy, b);
+        const cx = Math.max(0, Math.min(b.w - 1, Math.round(hw + sx)));
+        const cy = Math.max(0, Math.min(b.h - 1, Math.round(hh + sy)));
+        const o = (y * b.w + x) * 4, so = (cy * b.w + cx) * 4;
+        q[o] = src[so]; q[o + 1] = src[so + 1]; q[o + 2] = src[so + 2]; q[o + 3] = src[so + 3];
+      }
+      d.putImageData(img, b.x, b.y);
     };
     const time = env.time || 0;
     const next = name => this._scratch(name, cw, ch);
@@ -1068,6 +1108,105 @@ export class MotionRenderer {
           d.drawImage(cur, 0, 0); d.restore();
           break;
         }
+        /* ── فاز ۶–۷: افکت‌های تازهٔ Alight ── */
+        case 'bulge': {
+          const amt = v.amt / 100, r = Math.max(box().w, box().h) / 2 * (v.r / 100);
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist >= r || dist < 0.5) return [dx, dy];
+            const k = Math.max(0.2, 1 - amt * (1 - (dist / r) * (dist / r)));
+            return [dx * k, dy * k];
+          });
+          break;
+        }
+        case 'fisheye': {
+          const amt = v.amt / 100, r = Math.hypot(box().w, box().h) / 2;
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy), rn = Math.min(1, dist / r);
+            const k = 1 + amt * rn * rn * 0.5;
+            return [dx * k, dy * k];
+          });
+          break;
+        }
+        case 'twirl': {
+          const amt = v.amt / 100 * Math.PI, r = Math.max(box().w, box().h) / 2 * (v.r / 100);
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist >= r) return [dx, dy];
+            const a = amt * (1 - dist / r), c = Math.cos(a), s = Math.sin(a);
+            return [dx * c - dy * s, dx * s + dy * c];
+          });
+          break;
+        }
+        case 'ripple': {
+          const A = v.amp * px, len = Math.max(1, v.len * px), ph = time * v.speed;
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist < 0.5) return [dx, dy];
+            const off = Math.sin((dist / len) * Math.PI * 2 - ph) * A;
+            return [dx * (1 + off / dist), dy * (1 + off / dist)];
+          });
+          break;
+        }
+        case 'noise': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), pat = d.createPattern(this._noiseTile(), 'repeat');
+          if (pat) { d.save(); d.globalAlpha = v.amt / 100; d.globalCompositeOperation = 'overlay'; d.fillStyle = pat; d.fillRect(b.x, b.y, b.w, b.h); d.restore(); }
+          break;
+        }
+        case 'channelShift': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const dx = Math.round(v.dx * px), dy = Math.round(v.dy * px);
+            const at = (x, y, c) => src[((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4 + c];
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              if (!q[o + 3]) continue;
+              q[o] = at(x - dx, y - dy, 0); q[o + 2] = at(x + dx, y + dy, 2);
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'solarize': {
+          const lv = v.level / 100 * 255;
+          pixelOp(d, (q, i) => {
+            for (let c = 0; c < 3; c++) if (q[i + c] > lv) q[i + c] = 255 - q[i + c];
+          });
+          break;
+        }
+        case 'emboss': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const lum = (x, y) => { const o = ((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4; return src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114; };
+            const k = v.amt / 100;
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              if (!q[o + 3]) continue;
+              const m = Math.max(0, Math.min(255, 128 + (lum(x - 1, y - 1) - lum(x + 1, y + 1)) * k));
+              q[o] = q[o + 1] = q[o + 2] = m;
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'tile': {
+          const b = box(), nx = Math.max(1, Math.round(v.nx)), ny = Math.max(1, Math.round(v.ny));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++)
+            d.drawImage(cur, b.x, b.y, b.w, b.h, b.x + i * b.w / nx, b.y + j * b.h / ny, b.w / nx, b.h / ny);
+          d.restore();
+          break;
+        }
+        case 'squeeze': {
+          const b = box(), k = Math.max(0.1, 1 - v.amt / 100), w2 = b.w * k;
+          d.drawImage(cur, b.x, b.y, b.w, b.h, b.cx - w2 / 2, b.y, w2, b.h);
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
@@ -1087,6 +1226,33 @@ export class MotionRenderer {
     if (!layers?.length) return;
     const media = o.media;
     const behind = !!o.behind;
+    // فاز ۶ — دوربین: اگر لایهٔ دوربین فعالی هست، ترنسفرم معکوسش را
+    // روی کل صحنهٔ موشن می‌گذاریم (در هر دو فراخوان behind/front، چون
+    // هر فراخوان از ترنسفرم پایهٔ صحنه شروع می‌شود، نه از قبلی).
+    const cam = layers.find(L => L.type === 'camera' && L.visible !== false && t >= L.t0 && t < L.t1);
+    let camApplied = false;
+    if (cam) {
+      try {
+        const cst = evalLayer(cam, t, { ...env, index: layers.indexOf(cam) }, new Map(layers.map(L => [L.id, L])), new Map());
+        const cw0 = ctx.canvas.width, ch0 = ctx.canvas.height, px0 = Math.hypot(ctx.getTransform().a, ctx.getTransform().b) || 1;
+        const sc = Math.max(0.01, (cst.P.sc || 100) / 100);
+        ctx.save(); camApplied = true;
+        ctx.translate(cw0 / 2, ch0 / 2);
+        ctx.rotate(-(cst.P.rot || 0) * Math.PI / 180);
+        ctx.scale(sc, sc);
+        ctx.translate(-cw0 / 2 - (cst.P.x || 0) * px0, -ch0 / 2 - (cst.P.y || 0) * px0);
+      } catch { /* دوربین خراب = بی‌دوربین */ }
+    }
+    // فاز ۶ — صدای لایه‌ها در پیش‌نمایش (نه خروجی: خروجی صدا را جدا میکس می‌کند)
+    if (media && !env.exporting) {
+      for (const L of layers) {
+        if (L.type !== 'audio' || L.visible === false || t < L.t0 || t >= L.t1) continue;
+        try {
+          const ast = evalLayer(L, t, { ...env, index: layers.indexOf(L) }, new Map(layers.map(x => [x.id, x])), new Map());
+          media.syncAudio(L, ast.lt, !!env.playing, ast.P);
+        } catch { /* */ }
+      }
+    }
     const tm = ctx.getTransform();
     const base = [tm.a, tm.b, tm.c, tm.d, tm.e, tm.f];
     const px = Math.hypot(tm.a, tm.b) || 1;          // پیکسل بوم بر واحد طراحی
@@ -1103,7 +1269,7 @@ export class MotionRenderer {
 
     for (let i = 0; i < layers.length; i++) {
       const L = layers[i];
-      if (!!L.behind !== behind || L.visible === false || L.type === 'null') continue;
+      if (!!L.behind !== behind || L.visible === false || L.type === 'null' || L.type === 'audio' || L.type === 'camera') continue;
       if (t < L.t0 || t >= L.t1 || maskOnly.has(L.id)) continue;
       const p=env.profile, layerToken=p?.begin('layer.total',L);
       try {
@@ -1152,6 +1318,7 @@ export class MotionRenderer {
       ctx.restore();
       } finally { p?.end(layerToken); }
     }
+    if (camApplied) ctx.restore();
   }
 
   /* ── انتخاب با لمس ─────────────────────────────────────────── */

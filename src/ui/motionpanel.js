@@ -53,7 +53,7 @@ export class MotionPanel {
     this.openExpr = new Set();    // ویژگی‌هایی که جعبهٔ عبارتشان باز است
     this._updaters = [];
     this._bez = null;
-    this._file = h('input', { type: 'file', accept: 'image/*,video/*', class: 'hidden',
+    this._file = h('input', { type: 'file', accept: 'image/*,video/*,audio/*', class: 'hidden',
       onchange: () => this._onFile() });
     document.body.append(this._file);
   }
@@ -161,6 +161,8 @@ export class MotionPanel {
       ['code', '{}', 'کد', 'با برنامه‌نویسی بکشید'],
       ['adjust', '◐', 'لایهٔ تنظیم', 'افکت روی همهٔ زیرین‌ها'],
       ['null', '⊕', 'والد خالی', 'برای حرکت گروهی'],
+      ['audio', '♪', 'صدا', 'فایل صوتی مستقل از آهنگ'],
+      ['camera', '🎥', 'دوربین', 'پن، زوم و چرخش کل صحنه'],
     ].map(([type, ic, label, desc]) => tile(ic, label, desc,
       type === 'media' ? run(() => this.pickMedia()) : run(() => this.add(type))));
     const styles = TEXT_STYLES.map(st => tile(st.ic, st.label, '', run(() => this.addTextStyle(st)),
@@ -227,6 +229,11 @@ export class MotionPanel {
     L.data.media = rec.id;
     const it = this.host.media.get(rec.id);
     const fitW = () => {
+      if (type === 'audio') {
+        if (it.dur) L.t1 = +(L.t0 + Math.min(it.dur, Math.max(1, (this.host.duration() || it.dur) - L.t0))).toFixed(2);
+        this.changed(true);
+        return;
+      }
       const W = this.host.W(), H = this.host.H();
       const ar = it.w / Math.max(1, it.h);
       L.props.w.v = Math.round(type === 'video' ? Math.max(W, H * ar) : Math.min(W * 0.7, H * 0.7 * ar));
@@ -236,7 +243,7 @@ export class MotionPanel {
     if (it?.ready) fitW();
     else {
       const el = it?.el;
-      el?.addEventListener(type === 'video' ? 'loadeddata' : 'load', () => setTimeout(fitW, 0), { once: true });
+      el?.addEventListener(type === 'video' ? 'loadeddata' : type === 'audio' ? 'loadedmetadata' : 'load', () => setTimeout(fitW, 0), { once: true });
     }
   }
 
@@ -656,6 +663,26 @@ export class MotionPanel {
       body.append(h('p', { class: 'note' }, '«برش مسیر» فقط دورخط را می‌کشد — برای انیمیشن «کشیده شدن» خط، روی «برش مسیر تا» از ۰ تا ۱۰۰ کی‌فریم بگذارید.'));
       return;
     }
+    if (L.type === 'audio') {
+      const it = this.host.media.get(D.media);
+      body.append(h('div', { class: 'frow' },
+        h('span', { class: 'pill' }, it ? `${it.name || ''} · ${it.dur ? it.dur.toFixed(1) + ' ثانیه' : ''}` : 'فایلی انتخاب نشده'),
+        h('button', { class: 'btn sm ghost', onclick: async () => {
+          this._replaceFor = L; this.pickMedia();
+        } }, 'انتخاب فایل صوتی')));
+      this._props(L, body, ['vol']);
+      body.append(this._staticNum('سرعت', D.speed, 0.25, 4, 0.05, v => { D.speed = v; }, '×'));
+      body.append(this._staticNum('شروع از ثانیهٔ', D.trimIn, 0, Math.max(1, it?.dur || 60), 0.05, v => { D.trimIn = v; }));
+      body.append(this._staticNum('پایان در ثانیهٔ', D.trimOut ?? (it?.dur || 60), 0, Math.max(1, it?.dur || 60), 0.05, v => { D.trimOut = v; }));
+      body.append(h('div', { class: 'frow btns' },
+        h('button', { class: 'btn sm ghost', onclick: () => { D.trimOut = null; this.changed(true); } }, 'پایان = انتهای فایل')));
+      body.append(this._staticNum('محو شروع (ثانیه)', D.fadeIn || 0, 0, 10, 0.1, v => { D.fadeIn = v; }));
+      body.append(this._staticNum('محو پایان (ثانیه)', D.fadeOut || 0, 0, 10, 0.1, v => { D.fadeOut = v; }));
+      body.append(h('div', { class: 'frow btns' },
+        check('تکرار', D.loop !== false, v => { D.loop = v; this.changed(); })));
+      body.append(h('p', { class: 'note' }, 'صدای این لایه در پیش‌نمایش پخش می‌شود و در خروجی با آهنگ پروژه میکس می‌شود.'));
+      return;
+    }
     if (L.type === 'image' || L.type === 'video') {
       const it = this.host.media.get(D.media);
       body.append(h('div', { class: 'frow' },
@@ -683,6 +710,8 @@ export class MotionPanel {
         body.append(this._staticNum('پایان در ثانیهٔ', D.trimOut ?? (it?.dur || 60), 0, Math.max(1, it?.dur || 60), 0.05, v => { D.trimOut = v; }));
         body.append(h('div', { class: 'frow btns' },
           h('button', { class: 'btn sm ghost', onclick: () => { D.trimOut = null; this.changed(true); } }, 'پایان = انتهای فایل')));
+        body.append(h('div', { class: 'frow btns' },
+          check('صدای خود ویدیو (پیش‌فرض خاموش، تا با آهنگ قاطی نشود)', !!D.sound, v => { D.sound = v; this.changed(true); })));
         body.append(h('div', { class: 'frow btns' },
           check('تکرار', D.loop !== false, v => { D.loop = v; this.changed(); }),
           h('button', { class: 'btn sm ghost', onclick: () => {

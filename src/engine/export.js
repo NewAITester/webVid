@@ -5,6 +5,7 @@ import { Stage } from './stage.js';
 import { Renderer } from './renderer.js';
 import { W, H } from './song.js';
 import { domSettle } from '../motion/importers/domframes.js';
+import { audioGain, hasLayerAudio, sourceWindow } from '../motion/audio.js';
 
 /**
  * خروجی گرفتن ویدیو
@@ -79,6 +80,68 @@ export async function canExport({bitrate=12_000_000,width=W,height=H,fps=FPS} = 
   if (!v) return { ok: false, why: 'هیچ انکودر ویدیویی در دسترس نیست' };
   const a = await pickAudio();
   return { ok: true, video: v.label, audio: a ? a.label : null };
+}
+
+/**
+ * صدای نهایی خروجی: آهنگ پروژه + همهٔ لایه‌های صوتی/ویدیویی با صدا،
+ * با همان پنجرهٔ trim، تکرار، سرعت، بلندی و محوها — در OfflineAudioContext
+ * میکس می‌شوند. اگر لایهٔ صوتی‌ای نیست، همان مسیر قدیمیِ تک‌آهنگ را می‌رود
+ * تا خروجی‌های قبلی ذره‌ای عوض نشوند.
+ */
+async function mixExportAudio({ audioUrl, from, to, layers, media }) {
+  const layerSrcs = (layers || []).filter(L => hasLayerAudio(L) && media?.get(L.data?.media));
+  if (!layerSrcs.length) return loadAudioSlice(audioUrl, from, to);
+  const dur = Math.max(0.1, to - from);
+  const actx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
+    2, Math.ceil(48000 * dur), 48000);
+  const jobs = [];
+  if (audioUrl) {
+    jobs.push((async () => {
+      const buf = await (await fetch(audioUrl)).arrayBuffer();
+      const decoded = await actx.decodeAudioData(buf);
+      const src = actx.createBufferSource();
+      src.buffer = decoded; src.connect(actx.destination);
+      src.start(0, from, dur);
+    })());
+  }
+  for (const L of layerSrcs) {
+    jobs.push((async () => {
+      try {
+        const it = media.get(L.data.media);
+        const buf = await (await fetch(it.url)).arrayBuffer();
+        const decoded = await actx.decodeAudioData(buf);
+        const [start, end] = sourceWindow(L, decoded.duration);
+        const speed = L.data?.speed || 1;
+        const win = (end - start) / speed;
+        const gain = actx.createGain();
+        gain.connect(actx.destination);
+        // هر بارِ هم‌پوشانی لایه با بازهٔ خروجی را زمان‌بندی کن
+        let t = L.t0;
+        while (t < Math.min(L.t1, to)) {
+          const segStart = Math.max(t, from);
+          const segEnd = Math.min(L.t1, to);
+          if (segEnd > segStart) {
+            const local = segStart - L.t0;
+            const src = actx.createBufferSource();
+            src.buffer = decoded; src.playbackRate.value = speed;
+            src.connect(gain);
+            const off = L.data?.loop !== false
+              ? start + ((local * speed) % (end - start))
+              : Math.min(start + local * speed, end - 0.04);
+            src.start(segStart - from, off, (segEnd - segStart) * speed);
+            const g0 = audioGain(L, local, L.props?.vol?.v ?? 100);
+            const g1 = audioGain(L, segEnd - L.t0, L.props?.vol?.v ?? 100);
+            gain.gain.setValueAtTime(Math.max(0, g0), segStart - from);
+            if (Math.abs(g1 - g0) > 0.001) gain.gain.linearRampToValueAtTime(Math.max(0, g1), segEnd - from);
+          }
+          if (L.data?.loop === false) break;
+          t += win;
+        }
+      } catch (e) { console.warn('layer audio mix skipped', L.name, e); }
+    })());
+  }
+  await Promise.all(jobs);
+  return await actx.startRendering();
 }
 
 /** صدای آهنگ را برای بازهٔ خواسته‌شده آماده می‌کند */
@@ -262,12 +325,13 @@ export async function exportVideo({
 
   /* ── صدا ───────────────────────────────────────────────── */
   if (signal?.aborted) throw new DOMException('لغو شد','AbortError');
-  if (ac && audioUrl) {
+  const hasLayerAudioOut = (layers || []).some(L => hasLayerAudio(L) && media?.get(L.data?.media));
+  if (ac && (audioUrl || hasLayerAudioOut)) {
     log?.detail('activeStage','audio');
     const audioStarted = performance.now();
     onProgress({ phase: 'audio', pct: 1, done: total, total });
     const audioAt=performance.now();
-    const rendered = await loadAudioSlice(audioUrl, from, to);
+    const rendered = await mixExportAudio({ audioUrl, from, to, layers, media });
     log?.add('audioPrepare',performance.now()-audioAt);
     aenc = new AudioEncoder({
       output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
