@@ -929,6 +929,9 @@ export class MotionPanel {
           iconBtn(fx.on ? '●' : '○', 'روشن/خاموش', ev => { ev.preventDefault(); fx.on = !fx.on; ch(); }),
           iconBtn('↑', 'بالاتر', ev => { ev.preventDefault(); if (i > 0) { [L.effects[i - 1], L.effects[i]] = [L.effects[i], L.effects[i - 1]]; ch(); } }),
           iconBtn('↓', 'پایین‌تر', ev => { ev.preventDefault(); if (i < L.effects.length - 1) { [L.effects[i + 1], L.effects[i]] = [L.effects[i], L.effects[i + 1]]; ch(); } }),
+          iconBtn('⧉', 'تکثیر', ev => { ev.preventDefault(); const nf = newEffect(fx.type); nf.on = fx.on !== false;
+            for (const d of EFFECTS[fx.type]?.params || []) if (fx.p && d.key in fx.p) nf.p[d.key] = JSON.parse(JSON.stringify(fx.p[d.key]));
+            L.effects.splice(i + 1, 0, nf); ch(); }),
           iconBtn('✕', 'حذف', ev => { ev.preventDefault(); L.effects.splice(i, 1); ch(); }),
         ));
       card.addEventListener('toggle', () => { if (card.open) this._openFx = fx.id; });
