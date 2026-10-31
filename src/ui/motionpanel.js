@@ -957,7 +957,7 @@ export class MotionPanel {
     const cats = EFFECT_CATS.filter(([c]) => avail.some(([, E]) => E.cat === c));
     if (!cats.some(([c]) => c === this.fxCat)) this.fxCat = cats[0]?.[0];
     const grid = h('div', { class: 'fxgal' });
-    const showCat = c => {
+    let showCat = c => {
       this.fxCat = c;
       for (const b of catBar.children) b.classList.toggle('on', b.dataset.c === c);
       grid.innerHTML = '';
@@ -978,12 +978,25 @@ export class MotionPanel {
         } }, sample || h('i', {}, E.ic || '✦'), h('b', {}, E.label), h('small', {}, E.desc || '')));
       }
     };
+    const fxSearch = h('input', { class: 'txt', type: 'search', placeholder: 'جستجوی افکت: تاری، نور، چرخش…',
+      value: this._fxSearch || '',
+      oninput: () => { this._fxSearch = fxSearch.value.trim(); showCat(this.fxCat); } });
+    const applyFxSearch = () => {
+      const q = (this._fxSearch || '').trim().toLowerCase();
+      if (!q) return;
+      for (const t of grid.children) {
+        const txt = (t.title + ' ' + t.textContent).toLowerCase();
+        t.style.display = txt.includes(q) ? '' : 'none';
+      }
+    };
     const catBar = h('div', { class: 'tabs' }, ...cats.map(([c, label]) => {
       const b = h('button', { class: 'chip', onclick: () => showCat(c) }, label);
       b.dataset.c = c;
       return b;
     }));
-    body.append(catBar, grid);
+    body.append(fxSearch, catBar, grid);
+    const _origShowCat = showCat;
+    showCat = c => { _origShowCat(c); applyFxSearch(); };
     showCat(this.fxCat);
   }
 

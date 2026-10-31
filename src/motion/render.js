@@ -1357,6 +1357,62 @@ export class MotionRenderer {
           }
           break;
         }
+        case 'tilt3d': {
+          const b = box(), a = (v.ang * Math.PI) / 180, c = Math.max(0.2, Math.cos(a));
+          d.save(); d.translate(b.cx, b.cy);
+          if (v.axis >= 0.5) { d.transform(1, 0, -Math.sin(a) * 0.4, c, 0, 0); }
+          else { d.transform(c, 0, 0, 1, 0, 0); d.transform(1, Math.sin(a) * 0.4, 0, 1, 0, 0); }
+          d.translate(-b.cx, -b.cy); d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'flip3d': {
+          const b = box(), k = Math.cos(time * v.speed * Math.PI * 2);
+          d.save(); d.translate(b.cx, b.cy); d.scale(Math.max(0.02, Math.abs(k)) * (k < 0 ? -1 : 1), 1);
+          d.translate(-b.cx, -b.cy); d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'sphere': {
+          const amt = v.amt / 100, r = Math.min(box().w, box().h) / 2;
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist >= r || dist < 0.5) return [dx, dy];
+            const k = Math.max(0.2, 1 - amt * (1 - (dist / r) * (dist / r)) * 0.7);
+            return [dx * k, dy * k];
+          });
+          const b = box();
+          d.save(); d.globalAlpha = 0.25 * amt;
+          const g = d.createRadialGradient(b.cx, b.cy, r * 0.3, b.cx, b.cy, r);
+          g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,0.6)');
+          d.fillStyle = g; d.beginPath(); d.arc(b.cx, b.cy, r, 0, Math.PI * 2); d.fill(); d.restore();
+          break;
+        }
+        case 'temperature': {
+          const k = v.amt / 100 * 40;
+          pixelOp(d, (q, i) => { q[i] = Math.max(0, Math.min(255, q[i] + k)); q[i + 2] = Math.max(0, Math.min(255, q[i + 2] - k)); });
+          break;
+        }
+        case 'exposure': {
+          const k = 1 + v.amt / 100;
+          pixelOp(d, (q, i) => { q[i] *= k; q[i + 1] *= k; q[i + 2] *= k; });
+          break;
+        }
+        case 'clarity': {
+          // تیزکردن ملایم + کنتراست موضعی: کرنل تقویت مرکز با ضریب کم
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const at = (x, y, c) => src[((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4 + c];
+            const a = (v.amt / 100) * 0.5;
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              if (!q[o + 3]) continue;
+              for (let c = 0; c < 3; c++) q[o + c] = (1 + 4 * a) * at(x, y, c) - a * (at(x - 1, y, c) + at(x + 1, y, c) + at(x, y - 1, c) + at(x, y + 1, c));
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
