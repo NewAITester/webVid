@@ -42,6 +42,7 @@ export class Timeline {
     this.ctx = canvas.getContext('2d');
     this.host = host;
     this.pps = 46;                // پیکسل بر ثانیه (بزرگ‌نمایی)
+    this.snapBeats = true;        // فاز ۹: چسبیدن به ضرب‌های آهنگ هم روشن است
     this.sel = -1;                // شمارهٔ بخش انتخاب‌شده (سازگاری)
     this.pick = null;             // { kind:'section'|'line'|'text', i|id }
     this.dpr = 1;
@@ -289,6 +290,8 @@ export class Timeline {
     for (const s of this.host.getSections?.() || []) if (s !== self) out.push(s[0], s[1]);
     const sg = this.host.getSong?.();
     for (const l of sg?.lines || []) out.push(l.words[0].t);
+    // فاز ۹: ضرب‌های آهنگ هم هدف چسبیدن‌اند (مثل Alight که به بیت می‌چسبد)
+    if (this.snapBeats) for (const b of sg?.beats || []) if (typeof b === 'number') out.push(b);
     for (const L of this.host.getTexts?.() || []) if (L !== self) out.push(L.t0, L.t1);
     for (const L of this.host.getLayers?.() || []) if (L !== self) out.push(L.t0, L.t1);
     return out;

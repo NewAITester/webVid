@@ -10,7 +10,7 @@ import { sample, keyAt, hasKeys, toggleKey, setValue, setKey, prevKeyTime, nextK
 import { compileExpr, exprErrors, EXPR_HELP, EXPR_EXAMPLES } from '../motion/expr.js';
 import { APPEAR, APPEAR_GROUPS, LOOPS } from '../motion/animate.js';
 import { EASE_INFO, easeLabel } from '../motion/easing.js';
-import { allKeyTimes, setEaseAt, deleteKeysAt, duplicate, groupLayers, ungroup } from '../motion/ops.js';
+import { allKeyTimes, setEaseAt, deleteKeysAt, duplicate, groupLayers, ungroup, isHiddenByCollapse, toggleCollapse, applySolo, restoreSolo } from '../motion/ops.js';
 import { CODE_LAYER_DEFAULT, CODE_SNIPPETS } from '../motion/codeapi.js';
 import { FONT_CHOICES } from '../motion/render.js';
 import { frameEnv } from '../motion/evaluate.js';
@@ -163,6 +163,7 @@ export class MotionPanel {
       ['null', '⊕', 'والد خالی', 'برای حرکت گروهی'],
       ['audio', '♪', 'صدا', 'فایل صوتی مستقل از آهنگ'],
       ['camera', '🎥', 'دوربین', 'پن، زوم و چرخش کل صحنه'],
+      ['draw', '〰', 'خط آزاد', 'خط موجی که مثل دست کشیده می‌شود'],
     ].map(([type, ic, label, desc]) => tile(ic, label, desc,
       type === 'media' ? run(() => this.pickMedia()) : run(() => this.add(type))));
     const styles = TEXT_STYLES.map(st => tile(st.ic, st.label, '', run(() => this.addTextStyle(st)),
@@ -268,6 +269,7 @@ export class MotionPanel {
     // لایه‌های بالای آن روی شعر کشیده می‌شوند و پایینی‌ها زیر شعر.
     const list = h('div', { class: 'llist' });
     const D = this._stack();
+    const soloId = this._soloId || null;
     D.forEach((L, k) => {
       if (L === LYRIC) {
         list.append(h('div', { class: 'lrow lyric', title: 'شعر و پس‌زمینهٔ آهنگ' },
@@ -276,10 +278,15 @@ export class MotionPanel {
           h('button', { class: 'btn sm ghost', onclick: () => this.host.openLyricFx?.() }, '✦ افکت شعر')));
         return;
       }
+      // فاز ۹: فرزندِ گروهِ جمع‌شده در فهرست دیده نمی‌شود (رندرش سر جایش است)
+      if (isHiddenByCollapse(L, this.layers)) return;
       const on = this.host.getTime() >= L.t0 && this.host.getTime() < L.t1;
       const grip = h('span', { class: 'grip', title: 'برای جابه‌جایی بکشید' }, '⋮⋮');
-      const row = h('div', { class: 'lrow' + (on ? ' live' : '') + (L.visible === false ? ' off' : ''),
+      const isGroup = L.type === 'null';
+      const kids = isGroup ? this.layers.filter(x => x.parent === L.id).length : 0;
+      const row = h('div', { class: 'lrow' + (on ? ' live' : '') + (L.visible === false ? ' off' : '') + (L.parent ? ' child' : ''),
         onclick: e => { if (e.target.closest('.grip,.ib')) return; this.host.select(L.id); this.render(); } },
+        isGroup ? iconBtn(L.data?.collapsed ? '▸' : '▾', kids ? `جمع/باز کردن گروه (${faN(kids)} عضو)` : 'جمع/باز کردن گروه', () => { toggleCollapse(L); this.changed(true); }) : null,
         grip,
         h('span', { class: 'lic t-' + L.type, title: LAYER_TYPES[L.type].label }, LAYER_TYPES[L.type].icon),
         h('span', { class: 'lnm' }, L.name,
@@ -287,6 +294,11 @@ export class MotionPanel {
             + ` · ${faN(L.t0.toFixed(1))}–${faN(L.t1.toFixed(1))}ث`),
           hasAnyKeys(L) ? h('em', { class: 'kf' }, ' ◆') : null),
         iconBtn(L.visible === false ? '◌' : '👁', 'نمایش', () => { L.visible = L.visible === false; this.changed(true); }),
+        iconBtn(soloId === L.id ? '◉' : '◎', soloId === L.id ? 'بازگرداندن تک‌نمایش' : 'تک‌نمایش: فقط همین لایه', () => {
+          if (this._soloId === L.id) { restoreSolo(this.layers, this._soloPrev); this._soloId = null; this._soloPrev = null; }
+          else { this._soloPrev = applySolo(this.layers, L.id); this._soloId = L.id; }
+          this.changed(true);
+        }),
         iconBtn(L.locked ? '🔒' : '🔓', 'قفل', () => { L.locked = !L.locked; this.changed(true); }),
         iconBtn('↑', 'یک طبقه بالاتر', () => this._moveTo(L, k - 1)),
         iconBtn('↓', 'یک طبقه پایین‌تر', () => this._moveTo(L, k + 1)),
@@ -388,6 +400,8 @@ export class MotionPanel {
       }),
     );
     R.append(head);
+    R.append(h('p', { class: 'note' },
+      `${LAYER_TYPES[L.type]?.label || L.type} · ${faN(L.t0.toFixed(1))}–${faN(L.t1.toFixed(1))}ث · ${faN(L.effects.length)} افکت · ترکیب: ${(BLEND_MODES.find(b => b[0] === L.blend) || [])[1] || L.blend}`));
     R.append(this._keyNav(L));
 
     // نام‌های قدیمی زبانه‌ها (از نسخهٔ هفت‌زبانه) به زبانه‌های تازه

@@ -124,6 +124,43 @@ export function ungroup(group, layers) {
   return kids;
 }
 
+/**
+ * فاز ۹ — UX گروه به سبک Alight: گروهِ جمع‌شده (collapsed) فرزندانش
+ * را در فهرست لایه‌ها پنهان می‌کند (در رندر همچنان کشیده می‌شوند).
+ */
+export function collapsedGroupIds(layers) {
+  return new Set((layers || []).filter(L => L.type === 'null' && L.data?.collapsed).map(L => L.id));
+}
+export function isHiddenByCollapse(L, layers) {
+  const collapsed = collapsedGroupIds(layers);
+  const byId = new Map((layers || []).map(x => [x.id, x]));
+  let p = L?.parent, guard = 0;
+  while (p && guard++ < 20) {
+    if (collapsed.has(p)) return true;
+    p = byId.get(p)?.parent;
+  }
+  return false;
+}
+export function toggleCollapse(L) {
+  if (!L) return false;
+  L.data = L.data || {};
+  L.data.collapsed = !L.data.collapsed;
+  return L.data.collapsed;
+}
+/**
+ * فاز ۹ — تک‌نمایش (solo): فقط این لایه دیده می‌شود؛ نقشهٔ قبلیِ
+ * visibility برگردانده می‌شود تا با یک ضربهٔ دوباره همه برگردند.
+ */
+export function applySolo(layers, id) {
+  const prev = new Map();
+  for (const L of layers || []) { prev.set(L.id, L.visible); L.visible = L.id === id; }
+  return prev;
+}
+export function restoreSolo(layers, prev) {
+  if (!prev) return;
+  for (const L of layers || []) if (prev.has(L.id)) L.visible = prev.get(L.id);
+}
+
 /** بریدن لایه در لحظهٔ t ← [قبل، بعد] */
 export function split(L, t) {
   if (t <= L.t0 + 0.05 || t >= L.t1 - 0.05) return null;

@@ -401,6 +401,32 @@ function drawMedia(ctx, st, media, env) {
   ctx.restore();
 }
 
+/* ── خط آزاد (فاز ۱۱) ────────────────────────────────────────
+   نقاط موج قطعی: x از چپ به راست، y از ترکیب دو سینوس. بدون
+   Math.random تا renderFrame خالص بماند. */
+export function scribblePoints(w, h, P) {
+  const n = 60, amp = P.amp || 0, fr = P.freq || 1, pts = [];
+  for (let i = 0; i <= n; i++) {
+    const u = i / n, x = -w / 2 + u * w;
+    const y = Math.sin(u * fr * Math.PI * 2) * amp + Math.sin(u * fr * 2.3 * Math.PI * 2) * amp * 0.3;
+    pts.push([x, y]);
+  }
+  return pts;
+}
+function drawScribble(ctx, st) {
+  const { L, P } = st;
+  const pts = scribblePoints(P.w, P.h, P);
+  const a = Math.floor(pts.length * Math.max(0, Math.min(1, (P.trimS || 0) / 100)));
+  const b = Math.max(a + 1, Math.ceil(pts.length * Math.max(0, Math.min(1, (P.trimE ?? 100) / 100))));
+  ctx.save();
+  ctx.strokeStyle = P.stroke; ctx.lineWidth = Math.max(1, P.strokeW);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  pts.slice(a, b).forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.stroke();
+  ctx.restore();
+}
+
 /* ── موج صدا ───────────────────────────────────────────────── */
 function drawSpectrum(ctx, st, env) {
   const { L, P } = st;
@@ -487,6 +513,7 @@ export function layerBounds(ctx, st, media, env) {
       return { w: P.w, h: it?.ready ? P.w * (it.h / Math.max(1, it.w)) : P.w * 0.5625 };
     }
     case 'spectrum': case 'code': return { w: P.w, h: P.h };
+    case 'draw': return { w: P.w, h: P.h };
     case 'audio': return { w: 800, h: 60 };
     case 'adjust': return { w: env.W, h: env.H };
     default: return { w: 80, h: 80 };
@@ -554,6 +581,7 @@ export class MotionRenderer {
         case 'shape': drawShape(ctx, st); break;
         case 'image': case 'video': drawMedia(ctx, st, media, env); break;
         case 'spectrum': drawSpectrum(ctx, st, env); break;
+        case 'draw': drawScribble(ctx, st); break;
         case 'code': drawCode(ctx, st, env, this.errors); break;
         default: break;
       }
@@ -1205,6 +1233,57 @@ export class MotionRenderer {
         case 'squeeze': {
           const b = box(), k = Math.max(0.1, 1 - v.amt / 100), w2 = b.w * k;
           d.drawImage(cur, b.x, b.y, b.w, b.h, b.cx - w2 / 2, b.y, w2, b.h);
+          break;
+        }
+        case 'clouds': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), sc = Math.max(10, v.scale);
+          const tile = this._noiseTile();
+          const tmp = this._scratch('cloud', cw, ch), tx = tmp.getContext('2d');
+          tx.filter = `blur(${Math.max(1, sc / 4 * px)}px)`;
+          tx.drawImage(tile, b.x, b.y, b.w, b.h);
+          tx.filter = 'none';
+          d.save(); d.globalAlpha = v.amt / 100; d.globalCompositeOperation = 'overlay';
+          d.drawImage(tmp, 0, 0); d.restore();
+          break;
+        }
+        case 'checker': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), s = Math.max(2, v.size * px);
+          d.save(); d.globalAlpha = v.op / 100; d.fillStyle = '#FFFFFF';
+          d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = 0; y * s < b.h; y++) for (let x = 0; x * s < b.w; x++)
+            if ((x + y) % 2 === 0) d.fillRect(b.x + x * s, b.y + y * s, s, s);
+          d.restore();
+          break;
+        }
+        case 'tiltShift': {
+          const b = box(), band = b.h * (v.band / 100);
+          const blurred = this._scratch('tilt', cw, ch), bx2 = blurred.getContext('2d');
+          bx2.filter = `blur(${Math.max(0, v.r * px)}px)`; bx2.drawImage(cur, 0, 0); bx2.filter = 'none';
+          d.drawImage(cur, 0, 0);
+          d.drawImage(blurred, b.x, b.y, b.w, (b.h - band) / 2, b.x, b.y, b.w, (b.h - band) / 2);
+          d.drawImage(blurred, b.x, b.y + (b.h + band) / 2, b.w, (b.h - band) / 2, b.x, b.y + (b.h + band) / 2, b.w, (b.h - band) / 2);
+          break;
+        }
+        case 'flipH': {
+          const b = box();
+          d.save(); d.translate(b.cx, 0); d.scale(-1, 1); d.translate(-b.cx, 0);
+          d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'flipV': {
+          const b = box();
+          d.save(); d.translate(0, b.cy); d.scale(1, -1); d.translate(0, -b.cy);
+          d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'hueShift': {
+          d.filter = `hue-rotate(${v.deg}deg)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          break;
+        }
+        case 'invertFx': {
+          pixelOp(d, (q, i) => { q[i] = 255 - q[i]; q[i + 1] = 255 - q[i + 1]; q[i + 2] = 255 - q[i + 2]; });
           break;
         }
         default: d.drawImage(cur, 0, 0);

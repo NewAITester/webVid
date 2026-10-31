@@ -898,6 +898,7 @@ $('#secAdd').onclick = () => {
 };
 
 $('#zIn').onclick = () => TL.setZoom(1.5);
+$('#tlBeat').onclick = () => { TL.snapBeats = !TL.snapBeats; $('#tlBeat').classList.toggle('primary', TL.snapBeats); $('#tlBeat').classList.toggle('ghost', !TL.snapBeats); };
 /* جا دادن: بخش انتخاب‌شده را کامل در صفحه می‌آورد تا دستگیره‌هایش
    در دسترس باشند. بدون انتخاب، کل آهنگ را نشان می‌دهد. */
 $('#zFit').onclick = () => {
