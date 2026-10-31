@@ -1,5 +1,5 @@
 import { shiftKeys, trimKeys, KEY_EPS, sample } from './tracks.js';
-import { uid } from './schema.js';
+import { uid, newLayer } from './schema.js';
 
 /**
  * عملیات روی لایه‌ها — بریدن، تکثیر، کوتاه کردن، جابه‌جایی کی‌فریم
@@ -93,6 +93,35 @@ export function duplicate(L, shiftT = 0) {
   n.t0 = +(n.t0 + shiftT).toFixed(2);
   n.t1 = +(n.t1 + shiftT).toFixed(2);
   return n;
+}
+
+/** منحنی همهٔ کی‌فریم‌های لایه را یکجا عوض کن (انتخاب‌گر آمادهٔ Alight) */
+export function applyEaseToAll(L, ease) {
+  for (const tr of tracksOf(L)) for (const q of tr.k || []) q.e = ease;
+  return L;
+}
+
+/**
+ * گروه‌سازی به سبک Alight: یک لایهٔ «والد خالی» می‌سازد که بازه‌اش
+ * همهٔ اعضا را می‌پوشاند و اعضا را فرزند آن می‌کند. جابه‌جا کردن
+ * گروه، همهٔ اعضا را با هم می‌برد (والد از قبل در رندر پشتیبانی می‌شد).
+ */
+export function groupLayers(members, name = 'گروه') {
+  const list = (members || []).filter(Boolean);
+  if (!list.length) return null;
+  const t0 = Math.min(...list.map(L => L.t0));
+  const t1 = Math.max(...list.map(L => L.t1));
+  const g = newLayer('null', t0, Math.max(0.1, t1 - t0));
+  g.name = name;
+  for (const L of list) L.parent = g.id;
+  return g;
+}
+
+/** باز کردن گروه: فرزندانش را آزاد کن و خودشان را برگردان */
+export function ungroup(group, layers) {
+  const kids = (layers || []).filter(L => L.parent === group.id);
+  for (const L of kids) L.parent = null;
+  return kids;
 }
 
 /** بریدن لایه در لحظهٔ t ← [قبل، بعد] */

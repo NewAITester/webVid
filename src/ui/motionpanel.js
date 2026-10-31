@@ -10,7 +10,7 @@ import { sample, keyAt, hasKeys, toggleKey, setValue, setKey, prevKeyTime, nextK
 import { compileExpr, exprErrors, EXPR_HELP, EXPR_EXAMPLES } from '../motion/expr.js';
 import { APPEAR, APPEAR_GROUPS, LOOPS } from '../motion/animate.js';
 import { EASE_INFO, easeLabel } from '../motion/easing.js';
-import { allKeyTimes, setEaseAt, deleteKeysAt, duplicate } from '../motion/ops.js';
+import { allKeyTimes, setEaseAt, deleteKeysAt, duplicate, groupLayers, ungroup } from '../motion/ops.js';
 import { CODE_LAYER_DEFAULT, CODE_SNIPPETS } from '../motion/codeapi.js';
 import { FONT_CHOICES } from '../motion/render.js';
 import { frameEnv } from '../motion/evaluate.js';
@@ -367,6 +367,11 @@ export class MotionPanel {
         const n = duplicate(L);
         this.layers.splice(this.layers.indexOf(L) + 1, 0, n);
         this.host.select(n.id); this.changed(true);
+      }),
+      iconBtn('⊕', 'گروه با این لایه', () => {
+        const g = groupLayers([L]);
+        this.layers.splice(this.layers.indexOf(L) + 1, 0, g);
+        this.host.select(g.id); this.changed(true);
       }),
       iconBtn('🗑', 'حذف', () => {
         if (!confirm('این لایه حذف شود؟')) return;
@@ -1075,6 +1080,12 @@ export class MotionPanel {
     body.append(h('div', { class: 'frow' }, h('label', {}, 'والد'),
       select([['', '— بدون والد —'], ...this.layers.filter(x => !desc.has(x.id)).map(x => [x.id, x.name])],
         L.parent || '', v => { L.parent = v || null; this.changed(); })));
+    if (L.type === 'null') body.append(h('div', { class: 'frow btns' },
+      h('button', { class: 'btn sm ghost', onclick: () => {
+        const kids = ungroup(L, this.layers);
+        if (!kids.length) alert('این گروه فرزندی ندارد.');
+        this.changed(true);
+      } }, 'باز کردن گروه (آزاد کردن فرزندان)')));
     body.append(h('div', { class: 'frow' }, h('label', {}, 'ماسک'),
       select([['none', 'بدون ماسک'], ['below', 'فقط داخل لایهٔ زیرین'], ['belowInv', 'فقط بیرون لایهٔ زیرین']],
         L.clip || 'none', v => { L.clip = v; this.changed(); })));
