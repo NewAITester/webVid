@@ -900,6 +900,20 @@ export class MotionPanel {
     const ch = opt.onChange || (() => this.changed(true));
     body.append(h('div', { class: 'shead sm' }, `افکت‌های این لایه (${faN(L.effects.length)})`,
       h('div', { class: 'spacer' }),
+      // فاز ۱۵ — کپی/چسباندن افکت‌ها بین لایه‌ها (مثل Alight)
+      L.effects.length ? h('button', { class: 'btn sm ghost', onclick: () => {
+        this._fxClipboard = JSON.parse(JSON.stringify(L.effects));
+        this.render();
+      } }, '⎘ کپی افکت‌ها') : null,
+      this._fxClipboard?.length ? h('button', { class: 'btn sm primary', onclick: () => {
+        for (const fx of this._fxClipboard) {
+          const nf = newEffect(fx.type);
+          nf.on = fx.on !== false;
+          for (const d of EFFECTS[fx.type]?.params || []) if (fx.p?.[d.key]) nf.p[d.key] = JSON.parse(JSON.stringify(fx.p[d.key]));
+          L.effects.push(nf);
+        }
+        ch();
+      } }, `⎘ چسباندن ${faN(this._fxClipboard.length)} افکت`) : null,
       L.effects.length ? h('button', { class: 'btn sm ghost', onclick: () => {
         if (!confirm('همهٔ افکت‌های این لایه پاک شود؟')) return;
         L.effects = []; ch();

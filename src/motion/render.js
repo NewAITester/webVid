@@ -1413,6 +1413,95 @@ export class MotionRenderer {
           }
           break;
         }
+        case 'perspective': {
+          const b = box(), k = v.amt / 100, band = Math.max(2, Math.round(2 * px));
+          for (let y = b.y; y < b.y + b.h; y += band) {
+            const u = (y - b.y) / Math.max(1, b.h);
+            const wScale = 1 - k * (0.5 - u) * 2 * 0.5;
+            const w2 = b.w * Math.max(0.2, wScale);
+            const x2 = b.cx - w2 / 2;
+            d.drawImage(cur, b.x, y, b.w, band, x2, y, w2, band);
+          }
+          break;
+        }
+        case 'levels': {
+          const bl = v.black / 100, wh = Math.max(bl + 0.01, v.white / 100), gm = v.gamma / 100;
+          pixelOp(d, (q, i) => {
+            for (let c = 0; c < 3; c++) {
+              let u = (q[i + c] / 255 - bl) / (wh - bl);
+              u = Math.max(0, Math.min(1, u));
+              q[i + c] = Math.pow(u, 1 / gm) * 255;
+            }
+          });
+          break;
+        }
+        case 'feather': {
+          // تاری آلفا با میانگین ۳×۳، چند بار تکرار بر حسب شعاع
+          d.drawImage(cur, 0, 0);
+          const b = box(), reps = Math.max(1, Math.round(v.r / 20));
+          for (let r = 0; r < reps; r++) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const at = (x, y) => src[((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4 + 3];
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              q[o + 3] = (at(x - 1, y) + at(x + 1, y) + at(x, y - 1) + at(x, y + 1) + at(x, y) * 4) / 8;
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'sepiaFx': {
+          const k = v.amt / 100;
+          pixelOp(d, (q, i) => {
+            const r = q[i], g = q[i + 1], b = q[i + 2];
+            const sr = r * 0.393 + g * 0.769 + b * 0.189;
+            const sg = r * 0.349 + g * 0.686 + b * 0.168;
+            const sb = r * 0.272 + g * 0.534 + b * 0.131;
+            q[i] = r + (sr - r) * k; q[i + 1] = g + (sg - g) * k; q[i + 2] = b + (sb - b) * k;
+          });
+          break;
+        }
+        case 'vintage': {
+          const k = v.amt / 100;
+          pixelOp(d, (q, i) => {
+            const r = q[i], g = q[i + 1], b = q[i + 2];
+            const sr = r * 0.393 + g * 0.769 + b * 0.189;
+            const sg = r * 0.349 + g * 0.686 + b * 0.168;
+            const sb = r * 0.272 + g * 0.534 + b * 0.131;
+            q[i] = r + (sr - r) * k * 0.7; q[i + 1] = g + (sg - g) * k * 0.7; q[i + 2] = b + (sb - b) * k * 0.7;
+          });
+          const b = box();
+          d.save(); d.globalAlpha = 0.35 * k;
+          const g2 = d.createRadialGradient(b.cx, b.cy, Math.min(b.w, b.h) * 0.3, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g2.addColorStop(0, 'rgba(0,0,0,0)'); g2.addColorStop(1, 'rgba(0,0,0,0.8)');
+          d.fillStyle = g2; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'neon': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data;
+            const lum = (x, y) => { const o = ((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4; return q[o] * 0.299 + q[o + 1] * 0.587 + q[o + 2] * 0.114; };
+            const edge = this._scratch('neon', cw, ch), ex = edge.getContext('2d');
+            const eimg = ex.createImageData(b.w, b.h), eq = eimg.data;
+            const col = v.color || '#FF2D78';
+            const cr = parseInt(col.slice(1, 3), 16) || 0, cg = parseInt(col.slice(3, 5), 16) || 0, cb = parseInt(col.slice(5, 7), 16) || 0;
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const gx = -lum(x - 1, y - 1) - 2 * lum(x - 1, y) - lum(x - 1, y + 1) + lum(x + 1, y - 1) + 2 * lum(x + 1, y) + lum(x + 1, y + 1);
+              const gy = -lum(x - 1, y - 1) - 2 * lum(x, y - 1) - lum(x + 1, y - 1) + lum(x - 1, y + 1) + 2 * lum(x, y + 1) + lum(x + 1, y + 1);
+              const m = Math.min(255, Math.hypot(gx, gy) / 4);
+              const o = (y * b.w + x) * 4;
+              eq[o] = cr; eq[o + 1] = cg; eq[o + 2] = cb; eq[o + 3] = m;
+            }
+            ex.putImageData(eimg, b.x, b.y);
+            // بقیه را تیره کن، بعد لبه‌های نئونی را با نور اضافه کن
+            d.save(); d.globalAlpha = 0.45; d.fillStyle = '#000000'; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+            d.save(); d.globalCompositeOperation = 'lighter'; d.globalAlpha = Math.min(1, v.amt / 100);
+            d.drawImage(edge, 0, 0); d.restore();
+          }
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
