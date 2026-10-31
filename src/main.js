@@ -13,6 +13,7 @@ import { Song, SECT, SECTION_NAMES, DUR, C, ASPECTS, setStageSize, W as SW, H as
 import { clearLayoutCache } from './engine/layout.js';
 import { clearGlyphCache } from './engine/glyphs.js';
 import { exportVideo, canExport, RESOLUTIONS } from './engine/export.js';
+import { EXPORT_PRESETS, presetById } from './motion/exportPresets.js';
 import { saveFile, shareFile } from './engine/save.js';
 import { Overrides } from './engine/overrides.js';
 import { analyzeBuffer, decodeAudioFile } from './engine/analyze.js';
@@ -1404,6 +1405,23 @@ RESOLUTIONS.forEach(r => {
   resSel.append(o);
 });
 const curRes = () => RESOLUTIONS.find(r => r.id === resSel.value) || RESOLUTIONS[2];
+
+/* فاز ۵: پریست خروجی — یک انتخاب، رزولوشن + فریم + بیت‌ریت خودکار.
+   بعد از انتخاب، کاربر هنوز می‌تواند هرکدام را دستی عوض کند. */
+const presetSel = $('#exPreset');
+EXPORT_PRESETS.forEach(p => {
+  const o = document.createElement('option');
+  o.value = p.id; o.textContent = p.label;
+  if (p.id === 'reels') o.selected = true;
+  presetSel.append(o);
+});
+presetSel.onchange = () => {
+  const p = presetById(presetSel.value);
+  if (!p) return;
+  resSel.value = String(p.res);
+  $('#exFps').value = String(p.fps);
+  autoBitrate();
+};
 
 /* ابعاد خروجی از نسبت پروژه می‌آید، نه از فهرست ثابت ۱۶:۹.
    عدد رزولوشن (۱۰۸۰، ۷۲۰ …) را ضلع کوچک‌تر می‌گیریم: در قاب افقی
