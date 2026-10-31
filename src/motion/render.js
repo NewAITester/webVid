@@ -115,6 +115,7 @@ function drawText(ctx, st) {
   const lt = st.lt, fxOf = id => tfx.find(f => f.type === id)?.v;
   const rainbow = fxOf('rainbow'), wave = fxOf('wordWave'), jit = fxOf('jitter');
   const wpop = fxOf('wordPop');
+  const lbnc = fxOf('letterBounce');
   const kar = fxOf('karaoke'), flk = fxOf('wordFlicker');
   let karPos = -1;
   if (kar) {
@@ -150,6 +151,7 @@ function drawText(ctx, st) {
         }
         if (wave) dy += Math.sin(lt * wave.speed * 2 - idx * wave.gap) * wave.amp;
         if (wpop) s *= 1 + (wpop.amp / 100) * Math.max(0, Math.sin(lt * wpop.speed * 2 - idx * 0.7));
+        if (lbnc) dy -= Math.abs(Math.sin(lt * lbnc.speed * 2 - idx * 0.7)) * lbnc.amp;
         if (jit) {
           dx += noise(lt * jit.speed + idx * 13.7) * jit.amt;
           dy += noise(lt * jit.speed + idx * 29.3 + 7) * jit.amt;
@@ -1500,6 +1502,180 @@ export class MotionRenderer {
             d.save(); d.globalCompositeOperation = 'lighter'; d.globalAlpha = Math.min(1, v.amt / 100);
             d.drawImage(edge, 0, 0); d.restore();
           }
+          break;
+        }
+        case 'innerShadow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          const tmp = this._scratch('insh', cw, ch), tx = tmp.getContext('2d');
+          tx.drawImage(cur, 0, 0);
+          tx.globalCompositeOperation = 'source-in'; tx.fillStyle = v.color; tx.fillRect(0, 0, cw, ch);
+          tx.filter = `blur(${Math.max(0.5, v.r * px)}px)`; tx.drawImage(tmp, 0, 0); tx.filter = 'none';
+          d.save(); d.globalAlpha = v.op / 100; d.globalCompositeOperation = 'source-atop';
+          d.drawImage(tmp, 0, 0); d.restore();
+          break;
+        }
+        case 'bevel': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const lum = (x, y) => { const o = ((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4; return src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114; };
+            const a = (v.ang * Math.PI) / 180, dx = Math.round(Math.cos(a)), dy = Math.round(Math.sin(a));
+            const k = v.amt / 100;
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              if (!q[o + 3]) continue;
+              const diff = (lum(x + dx, y + dy) - lum(x - dx, y - dy)) * k;
+              q[o] += diff; q[o + 1] += diff; q[o + 2] += diff;
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'oilPaint': {
+          d.filter = `blur(${Math.max(0.5, (v.amt / 100) * 2 * px)}px)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          pixelOp(d, (q, i) => {
+            const lv = 6;
+            q[i] = Math.round(q[i] / 255 * lv) / lv * 255;
+            q[i + 1] = Math.round(q[i + 1] / 255 * lv) / lv * 255;
+            q[i + 2] = Math.round(q[i + 2] / 255 * lv) / lv * 255;
+          });
+          break;
+        }
+        case 'watercolor': {
+          d.filter = `blur(${Math.max(0.5, (v.amt / 100) * 1.5 * px)}px)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          pixelOp(d, (q, i) => {
+            const avg = (q[i] + q[i + 1] + q[i + 2]) / 3, boost = 1 + (v.amt / 100) * 0.5;
+            q[i] = avg + (q[i] - avg) * boost; q[i + 1] = avg + (q[i + 1] - avg) * boost; q[i + 2] = avg + (q[i + 2] - avg) * boost;
+          });
+          break;
+        }
+        case 'pencil': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data;
+            const lum = (x, y) => { const o = ((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4; return q[o] * 0.299 + q[o + 1] * 0.587 + q[o + 2] * 0.114; };
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const gx = -lum(x - 1, y - 1) - 2 * lum(x - 1, y) - lum(x - 1, y + 1) + lum(x + 1, y - 1) + 2 * lum(x + 1, y) + lum(x + 1, y + 1);
+              const gy = -lum(x - 1, y - 1) - 2 * lum(x, y - 1) - lum(x + 1, y - 1) + lum(x - 1, y + 1) + 2 * lum(x, y + 1) + lum(x + 1, y + 1);
+              const m = Math.min(255, Math.hypot(gx, gy) / 4 * (v.amt / 100));
+              const o = (y * b.w + x) * 4;
+              q[o] = q[o + 1] = q[o + 2] = 255 - m;
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'comic': {
+          pixelOp(d, (q, i) => {
+            const l = (q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114) / 255;
+            const c = l > v.level / 100 ? 255 : 0;
+            q[i] = q[i + 1] = q[i + 2] = c;
+          });
+          break;
+        }
+        case 'infrared': {
+          pixelOp(d, (q, i) => { const r = q[i]; q[i] = q[i + 1]; q[i + 1] = r; q[i + 2] = q[i + 2] * 0.5; });
+          break;
+        }
+        case 'nightVision': {
+          const k = v.amt / 100;
+          pixelOp(d, (q, i) => {
+            const l = (q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114);
+            q[i] = l * 0.2 * (1 + k); q[i + 1] = Math.min(255, l * (1 + k)); q[i + 2] = l * 0.2;
+          });
+          const b = box(), pat = d.createPattern(this._noiseTile(), 'repeat');
+          if (pat) { d.save(); d.globalAlpha = 0.15 * k; d.fillStyle = pat; d.fillRect(b.x, b.y, b.w, b.h); d.restore(); }
+          break;
+        }
+        case 'thermal': {
+          const stops = [[0, 0, 0, 0], [0.33, 128, 0, 0], [0.66, 255, 128, 0], [1, 255, 255, 220]];
+          pixelOp(d, (q, i) => {
+            const l = (q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114) / 255;
+            let s = stops[0];
+            for (let j = 1; j < stops.length; j++) if (l >= stops[j - 1][0] && l <= stops[j][0]) { s = stops[j - 1]; const t = (l - s[0]) / (stops[j][0] - s[0]); q[i] = s[1] + (stops[j][1] - s[1]) * t; q[i + 1] = s[2] + (stops[j][2] - s[2]) * t; q[i + 2] = s[3] + (stops[j][3] - s[3]) * t; break; }
+            if (l >= 1) { q[i] = 255; q[i + 1] = 255; q[i + 2] = 220; }
+          });
+          break;
+        }
+        case 'tritone': {
+          const hex = c => [parseInt(c.slice(1, 3), 16) || 0, parseInt(c.slice(3, 5), 16) || 0, parseInt(c.slice(5, 7), 16) || 0];
+          const c1 = hex(v.c1), c2 = hex(v.c2), c3 = hex(v.c3);
+          pixelOp(d, (q, i) => {
+            const l = (q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114) / 255;
+            let a, b, t;
+            if (l < 0.5) { a = c1; b = c2; t = l * 2; } else { a = c2; b = c3; t = (l - 0.5) * 2; }
+            q[i] = a[0] + (b[0] - a[0]) * t; q[i + 1] = a[1] + (b[1] - a[1]) * t; q[i + 2] = a[2] + (b[2] - a[2]) * t;
+          });
+          break;
+        }
+        /* فاز ۱۶ (موازی) — رندر افکت‌هایی که فقط در schema بودند */
+        case 'mosaic': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), s = Math.max(2, Math.round(v.size * px));
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data;
+            for (let y = 0; y < b.h; y += s) for (let x = 0; x < b.w; x += s) {
+              const cx = Math.min(b.w - 1, x + Math.floor(s / 2)), cy = Math.min(b.h - 1, y + Math.floor(s / 2));
+              const co = (cy * b.w + cx) * 4;
+              for (let yy = y; yy < Math.min(b.h, y + s); yy++) for (let xx = x; xx < Math.min(b.w, x + s); xx++) {
+                const o = (yy * b.w + xx) * 4;
+                q[o] = q[co]; q[o + 1] = q[co + 1]; q[o + 2] = q[co + 2];
+              }
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'slitScan': {
+          const b = box(), A = v.amt * px;
+          if (v.dir >= 0.5) {
+            for (let x = b.x; x < b.x + b.w; x += Math.max(2, Math.round(2 * px))) {
+              const dy = Math.sin((x / Math.max(1, b.w)) * Math.PI * 4 + time) * A;
+              d.drawImage(cur, x, b.y, Math.max(2, Math.round(2 * px)), b.h, x, b.y + dy, Math.max(2, Math.round(2 * px)), b.h);
+            }
+          } else {
+            for (let y = b.y; y < b.y + b.h; y += Math.max(2, Math.round(2 * px))) {
+              const dx = Math.sin((y / Math.max(1, b.h)) * Math.PI * 4 + time) * A;
+              d.drawImage(cur, b.x, y, b.w, Math.max(2, Math.round(2 * px)), b.x + dx, y, b.w, Math.max(2, Math.round(2 * px)));
+            }
+          }
+          break;
+        }
+        case 'crossProcess': {
+          const k = v.amt / 100;
+          pixelOp(d, (q, i) => {
+            const l = (q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114) / 255;
+            if (l < 0.5) q[i + 2] = Math.min(255, q[i + 2] + (0.5 - l) * 80 * k);
+            else q[i] = Math.min(255, q[i] + (l - 0.5) * 80 * k);
+          });
+          break;
+        }
+        case 'lensFlare': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), col = v.color || '#FFD36B';
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100);
+          const g = d.createRadialGradient(b.cx, b.cy - b.h * 0.2, 0, b.cx, b.cy - b.h * 0.2, Math.min(b.w, b.h) * 0.4);
+          g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+          d.fillStyle = g; d.beginPath(); d.arc(b.cx, b.cy - b.h * 0.2, Math.min(b.w, b.h) * 0.4, 0, Math.PI * 2); d.fill();
+          d.restore();
+          break;
+        }
+        case 'rain': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt), a = (v.ang * Math.PI) / 180;
+          d.save(); d.strokeStyle = 'rgba(200,220,255,0.5)'; d.lineWidth = Math.max(1, px);
+          d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * (b.w + 100));
+            const fy = b.y + (((h2 - Math.floor(h2)) * b.h + time * v.speed * px) % (b.h + 40)) - 20;
+            const len = 18 * px;
+            d.moveTo(fx, fy); d.lineTo(fx + Math.sin(a) * len, fy + Math.cos(a) * len);
+          }
+          d.stroke(); d.restore();
           break;
         }
         default: d.drawImage(cur, 0, 0);
