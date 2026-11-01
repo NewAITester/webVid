@@ -5,7 +5,7 @@ import { Stage } from './stage.js';
 import { Renderer } from './renderer.js';
 import { W, H } from './song.js';
 import { domSettle } from '../motion/importers/domframes.js';
-import { audioGain, hasLayerAudio, sourceWindow } from '../motion/audio.js';
+import { audioGain, applyAudioFx, hasLayerAudio, sourceWindow } from '../motion/audio.js';
 
 /**
  * خروجی گرفتن ویدیو
@@ -114,7 +114,7 @@ async function mixExportAudio({ audioUrl, from, to, layers, media }) {
         const speed = L.data?.speed || 1;
         const win = (end - start) / speed;
         const gain = actx.createGain();
-        gain.connect(actx.destination);
+        applyAudioFx(actx, gain, L, actx.destination);
         // هر بارِ هم‌پوشانی لایه با بازهٔ خروجی را زمان‌بندی کن
         let t = L.t0;
         while (t < Math.min(L.t1, to)) {

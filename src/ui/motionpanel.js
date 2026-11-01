@@ -765,6 +765,13 @@ export class MotionPanel {
       body.append(h('div', { class: 'frow btns' },
         check('تکرار', D.loop !== false, v => { D.loop = v; this.changed(); })));
       body.append(h('p', { class: 'note' }, 'صدای این لایه در پیش‌نمایش پخش می‌شود و در خروجی با آهنگ پروژه میکس می‌شود.'));
+      body.append(h('div', { class: 'shead sm' }, 'افکت صوتی (فقط در خروجی)'));
+      body.append(select([['none', 'بدون افکت'], ['echo', 'اکو'], ['reverb', 'ریورب']], D.audioFx || 'none', v => { D.audioFx = v; this.changed(true); }));
+      body.append(this._staticNum('تأخیر اکو (ثانیه)', D.echoDelay ?? 0.3, 0.05, 2, 0.05, v => { D.echoDelay = v; }));
+      body.append(this._staticNum('میزان اکو', D.echoMix ?? 40, 0, 100, 1, v => { D.echoMix = v; }, '٪'));
+      body.append(this._staticNum('میزان ریورب', D.reverbMix ?? 40, 0, 100, 1, v => { D.reverbMix = v; }, '٪'));
+      body.append(this._staticNum('طول ریورب (ثانیه)', D.reverbDecay ?? 2, 0.5, 5, 0.1, v => { D.reverbDecay = v; }));
+      body.append(h('p', { class: 'note' }, 'افکت صوتی فقط در خروجی اعمال می‌شود؛ پیش‌نمایش خشک پخش می‌شود.'));
       return;
     }
     if (L.type === 'image' || L.type === 'video') {

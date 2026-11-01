@@ -2028,6 +2028,38 @@ export class MotionRenderer {
           d.fillStyle = g; d.beginPath(); d.arc(b.cx, b.cy, r, 0, Math.PI * 2); d.fill(); d.restore();
           break;
         }
+        case 'rainbowShift': {
+          d.filter = `hue-rotate(${((time * v.speed * 360) % 360).toFixed(1)}deg)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          break;
+        }
+        case 'glowPulse': {
+          d.drawImage(cur, 0, 0);
+          const tmp = this._scratch('glowP', cw, ch), tx = tmp.getContext('2d');
+          tx.filter = 'blur(6px)'; tx.drawImage(cur, 0, 0); tx.filter = 'none';
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100) * (0.5 + 0.5 * Math.abs(Math.sin(time * 2))); d.globalCompositeOperation = 'lighter'; d.drawImage(tmp, 0, 0); d.restore();
+          break;
+        }
+        case 'softFocus': {
+          const tmp = this._scratch('softF', cw, ch), tx = tmp.getContext('2d');
+          tx.filter = `blur(${Math.max(1, (v.amt / 100) * 4 * px)}px)`; tx.drawImage(cur, 0, 0); tx.filter = 'none';
+          d.drawImage(cur, 0, 0);
+          d.save(); d.globalAlpha = 0.5; d.drawImage(tmp, 0, 0); d.restore();
+          break;
+        }
+        case 'anaglyph': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), off = Math.round(v.amt * px);
+          if (b.w > 4 && b.h > 1) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const at = (x, y, c) => src[((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4 + c];
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              q[o] = at(x - off, y, 0); q[o + 1] = at(x + off, y, 1); q[o + 2] = at(x + off, y, 2);
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;

@@ -85,7 +85,8 @@ export const LAYER_TYPES = {
   audio: {
     label: 'صدا', icon: '♪',
     props: [N('vol', 'بلندی صدا', 100, 0, 200)],
-    data: () => ({ media: null, speed: 1, trimIn: 0, trimOut: null, loop: true, fadeIn: 0, fadeOut: 0 }),
+    data: () => ({ media: null, speed: 1, trimIn: 0, trimOut: null, loop: true, fadeIn: 0, fadeOut: 0,
+      audioFx: 'none', echoDelay: 0.3, echoMix: 40, reverbMix: 40, reverbDecay: 2 }),
   },
   // فاز ۱۱ — لایهٔ خط آزاد (drawing) به سبک Alight: خط موجیِ قطعی
   // (بدون تصادف، پس renderFrame خالص می‌ماند) که با برش مسیر
@@ -482,6 +483,16 @@ export const EFFECTS = {
            N('amt', 'شدت', 70, 0, 100)]),
   solarFlare: FX('light', 'filter', '☀', 'شعلهٔ خورشیدی', 'درخشش تپنده در مرکز با پرتو', [
            N('amt', 'شدت', 70, 0, 200)]),
+
+  /* فاز ۲۳ — افکت‌های بیشتر */
+  rainbowShift: FX('color', 'filter', '🌈', 'چرخش رنگ', 'فام تصویر با زمان می‌چرخد', [
+           N('speed', 'سرعت', 1, 0.1, 5, 0.1)]),
+  glowPulse: FX('light', 'filter', '💫', 'درخشش تپنده', 'هالهٔ نور با ضرب آهنگ تپش می‌زند', [
+           N('amt', 'شدت', 60, 0, 200)]),
+  softFocus: FX('light', 'filter', '◐', 'فوکوس نرم', 'نیمی تاری محو روی تصویر اصلی', [
+           N('amt', 'شدت', 50, 0, 100)]),
+  anaglyph: FX('retro', 'filter', '👓', 'آنالیف سه‌بعدی', 'قرمز و فیروزه‌ای جابه‌جا می‌شوند — با عینک سه‌بعدی', [
+           N('amt', 'فاصله', 10, 0, 40)]),
 
   /* حرکت */
   shake:   FX('move', 'move', '≋', 'لرزش ضربی', 'روی ضرب آهنگ تکان می‌خورد', [
