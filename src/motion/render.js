@@ -1823,6 +1823,145 @@ export class MotionRenderer {
           });
           break;
         }
+        case 'bloom': {
+          d.drawImage(cur, 0, 0);
+          const tmp = this._scratch('bloom', cw, ch), tx = tmp.getContext('2d');
+          tx.filter = `blur(${Math.max(1, (v.amt / 100) * 4 * px)}px)`; tx.drawImage(cur, 0, 0); tx.filter = 'none';
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100); d.globalCompositeOperation = 'lighter'; d.drawImage(tmp, 0, 0); d.restore();
+          break;
+        }
+        case 'starburst': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.max(4, Math.round(v.n)), R = Math.hypot(b.w, b.h) / 2;
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100) * 0.7; d.strokeStyle = '#FFFFFF'; d.lineWidth = Math.max(1, px);
+          d.beginPath();
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2;
+            d.moveTo(b.cx, b.cy); d.lineTo(b.cx + Math.cos(a) * R, b.cy + Math.sin(a) * R);
+          }
+          d.stroke(); d.restore();
+          break;
+        }
+        case 'snow': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt);
+          d.save(); d.fillStyle = 'rgba(255,255,255,0.85)';
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w);
+            const fy = b.y + (((h2 - Math.floor(h2)) * b.h + time * v.speed * px * 0.5) % (b.h + 20)) - 10;
+            const r = 1 + ((h1 - Math.floor(h1)) * 2) * px;
+            d.beginPath(); d.arc(fx, fy, Math.max(1, r), 0, Math.PI * 2); d.fill();
+          }
+          d.restore();
+          break;
+        }
+        case 'confetti': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt), cols = ['#E4142A', '#FFD84D', '#4DD8FF', '#7CFF6B', '#FF7AD9'];
+          d.save();
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w);
+            const fy = b.y + (((h2 - Math.floor(h2)) * b.h + time * v.speed * px) % (b.h + 30)) - 15;
+            d.fillStyle = cols[i % cols.length];
+            d.save(); d.translate(fx, fy); d.rotate(time * 2 + i); d.fillRect(-4 * px, -2 * px, 8 * px, 4 * px); d.restore();
+          }
+          d.restore();
+          break;
+        }
+        case 'fireflies': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt);
+          d.save();
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.cx + Math.sin(time * 0.7 + i * 1.3) * b.w * 0.4 * ((h1 - Math.floor(h1)) + 0.2);
+            const fy = b.cy + Math.cos(time * 0.9 + i * 0.7) * b.h * 0.4 * ((h2 - Math.floor(h2)) + 0.2);
+            const a = 0.4 + 0.6 * Math.abs(Math.sin(time * 2 + i));
+            d.fillStyle = `rgba(255,220,120,${a})`;
+            d.beginPath(); d.arc(fx, fy, 3 * px, 0, Math.PI * 2); d.fill();
+          }
+          d.restore();
+          break;
+        }
+        case 'bokeh': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = 14;
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100) * 0.5;
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w), fy = b.y + ((h2 - Math.floor(h2)) * b.h);
+            const r = (10 + ((h1 - Math.floor(h1)) * 30)) * px;
+            const g = d.createRadialGradient(fx, fy, 0, fx, fy, r);
+            g.addColorStop(0, 'rgba(255,255,255,0.7)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+            d.fillStyle = g; d.beginPath(); d.arc(fx, fy, r, 0, Math.PI * 2); d.fill();
+          }
+          d.restore();
+          break;
+        }
+        case 'halo': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), r = Math.min(b.w, b.h) * 0.45;
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100) * 0.6;
+          const g = d.createRadialGradient(b.cx, b.cy, r * 0.7, b.cx, b.cy, r);
+          g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.85, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+          d.fillStyle = g; d.beginPath(); d.arc(b.cx, b.cy, r, 0, Math.PI * 2); d.fill(); d.restore();
+          break;
+        }
+        case 'prism': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.4; d.globalCompositeOperation = 'overlay';
+          const g = d.createLinearGradient(b.x, b.y, b.x + b.w, b.y);
+          ['#FF0000', '#FF7A00', '#FFD84D', '#00C853', '#0091FF', '#7C4DFF'].forEach((c, i, a) => g.addColorStop(i / (a.length - 1), c));
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'aurora': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.35;
+          for (let i = 0; i < 3; i++) {
+            const cols = ['#00FF88', '#0091FF', '#FF7AD9'][i];
+            d.fillStyle = cols; d.beginPath();
+            d.moveTo(b.x, b.y + b.h * (0.3 + i * 0.15));
+            for (let x = b.x; x <= b.x + b.w; x += Math.max(4, b.w / 40)) {
+              d.lineTo(x, b.y + b.h * (0.3 + i * 0.15) + Math.sin(x / b.w * Math.PI * 3 + time + i * 2) * b.h * 0.08);
+            }
+            d.lineTo(b.x + b.w, b.y + b.h * (0.5 + i * 0.15)); d.lineTo(b.x, b.y + b.h * (0.5 + i * 0.15));
+            d.closePath(); d.fill();
+          }
+          d.restore();
+          break;
+        }
+        case 'tunnel': {
+          const b = box(), n = Math.max(1, Math.round(v.n));
+          for (let i = n; i >= 0; i--) {
+            const s = 1 - (i / (n + 1)) * 0.8;
+            d.save(); d.globalAlpha = i === 0 ? 1 : 0.5;
+            d.drawImage(cur, b.cx - b.w * s / 2, b.cy - b.h * s / 2, b.w * s, b.h * s);
+            d.restore();
+          }
+          break;
+        }
+        case 'infiniteZoom': {
+          const b = box(), u = (time * v.speed) % 1, s = 1 + u * 0.6;
+          d.save(); d.globalAlpha = 1 - u * 0.5;
+          d.drawImage(cur, b.cx - b.w * s / 2, b.cy - b.h * s / 2, b.w * s, b.h * s);
+          d.restore();
+          break;
+        }
+        case 'dataMosh': {
+          const b = box(), bs = 32, step = Math.floor(time * 2);
+          d.drawImage(cur, 0, 0);
+          for (let y = b.y; y < b.y + b.h; y += bs) for (let x = b.x; x < b.x + b.w; x += bs) {
+            const h = Math.sin((x / bs) * 12.9898 + (y / bs) * 78.233 + step) * 43758.5453;
+            const off = (h - Math.floor(h) - 0.5) * (v.amt / 100) * bs * 2;
+            if (Math.abs(off) > 2) d.drawImage(cur, x, y, bs, bs, x + off, y, bs, bs);
+          }
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;

@@ -39,10 +39,10 @@ ok(!!LAYER_TYPES.draw, 'لایهٔ خط آزاد (draw) هست');
 }
 
 console.log('── افکت‌های تازه ──');
-for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx', 'pinch', 'bend', 'fractal', 'grid', 'matte', 'edgeGlow', 'wordPop', 'drift', 'tilt3d', 'flip3d', 'sphere', 'temperature', 'exposure', 'clarity', 'perspective', 'levels', 'feather', 'sepiaFx', 'vintage', 'neon', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'mosaic', 'slitScan', 'crossProcess', 'lensFlare', 'letterBounce', 'rain', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty']) {
+for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx', 'pinch', 'bend', 'fractal', 'grid', 'matte', 'edgeGlow', 'wordPop', 'drift', 'tilt3d', 'flip3d', 'sphere', 'temperature', 'exposure', 'clarity', 'perspective', 'levels', 'feather', 'sepiaFx', 'vintage', 'neon', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh', 'mosaic', 'slitScan', 'crossProcess', 'lensFlare', 'letterBounce', 'rain', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh']) {
   ok(!!EFFECTS[k], `افکت ${k} هست`);
 }
-ok(Object.keys(EFFECTS).length === 120, `تعداد افکت‌ها ۱۲۰ است (بود ${Object.keys(EFFECTS).length})`);
+ok(Object.keys(EFFECTS).length === 132, `تعداد افکت‌ها ۱۳۲ است (بود ${Object.keys(EFFECTS).length})`);
 ok(Object.keys(LAYER_TYPES).length === 11, `تعداد نوع لایه ۱۱ است (بود ${Object.keys(LAYER_TYPES).length})`);
 
 
