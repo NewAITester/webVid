@@ -284,6 +284,17 @@ export class Timeline {
   }
 
   /** همهٔ مرزهایی که می‌شود به آن‌ها چسبید */
+  _markers() { return this.host.getMarkers?.() || this._localMarkers || (this._localMarkers = []); }
+
+  /** افزودن/حذف نشانگر در زمان فعلی پخش (مثل نشانگرهای Alight) */
+  addMarkerAtPlayhead() {
+    const ms = this._markers(), t = this.host.getTime();
+    const near = ms.findIndex(m => Math.abs(m - t) < 0.25);
+    if (near >= 0) ms.splice(near, 1); else { ms.push(t); ms.sort((a, b) => a - b); }
+    this.host.onChange?.(false);
+    this.draw();
+  }
+
   _snapTargets(self) {
     const out = [0, this.host.getTime()];
     const dur = this.host.getDuration?.(); if (dur) out.push(dur);
@@ -294,6 +305,7 @@ export class Timeline {
     if (this.snapBeats) for (const b of sg?.beats || []) if (typeof b === 'number') out.push(b);
     for (const L of this.host.getTexts?.() || []) if (L !== self) out.push(L.t0, L.t1);
     for (const L of this.host.getLayers?.() || []) if (L !== self) out.push(L.t0, L.t1);
+    for (const m of this._markers()) out.push(m);
     return out;
   }
   /** t را به نزدیک‌ترین مرز (تا ۱۰ پیکسل) بچسبان */
@@ -364,6 +376,15 @@ export class Timeline {
 
     const R = this.rows();
     this._ruler(ctx, W, tL, tR);
+    // فاز ۱۸ — نشانگرهای تایم‌لاین (پرچم روی خط‌کش)
+    for (const m of this._markers()) {
+      const x = Math.round(this.xOf(m)) + 0.5;
+      if (x < -10 || x > W + 10) continue;
+      ctx.strokeStyle = '#4DD8FF'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x, RULER); ctx.lineTo(x, H); ctx.stroke();
+      ctx.fillStyle = '#4DD8FF';
+      ctx.beginPath(); ctx.moveTo(x, RULER); ctx.lineTo(x + 9, RULER + 4); ctx.lineTo(x, RULER + 8); ctx.closePath(); ctx.fill();
+    }
     this._sections(ctx, W, R.sec[0]);
     this._lyrics(ctx, W, R.lyr[0], song);
     this._texts(ctx, W, R.txt[0]);

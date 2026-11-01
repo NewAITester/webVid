@@ -39,11 +39,24 @@ ok(!!LAYER_TYPES.draw, 'لایهٔ خط آزاد (draw) هست');
 }
 
 console.log('── افکت‌های تازه ──');
-for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx', 'pinch', 'bend', 'fractal', 'grid', 'matte', 'edgeGlow', 'wordPop', 'drift', 'tilt3d', 'flip3d', 'sphere', 'temperature', 'exposure', 'clarity', 'perspective', 'levels', 'feather', 'sepiaFx', 'vintage', 'neon', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'mosaic', 'slitScan', 'crossProcess', 'lensFlare', 'letterBounce', 'rain', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone']) {
+for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx', 'pinch', 'bend', 'fractal', 'grid', 'matte', 'edgeGlow', 'wordPop', 'drift', 'tilt3d', 'flip3d', 'sphere', 'temperature', 'exposure', 'clarity', 'perspective', 'levels', 'feather', 'sepiaFx', 'vintage', 'neon', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mosaic', 'slitScan', 'crossProcess', 'lensFlare', 'letterBounce', 'rain', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex']) {
   ok(!!EFFECTS[k], `افکت ${k} هست`);
 }
-ok(Object.keys(EFFECTS).length === 106, `تعداد افکت‌ها ۱۰۶ است (بود ${Object.keys(EFFECTS).length})`);
+ok(Object.keys(EFFECTS).length === 112, `تعداد افکت‌ها ۱۱۲ است (بود ${Object.keys(EFFECTS).length})`);
 ok(Object.keys(LAYER_TYPES).length === 11, `تعداد نوع لایه ۱۱ است (بود ${Object.keys(LAYER_TYPES).length})`);
+
+
+console.log('── نشانگرهای تایم‌لاین (فاز ۱۸) ──');
+import { readFileSync } from 'node:fs';
+{
+  const tl = readFileSync(new URL('../src/ui/timeline.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  ok(tl.includes('addMarkerAtPlayhead'), 'تایم‌لاین متد افزودن نشانگر دارد');
+  ok(tl.includes('_markers()') && tl.includes('getMarkers'), 'نشانگرها در اهداف چسبیدن (snap) هستند');
+  ok(main.includes('getMarkers') && main.includes('markers: app.markers'), 'نشانگرها در ذخیرهٔ پروژه (payload) هستند');
+  ok(html.includes('id="tlMark"'), 'دکمهٔ نشانگر در نوار تایم‌لاین هست');
+}
 
 console.log(fail ? `\n❌ ${fail} تست ناموفق` : '\n✅ همهٔ تست‌ها گذشت');
 process.exit(fail ? 1 : 0);

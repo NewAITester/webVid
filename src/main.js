@@ -117,7 +117,7 @@ function readState(p) {
 }
 
 const currentPayload = () => ({ look, overrides: OV.map, sections: R.sections,
-  custom: CSET.toJSON(), lineFx, texts, layers });
+  custom: CSET.toJSON(), lineFx, texts, layers, markers: app.markers || [] });
 
 /** حالت را روی برنامه بنشان (هنگام باز کردن پروژه و واگرد) */
 function loadPayload(st) {
@@ -133,6 +133,7 @@ function loadPayload(st) {
   lineFx = JSON.parse(JSON.stringify(st.lineFx || {}));
   texts = JSON.parse(JSON.stringify(st.texts || []));
   layers = (JSON.parse(JSON.stringify(st.layers || []))).map(normalizeLayer).filter(Boolean);
+  app.markers = (st.markers || []).filter(m => typeof m === 'number');
   R.lineFx = lineFx; R.texts = texts; R.layers = layers;
   if (selLayerId && !layers.some(L => L.id === selLayerId)) selLayerId = null;
   R.selLayer = selLayerId;
@@ -470,6 +471,7 @@ const TL = new Timeline(document.getElementById('tl'), {
   getTexts: () => texts,
   getLineFx: () => lineFx,
   getLayers: () => layers,
+  getMarkers: () => app.markers || (app.markers = []),
   label: id => styleLabel(id),
   onSelect: p => { showClipBar(p); if (app.pane === 'fx' && p?.kind === 'section') buildFxGrid(); },
   onKey: () => { if (app.pane === 'layers') MP.tick(); },
@@ -899,6 +901,7 @@ $('#secAdd').onclick = () => {
 
 $('#zIn').onclick = () => TL.setZoom(1.5);
 $('#tlBeat').onclick = () => { TL.snapBeats = !TL.snapBeats; $('#tlBeat').classList.toggle('primary', TL.snapBeats); $('#tlBeat').classList.toggle('ghost', !TL.snapBeats); };
+$('#tlMark').onclick = () => { TL.addMarkerAtPlayhead(); saveState(); };
 /* جا دادن: بخش انتخاب‌شده را کامل در صفحه می‌آورد تا دستگیره‌هایش
    در دسترس باشند. بدون انتخاب، کل آهنگ را نشان می‌دهد. */
 $('#zFit').onclick = () => {

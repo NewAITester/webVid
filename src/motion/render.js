@@ -1678,6 +1678,74 @@ export class MotionRenderer {
           d.stroke(); d.restore();
           break;
         }
+        case 'surfaceBlur': {
+          // تاری + ترکیب با لبه‌ها: نسخهٔ سادهٔ تاری حفظ‌کنندهٔ لبه
+          const tmp = this._scratch('surf', cw, ch), tx = tmp.getContext('2d');
+          tx.filter = `blur(${Math.max(0.5, v.r * px)}px)`; tx.drawImage(cur, 0, 0); tx.filter = 'none';
+          d.drawImage(cur, 0, 0);
+          d.save(); d.globalAlpha = 0.6; d.drawImage(tmp, 0, 0); d.restore();
+          break;
+        }
+        case 'echo': {
+          const b = box(), n = Math.max(1, Math.round(v.n));
+          for (let i = n; i >= 1; i--) {
+            d.save(); d.globalAlpha = 0.35 * (1 - i / (n + 1));
+            d.drawImage(cur, b.x - v.amt * px * i * 0.5, b.y - v.amt * px * i * 0.2, b.w, b.h);
+            d.restore();
+          }
+          d.drawImage(cur, 0, 0);
+          break;
+        }
+        case 'smear': {
+          const b = box(), a = (v.ang * Math.PI) / 180, A = v.amt * px;
+          const steps = 12;
+          for (let i = 0; i < steps; i++) {
+            const u = i / steps;
+            d.save(); d.globalAlpha = 0.25;
+            d.drawImage(cur, b.x + Math.cos(a) * A * (u - 0.5), b.y + Math.sin(a) * A * (u - 0.5), b.w, b.h);
+            d.restore();
+          }
+          d.drawImage(cur, 0, 0);
+          break;
+        }
+        case 'pageCurl': {
+          const b = box(), k = v.amt / 100, curlW = b.w * 0.35 * k;
+          d.drawImage(cur, 0, 0);
+          // قسمت تا‌خورده: فشرده‌شده با سایه
+          d.save(); d.beginPath(); d.rect(b.x + b.w - curlW, b.y, curlW, b.h); d.clip();
+          d.translate(b.x + b.w, b.cy); d.scale(Math.max(0.15, 1 - k * 0.7), 1); d.translate(-(b.x + b.w), -b.cy);
+          d.globalAlpha = 0.85; d.drawImage(cur, 0, 0);
+          const g = d.createLinearGradient(b.x + b.w - curlW, 0, b.x + b.w, 0);
+          g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.45)');
+          d.fillStyle = g; d.fillRect(b.x + b.w - curlW, b.y, curlW, b.h); d.restore();
+          break;
+        }
+        case 'cubeRotate': {
+          const b = box(), ph = time * v.speed * Math.PI * 2, k = Math.cos(ph);
+          const frontW = b.w * Math.max(0.1, Math.abs(k));
+          const sideW = b.w * Math.abs(Math.sin(ph)) * 0.35;
+          d.save(); d.beginPath(); d.rect(b.x, b.y, frontW, b.h); d.clip();
+          d.drawImage(cur, b.x, b.y, b.w, b.h); d.restore();
+          // وجه کناری: نوار تیرهٔ مورب
+          d.save(); d.fillStyle = 'rgba(0,0,0,0.45)';
+          d.beginPath();
+          const sx = k >= 0 ? b.x + frontW : b.x;
+          d.moveTo(sx, b.y); d.lineTo(sx + sideW * (k >= 0 ? 1 : -1), b.y + b.h * 0.08);
+          d.lineTo(sx + sideW * (k >= 0 ? 1 : -1), b.y + b.h * 0.92); d.lineTo(sx, b.y + b.h);
+          d.closePath(); d.fill(); d.restore();
+          break;
+        }
+        case 'vortex': {
+          const b = box(), r = Math.min(b.w, b.h) / 2, A = v.amt / 100 * 3;
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist >= r || dist < 0.5) return [dx, dy];
+            const ang = A * (1 - dist / r);
+            const c = Math.cos(ang), s = Math.sin(ang);
+            return [dx * c - dy * s, dx * s + dy * c];
+          });
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
