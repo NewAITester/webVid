@@ -64,7 +64,7 @@ console.log('── افکت‌های تازه ──');
 for (const k of ['bulge', 'fisheye', 'twirl', 'ripple', 'noise', 'channelShift', 'solarize', 'emboss', 'tile', 'squeeze']) {
   ok(!!EFFECTS[k], `افکت ${k} در EFFECTS هست`);
 }
-ok(Object.keys(EFFECTS).length === 132, `تعداد افکت‌ها ۱۳۲ است (بود ${Object.keys(EFFECTS).length})`);
+ok(Object.keys(EFFECTS).length === 140, `تعداد افکت‌ها ۱۴۰ است (بود ${Object.keys(EFFECTS).length})`);
 
 console.log(fail ? `\n❌ ${fail} تست ناموفق` : '\n✅ همهٔ تست‌ها گذشت');
 process.exit(fail ? 1 : 0);

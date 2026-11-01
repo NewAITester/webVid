@@ -452,6 +452,14 @@ export class MotionPanel {
     content.addEventListener('toggle', () => this._remember('content', content.open));
     this._tabLook(L, content);
     body.append(content);
+    if (L.type === 'camera') {
+      body.append(h('details', { class: 'grp', open: true },
+        h('summary', {}, '🎥 دوربین روی شعر'),
+        h('label', { style: 'display:flex;gap:8px;align-items:center' },
+          h('input', { type: 'checkbox', checked: !!L.data?.lyrics,
+            onchange: e => { L.data = { ...(L.data || {}), lyrics: e.target.checked }; this.host.draw(); this.host.save(); } }),
+          h('span', {}, 'دوربین روی شعر هم اثر بگذارد (پیش‌فرض: فقط لایه‌های موشن)'))));
+    }
     if (L.type === 'draw') {
       const pad = h('details', { class: 'grp', open: true },
         h('summary', {}, '✏ خط با دست — روی پد زیر بکشید'));

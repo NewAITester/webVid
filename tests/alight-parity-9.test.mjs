@@ -39,10 +39,10 @@ ok(!!LAYER_TYPES.draw, 'لایهٔ خط آزاد (draw) هست');
 }
 
 console.log('── افکت‌های تازه ──');
-for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx', 'pinch', 'bend', 'fractal', 'grid', 'matte', 'edgeGlow', 'wordPop', 'drift', 'tilt3d', 'flip3d', 'sphere', 'temperature', 'exposure', 'clarity', 'perspective', 'levels', 'feather', 'sepiaFx', 'vintage', 'neon', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh', 'mosaic', 'slitScan', 'crossProcess', 'lensFlare', 'letterBounce', 'rain', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh']) {
+for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx', 'pinch', 'bend', 'fractal', 'grid', 'matte', 'edgeGlow', 'wordPop', 'drift', 'tilt3d', 'flip3d', 'sphere', 'temperature', 'exposure', 'clarity', 'perspective', 'levels', 'feather', 'sepiaFx', 'vintage', 'neon', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh', 'inkBleed', 'paperGrain', 'lightSweep', 'spinZoom', 'colorPop', 'dream', 'noir', 'solarFlare', 'mosaic', 'slitScan', 'crossProcess', 'lensFlare', 'letterBounce', 'rain', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh', 'inkBleed', 'paperGrain', 'lightSweep', 'spinZoom', 'colorPop', 'dream', 'noir', 'solarFlare']) {
   ok(!!EFFECTS[k], `افکت ${k} هست`);
 }
-ok(Object.keys(EFFECTS).length === 132, `تعداد افکت‌ها ۱۳۲ است (بود ${Object.keys(EFFECTS).length})`);
+ok(Object.keys(EFFECTS).length === 140, `تعداد افکت‌ها ۱۴۰ است (بود ${Object.keys(EFFECTS).length})`);
 ok(Object.keys(LAYER_TYPES).length === 11, `تعداد نوع لایه ۱۱ است (بود ${Object.keys(LAYER_TYPES).length})`);
 
 
@@ -58,6 +58,17 @@ import { drawPathPoints } from '../src/motion/render.js';
   ok(free.length === 4 && free[1][0] === 10, 'حالت آزاد دقیقاً همان نقاط ضبط‌شده را برمی‌گرداند');
   const trimmed = drawPathPoints({ ...P, trimS: 50, trimE: 100 }, { mode: 'free', points: [[0, 0], [10, 5], [20, 0], [30, 5]] });
   ok(trimmed.length === 2, 'برش مسیر روی خط ضبط‌شده هم کار می‌کند');
+}
+
+
+console.log('── دوربین روی شعر (فاز ۲۲) ──');
+{
+  const r = readFileSync(new URL('../src/engine/renderer.js', import.meta.url), 'utf8');
+  const sc = readFileSync(new URL('../src/motion/schema.js', import.meta.url), 'utf8');
+  const mp = readFileSync(new URL('../src/ui/motionpanel.js', import.meta.url), 'utf8');
+  ok(r.includes('evalLayer') && r.includes('L.data?.lyrics'), 'رندرر شعر دوربینِ دارای تیک را اعمال می‌کند');
+  ok(sc.includes('lyrics: false'), 'لایهٔ دوربین پیش‌فرض تیک شعر را ندارد (پروژه‌های قدیمی عوض نمی‌شوند)');
+  ok(mp.includes('دوربین روی شعر'), 'پنل دوربین تیک شعر را دارد');
 }
 
 console.log('── نشانگرهای تایم‌لاین (فاز ۱۸) ──');

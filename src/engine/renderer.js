@@ -17,7 +17,7 @@ import { drawLayers, hitLayer, outlineLayer } from './textlayers.js';
 import { place, modeFor } from './layout.js';
 import { TOOLBOX } from './custom.js';
 import { MotionRenderer } from '../motion/render.js';
-import { frameEnv, evalEffects, moveMods } from '../motion/evaluate.js';
+import { frameEnv, evalEffects, moveMods, evalLayer } from '../motion/evaluate.js';
 import { combine } from '../motion/animate.js';
 
 const TEXTUAL = new Set(['verse', 'chorus', 'pre', 'cold']);
@@ -289,6 +289,20 @@ export class Renderer {
     const sy = Math.cos(t * 97) * 7 * S() * kick;
     const z = 1.0 + 0.016 * kick;
     ctx.save();
+    // فاز ۲۲ — دوربین روی شعر (اختیاری): اگر لایهٔ دوربین فعالی تیک
+    // «روی شعر هم اثر بگذارد» را داشته باشد، همان ترنسفرم معکوس
+    // لایه‌های موشن را روی بخش شعر هم می‌گذاریم.
+    try {
+      const camL = this.layers?.find(L => L.type === 'camera' && L.data?.lyrics && L.visible !== false && t >= L.t0 && t < L.t1);
+      if (camL) {
+        const cst = evalLayer(camL, t, venv, new Map((this.layers || []).map(L => [L.id, L])), new Map());
+        const sc = Math.max(0.01, (cst.P.sc || 100) / 100);
+        ctx.translate(W / 2, H / 2);
+        ctx.rotate(-(cst.P.rot || 0) * Math.PI / 180);
+        ctx.scale(sc, sc);
+        ctx.translate(-W / 2 - (cst.P.x || 0), -H / 2 - (cst.P.y || 0));
+      }
+    } catch { /* دوربین خراب روی شعر = بی‌دوربین */ }
     ctx.translate(W / 2 + sx, H / 2 + sy);
     ctx.scale(z, z);
     ctx.translate(-W / 2, -H / 2);

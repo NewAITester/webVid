@@ -1962,6 +1962,72 @@ export class MotionRenderer {
           }
           break;
         }
+        case 'inkBleed': {
+          d.filter = `blur(${Math.max(0.5, (v.amt / 100) * 2 * px)}px)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          pixelOp(d, (q, i) => { const l = q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114; const k = 0.7 + (l / 255) * 0.3; q[i] *= k; q[i + 1] *= k; q[i + 2] *= k; });
+          break;
+        }
+        case 'paperGrain': {
+          pixelOp(d, (q, i) => { q[i] = Math.min(255, q[i] * 1.05 + 10); q[i + 1] = Math.min(255, q[i + 1] * 1.02 + 5); });
+          const b = box(), pat = d.createPattern(this._noiseTile(), 'repeat');
+          if (pat) { d.save(); d.globalAlpha = (v.amt / 100) * 0.12; d.fillStyle = pat; d.fillRect(b.x, b.y, b.w, b.h); d.restore(); }
+          break;
+        }
+        case 'lightSweep': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), band = b.w * 0.3, u = (time * v.speed) % 1, x0 = b.x - band + u * (b.w + band * 2);
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100) * 0.6; d.globalCompositeOperation = 'lighter';
+          const g = d.createLinearGradient(x0, 0, x0 + band, 0);
+          g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,0.8)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+          d.fillStyle = g; d.fillRect(x0, b.y, band, b.h); d.restore();
+          break;
+        }
+        case 'spinZoom': {
+          const b = box(), s = 1 + Math.sin(time * 2) * (v.amt / 100) * 0.3;
+          d.save(); d.translate(b.cx, b.cy); d.rotate(time * v.speed * Math.PI * 2); d.scale(s, s); d.translate(-b.cx, -b.cy);
+          d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'colorPop': {
+          const col = v.color || '#E4142A';
+          const cr = parseInt(col.slice(1, 3), 16) || 0, cg = parseInt(col.slice(3, 5), 16) || 0, cb = parseInt(col.slice(5, 7), 16) || 0;
+          pixelOp(d, (q, i) => {
+            const dist = Math.hypot(q[i] - cr, q[i + 1] - cg, q[i + 2] - cb);
+            if (dist > v.tol * 2.55) { const l = q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114; q[i] = q[i + 1] = q[i + 2] = l; }
+          });
+          break;
+        }
+        case 'dream': {
+          const tmp = this._scratch('dream', cw, ch), tx = tmp.getContext('2d');
+          tx.filter = `blur(${Math.max(1, (v.amt / 100) * 3 * px)}px)`; tx.drawImage(cur, 0, 0); tx.filter = 'none';
+          d.drawImage(cur, 0, 0);
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5; d.drawImage(tmp, 0, 0); d.restore();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.15; d.fillStyle = '#FFFFFF';
+          const b = box(); d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'noir': {
+          pixelOp(d, (q, i) => {
+            let l = q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114;
+            l = Math.max(0, Math.min(255, (l - 128) * (1 + v.amt / 100) + 128));
+            q[i] = q[i + 1] = q[i + 2] = l;
+          });
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.4;
+          const g = d.createRadialGradient(b.cx, b.cy, Math.min(b.w, b.h) * 0.3, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.7)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'solarFlare': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), pulse = 0.7 + 0.3 * Math.sin(time * 3), r = Math.min(b.w, b.h) * 0.4 * pulse;
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100);
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, r);
+          g.addColorStop(0, 'rgba(255,240,180,0.9)'); g.addColorStop(0.4, 'rgba(255,200,80,0.4)'); g.addColorStop(1, 'rgba(255,200,80,0)');
+          d.fillStyle = g; d.beginPath(); d.arc(b.cx, b.cy, r, 0, Math.PI * 2); d.fill(); d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
