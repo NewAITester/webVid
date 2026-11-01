@@ -46,6 +46,20 @@ ok(Object.keys(EFFECTS).length === 112, `تعداد افکت‌ها ۱۱۲ اس�
 ok(Object.keys(LAYER_TYPES).length === 11, `تعداد نوع لایه ۱۱ است (بود ${Object.keys(LAYER_TYPES).length})`);
 
 
+
+console.log('── خط با دست (فاز ۱۹) ──');
+import { drawPathPoints } from '../src/motion/render.js';
+{
+  const L = newLayer('draw', 0, 4);
+  ok(L.data?.mode === 'wave', 'لایهٔ خط آزاد پیش‌فرض موجی است');
+  const P = { w: 800, h: 200, trimS: 0, trimE: 100 };
+  ok(drawPathPoints(P, L.data).length === 61, 'حالت موجی ۶۱ نقطه می‌دهد');
+  const free = drawPathPoints(P, { mode: 'free', points: [[0, 0], [10, 5], [20, 0], [30, 5]] });
+  ok(free.length === 4 && free[1][0] === 10, 'حالت آزاد دقیقاً همان نقاط ضبط‌شده را برمی‌گرداند');
+  const trimmed = drawPathPoints({ ...P, trimS: 50, trimE: 100 }, { mode: 'free', points: [[0, 0], [10, 5], [20, 0], [30, 5]] });
+  ok(trimmed.length === 2, 'برش مسیر روی خط ضبط‌شده هم کار می‌کند');
+}
+
 console.log('── نشانگرهای تایم‌لاین (فاز ۱۸) ──');
 import { readFileSync } from 'node:fs';
 {

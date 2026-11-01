@@ -58,7 +58,7 @@ for (const k of ['plus', 'stamp']) {
   const len = shapePath(ctx, k, 320, 320, { radius: 10, sides: 5, inner: 45, strokeW: 0, trimS: 0, trimE: 100 });
   ok(len > 0 && ctx.calls.length >= 2, `مسیر ${k} ساخته شد (طول=${len?.toFixed?.(0)})`);
 }
-ok(SHAPE_KINDS.length === 19, `تعداد شکل‌ها ۱۹ است (بود ${SHAPE_KINDS.length})`);
+ok(SHAPE_KINDS.length === 20, `تعداد شکل‌ها ۲۰ است (بود ${SHAPE_KINDS.length})`);
 
 console.log('── افکت‌های تازه ──');
 for (const k of ['bulge', 'fisheye', 'twirl', 'ripple', 'noise', 'channelShift', 'solarize', 'emboss', 'tile', 'squeeze']) {

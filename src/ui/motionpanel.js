@@ -452,6 +452,68 @@ export class MotionPanel {
     content.addEventListener('toggle', () => this._remember('content', content.open));
     this._tabLook(L, content);
     body.append(content);
+    if (L.type === 'draw') {
+      const pad = h('details', { class: 'grp', open: true },
+        h('summary', {}, '✏ خط با دست — روی پد زیر بکشید'));
+      const info = h('p', { class: 'note' },
+        L.data?.mode === 'free' && L.data.points?.length
+          ? `خط ضبط‌شده با ${faN(L.data.points.length)} نقطه — الان همین خط کشیده می‌شود`
+          : 'هنوز خطی ضبط نشده؛ الان خط موجی کشیده می‌شود');
+      const cv = h('canvas', { width: 320, height: 140, style: 'width:100%;height:140px;background:#11141c;border:1px dashed #3a4258;border-radius:10px;touch-action:none;cursor:crosshair' });
+      const drawPad = () => {
+        const x = cv.getContext('2d');
+        x.clearRect(0, 0, 320, 140);
+        const pts = L.data?.points || [];
+        if (pts.length > 1) {
+          const w = L.props.w?.v || 800, hh = L.props.h?.v || 200;
+          x.strokeStyle = '#E4142A'; x.lineWidth = 2; x.beginPath();
+          pts.forEach(([px, py], i) => {
+            const cx = (px / w + 0.5) * 320, cy = (py / hh + 0.5) * 140;
+            i ? x.lineTo(cx, cy) : x.moveTo(cx, cy);
+          });
+          x.stroke();
+        }
+      };
+      let cur = null;
+      const toLocal = e => {
+        const r = cv.getBoundingClientRect();
+        const w = L.props.w?.v || 800, hh = L.props.h?.v || 200;
+        return [((e.clientX - r.left) / r.width - 0.5) * w, ((e.clientY - r.top) / r.height - 0.5) * hh];
+      };
+      cv.addEventListener('pointerdown', e => {
+        cur = [toLocal(e)]; cv.setPointerCapture?.(e.pointerId); drawPad(); e.preventDefault();
+      });
+      cv.addEventListener('pointermove', e => {
+        if (!cur) return;
+        const p = toLocal(e), last = cur[cur.length - 1];
+        if (Math.hypot(p[0] - last[0], p[1] - last[1]) > 4) { cur.push(p); }
+        const w = L.props.w?.v || 800, hh = L.props.h?.v || 200;
+        const x = cv.getContext('2d');
+        x.strokeStyle = '#E4142A'; x.lineWidth = 2; x.beginPath();
+        x.moveTo((last[0] / w + 0.5) * 320, (last[1] / hh + 0.5) * 140);
+        x.lineTo((p[0] / w + 0.5) * 320, (p[1] / hh + 0.5) * 140); x.stroke();
+        e.preventDefault();
+      });
+      const finish = () => {
+        if (!cur) return;
+        if (cur.length > 1 && cur.length <= 500) {
+          L.data = { mode: 'free', points: cur };
+          info.textContent = `خط ضبط‌شده با ${faN(cur.length)} نقطه — الان همین خط کشیده می‌شود`;
+          this.host.draw(); this.host.save();
+        }
+        cur = null;
+      };
+      cv.addEventListener('pointerup', finish);
+      cv.addEventListener('pointercancel', () => { cur = null; drawPad(); });
+      pad.append(info, cv,
+        h('button', { class: 'btn sm ghost', onclick: () => {
+          L.data = { mode: 'wave', points: [] };
+          info.textContent = 'برگشت به خط موجی';
+          this.host.draw(); this.host.save(); drawPad();
+        } }, '↩ برگشت به خط موجی'));
+      setTimeout(drawPad, 0);
+      body.append(pad);
+    }
     const tr = h('details', { class: 'grp', open: this._closed?.has('xform') ? false : true },
       h('summary', {}, 'جا، اندازه، چرخش و شفافیت'));
     tr.addEventListener('toggle', () => this._remember('xform', tr.open));

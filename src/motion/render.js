@@ -255,6 +255,12 @@ export function shapePath(ctx, kind, w, h, P) {
       ctx.closePath();
       return Math.PI * (rOut + rIn) * 2;
     }
+    case 'triangle': {
+      const p = [[-hw, hh], [hw, hh], [0, -hh]];
+      p.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      return 2 * Math.hypot(hw, 2 * hh) + w;
+    }
     case 'cross': {
       const tw = Math.min(w, h) * 0.3 / 2;
       const p = [[-tw, -hh], [tw, -hh], [tw, -tw], [hw, -tw], [hw, tw], [tw, tw], [tw, hh],
@@ -417,16 +423,24 @@ export function scribblePoints(w, h, P) {
   }
   return pts;
 }
+/* فاز ۱۹ — نقاطی که لایهٔ خط آزاد باید بکشد: موج قطعی، یا خطی که کاربر
+   با دست روی پد ضبط کرده (L.data.mode === 'free'). خالص و قابل تست. */
+export function drawPathPoints(P, data) {
+  const all = data?.mode === 'free' && Array.isArray(data.points) && data.points.length > 1
+    ? data.points.map(([x, y]) => [x, y])
+    : scribblePoints(P.w, P.h, P);
+  const a = Math.floor(all.length * Math.max(0, Math.min(1, (P.trimS || 0) / 100)));
+  const b = Math.max(a + 1, Math.ceil(all.length * Math.max(0, Math.min(1, (P.trimE ?? 100) / 100))));
+  return all.slice(a, b);
+}
 function drawScribble(ctx, st) {
   const { L, P } = st;
-  const pts = scribblePoints(P.w, P.h, P);
-  const a = Math.floor(pts.length * Math.max(0, Math.min(1, (P.trimS || 0) / 100)));
-  const b = Math.max(a + 1, Math.ceil(pts.length * Math.max(0, Math.min(1, (P.trimE ?? 100) / 100))));
+  const pts = drawPathPoints(P, L.data);
   ctx.save();
   ctx.strokeStyle = P.stroke; ctx.lineWidth = Math.max(1, P.strokeW);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.beginPath();
-  pts.slice(a, b).forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
   ctx.stroke();
   ctx.restore();
 }
