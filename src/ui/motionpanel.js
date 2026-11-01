@@ -1010,6 +1010,16 @@ export class MotionPanel {
             this._fxFav = (this._fxFav || []).includes(fx.type)
               ? this._fxFav.filter(k => k !== fx.type) : [...(this._fxFav || []), fx.type];
             ch(); }),
+          iconBtn('⇉', 'روی همهٔ لایه‌ها', ev => { ev.preventDefault();
+            for (const x of this.layers) {
+              if (x === L) continue;
+              const E2 = EFFECTS[fx.type];
+              if (E2?.only && !E2.only.includes(x.type)) continue;
+              const nf = newEffect(fx.type); nf.on = fx.on !== false;
+              for (const dd of E2?.params || []) if (fx.p && dd.key in fx.p) nf.p[dd.key] = JSON.parse(JSON.stringify(fx.p[dd.key]));
+              x.effects.push(nf);
+            }
+            ch(); }),
           iconBtn('⧉', 'تکثیر', ev => { ev.preventDefault(); const nf = newEffect(fx.type); nf.on = fx.on !== false;
             for (const d of EFFECTS[fx.type]?.params || []) if (fx.p && d.key in fx.p) nf.p[d.key] = JSON.parse(JSON.stringify(fx.p[d.key]));
             L.effects.splice(i + 1, 0, nf); ch(); }),

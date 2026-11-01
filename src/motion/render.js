@@ -2060,6 +2060,84 @@ export class MotionRenderer {
           }
           break;
         }
+        case 'rippleRing': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), maxR = Math.hypot(b.w, b.h) / 2;
+          d.save(); d.strokeStyle = 'rgba(255,255,255,0.6)'; d.lineWidth = Math.max(1, px);
+          for (let i = 0; i < 5; i++) {
+            const u = ((time * v.speed + i / 5) % 1);
+            d.globalAlpha = (1 - u) * Math.min(1, v.amt / 100);
+            d.beginPath(); d.arc(b.cx, b.cy, u * maxR, 0, Math.PI * 2); d.stroke();
+          }
+          d.restore();
+          break;
+        }
+        case 'gridWarp': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), step = 40 * px, A = v.amt * px * 0.5;
+          d.save(); d.strokeStyle = 'rgba(255,255,255,0.35)'; d.lineWidth = Math.max(1, px * 0.5);
+          d.beginPath();
+          for (let x = b.x; x <= b.x + b.w; x += step) {
+            d.moveTo(x, b.y);
+            for (let y = b.y; y <= b.y + b.h; y += step / 2) d.lineTo(x + Math.sin(y * 0.02 + time) * A, y);
+          }
+          for (let y = b.y; y <= b.y + b.h; y += step) {
+            d.moveTo(b.x, y);
+            for (let x = b.x; x <= b.x + b.w; x += step / 2) d.lineTo(x, y + Math.sin(x * 0.02 + time) * A);
+          }
+          d.stroke(); d.restore();
+          break;
+        }
+        case 'scanSweep': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), u = (time * v.speed) % 1, y0 = b.y + u * b.h, band = b.h * 0.1;
+          d.save();
+          const g = d.createLinearGradient(0, y0 - band, 0, y0 + band);
+          g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+          d.fillStyle = g; d.fillRect(b.x, y0 - band, b.w, band * 2); d.restore();
+          break;
+        }
+        case 'flicker': {
+          const h = Math.sin(Math.floor(time * 24) * 12.9898) * 43758.5453;
+          const k = 1 + ((h - Math.floor(h)) - 0.5) * (v.amt / 100) * 0.6;
+          pixelOp(d, (q, i) => { q[i] *= k; q[i + 1] *= k; q[i + 2] *= k; });
+          break;
+        }
+        case 'chromaticPulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), off = (1 + Math.sin(time * 4)) * 0.5 * v.amt * px * 0.5;
+          if (b.w > 4 && b.h > 1) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const at = (x, y, c) => src[((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4 + c];
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              q[o] = at(x - Math.round(off), y, 0); q[o + 2] = at(x + Math.round(off), y, 2);
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'heatHaze': {
+          warp(d, (dx, dy) => [dx + Math.sin(dy * 0.05 + time * 3) * v.amt * px * 0.3, dy]);
+          break;
+        }
+        case 'liquid': {
+          warp(d, (dx, dy) => [
+            dx + Math.sin(dy * 0.03 + time * 2) * v.amt * px * 0.3,
+            dy + Math.cos(dx * 0.03 + time * 2) * v.amt * px * 0.3]);
+          break;
+        }
+        case 'shatter': {
+          const b = box(), bs = 48;
+          d.drawImage(cur, 0, 0);
+          for (let y = b.y; y < b.y + b.h; y += bs) for (let x = b.x; x < b.x + b.w; x += bs) {
+            const h = Math.sin((x / bs) * 12.9898 + (y / bs) * 78.233) * 43758.5453;
+            const drop = ((h - Math.floor(h)) * b.h + time * v.speed * 200) % (b.h + bs);
+            const dy = drop * (v.amt / 100);
+            if (dy > 4) d.drawImage(cur, x, y, bs, bs, x, y + dy, bs, bs);
+          }
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
