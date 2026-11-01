@@ -91,6 +91,10 @@ export function moveMods(fxs, lt, env) {
       parts.push({ dx: Math.cos(a) * (v.r / U), dy: Math.sin(a) * (v.r / U) });
     } else if (f.type === 'zoomPulse') {
       parts.push({ s: 1 + Math.sin(lt * v.freq * Math.PI * 2) * (v.amt / 100) });
+    } else if (f.type === 'wobble') {
+      parts.push({ dx: Math.sin(t * v.freq * Math.PI * 2) * (v.amt / U), dy: Math.cos(t * v.freq * Math.PI * 2) * (v.amt / U) * 0.5 });
+    } else if (f.type === 'floaty') {
+      parts.push({ dy: Math.sin(t * v.freq * Math.PI * 2) * (v.amt / U), rot: Math.sin(t * v.freq * Math.PI * 2) * 2 });
     } else if (f.type === 'drift') {
       parts.push({ dx: (lt * v.speed) / U, rot: lt * v.rot });
     } else if (f.type === 'strobe') {

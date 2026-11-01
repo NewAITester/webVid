@@ -991,6 +991,10 @@ export class MotionPanel {
           iconBtn(fx.on ? '●' : '○', 'روشن/خاموش', ev => { ev.preventDefault(); fx.on = !fx.on; ch(); }),
           iconBtn('↑', 'بالاتر', ev => { ev.preventDefault(); if (i > 0) { [L.effects[i - 1], L.effects[i]] = [L.effects[i], L.effects[i - 1]]; ch(); } }),
           iconBtn('↓', 'پایین‌تر', ev => { ev.preventDefault(); if (i < L.effects.length - 1) { [L.effects[i + 1], L.effects[i]] = [L.effects[i], L.effects[i + 1]]; ch(); } }),
+          iconBtn((this._fxFav || []).includes(fx.type) ? '★' : '☆', 'علاقه‌مندی', ev => { ev.preventDefault();
+            this._fxFav = (this._fxFav || []).includes(fx.type)
+              ? this._fxFav.filter(k => k !== fx.type) : [...(this._fxFav || []), fx.type];
+            ch(); }),
           iconBtn('⧉', 'تکثیر', ev => { ev.preventDefault(); const nf = newEffect(fx.type); nf.on = fx.on !== false;
             for (const d of EFFECTS[fx.type]?.params || []) if (fx.p && d.key in fx.p) nf.p[d.key] = JSON.parse(JSON.stringify(fx.p[d.key]));
             L.effects.splice(i + 1, 0, nf); ch(); }),
@@ -1019,6 +1023,17 @@ export class MotionPanel {
         () => { applyLook(L, lk); ch(); }))));
     }
 
+    // فاز ۲۰ — افکت‌های علاقه‌مندی (ستاره روی کارت افکت)
+    const fav = (this._fxFav || []).filter(k => EFFECTS[k]);
+    if (fav.length) {
+      body.append(h('div', { class: 'shead sm' }, '⭐ افکت‌های علاقه‌مندی'));
+      body.append(h('div', { class: 'fxgal' }, ...fav.map(k => {
+        const E = EFFECTS[k];
+        return h('button', { class: 'fxt', title: E.desc || E.label, onclick: () => {
+          const fx = newEffect(k); L.effects.push(fx); this._openFx = fx.id; ch();
+        } }, h('i', {}, E.ic || '✦'), h('b', {}, E.label));
+      })));
+    }
     // فاز ۱۳ — افکت‌های اخیر (مثل Alight): آخرین افکت‌های استفاده‌شده
     // بالای گالری می‌مانند تا دوباره زدن‌شان یک ضربه باشد.
     const recent = (this._recentFx || []).filter(k => avail.some(([id]) => id === k));

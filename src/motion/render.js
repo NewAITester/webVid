@@ -1760,6 +1760,69 @@ export class MotionRenderer {
           });
           break;
         }
+        case 'mandala': {
+          const b = box(), n = Math.max(2, Math.round(v.n));
+          for (let i = 0; i < n; i++) {
+            d.save(); d.translate(b.cx, b.cy); d.rotate((i / n) * Math.PI * 2); d.translate(-b.cx, -b.cy);
+            d.globalAlpha = 1 / Math.max(1, n / 3); d.drawImage(cur, 0, 0); d.restore();
+          }
+          break;
+        }
+        case 'pixelSort': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), bs = Math.max(8, Math.round(v.size));
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data;
+            const lum = o => q[o] * 0.299 + q[o + 1] * 0.587 + q[o + 2] * 0.114;
+            for (let y = 0; y < b.h; y++) for (let x0 = 0; x0 < b.w; x0 += bs) {
+              const x1 = Math.min(b.w, x0 + bs);
+              const idx = [];
+              for (let x = x0; x < x1; x++) idx.push((y * b.w + x) * 4);
+              const vals = idx.map(o => [lum(o), q[o], q[o + 1], q[o + 2], q[o + 3]]);
+              vals.sort((a, c) => a[0] - c[0]);
+              idx.forEach((o, j) => { q[o] = vals[j][1]; q[o + 1] = vals[j][2]; q[o + 2] = vals[j][3]; q[o + 3] = vals[j][4]; });
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'dither': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), bayer = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+          if (b.w > 1 && b.h > 1) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data;
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              const l = q[o] * 0.299 + q[o + 1] * 0.587 + q[o + 2] * 0.114;
+              const c = l > bayer[y % 4][x % 4] * 16 ? 255 : 0;
+              q[o] = q[o + 1] = q[o + 2] = c;
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'haze': {
+          d.filter = `blur(${Math.max(0.5, (v.amt / 100) * 3 * px)}px)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.35; d.fillStyle = '#FFFFFF';
+          const b = box(); d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'silhouette': {
+          pixelOp(d, (q, i) => {
+            const col = v.color || '#111111';
+            q[i] = parseInt(col.slice(1, 3), 16) || 0;
+            q[i + 1] = parseInt(col.slice(3, 5), 16) || 0;
+            q[i + 2] = parseInt(col.slice(5, 7), 16) || 0;
+          });
+          break;
+        }
+        case 'xray': {
+          pixelOp(d, (q, i) => {
+            const l = q[i] * 0.299 + q[i + 1] * 0.587 + q[i + 2] * 0.114;
+            q[i] = q[i + 1] = q[i + 2] = 255 - l;
+          });
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
