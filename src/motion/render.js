@@ -2378,6 +2378,81 @@ export class MotionRenderer {
           d.restore();
           break;
         }
+        case 'burst': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt), u = (time % 2) / 2;
+          d.save(); d.fillStyle = 'rgba(255,240,180,0.9)';
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2;
+            const r = u * Math.min(b.w, b.h) * 0.45;
+            d.globalAlpha = (1 - u) * 0.8;
+            d.beginPath(); d.arc(b.cx + Math.cos(a) * r, b.cy + Math.sin(a) * r, 3 * px, 0, Math.PI * 2); d.fill();
+          }
+          d.restore();
+          break;
+        }
+        case 'sparkle': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt);
+          d.save(); d.fillStyle = '#FFFFFF';
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w), fy = b.y + ((h2 - Math.floor(h2)) * b.h);
+            d.globalAlpha = 0.3 + 0.7 * Math.abs(Math.sin(time * 2 + i * 1.7));
+            const s = (2 + ((h1 - Math.floor(h1)) * 4)) * px;
+            d.fillRect(fx - s / 2, fy, s, Math.max(1, px)); d.fillRect(fx, fy - s / 2, Math.max(1, px), s);
+          }
+          d.restore();
+          break;
+        }
+        case 'echoZoom': {
+          const b = box(), n = Math.max(1, Math.round(v.n));
+          for (let i = n; i >= 0; i--) {
+            const s = 1 - (i / (n + 1)) * 0.4;
+            d.save(); d.globalAlpha = i === 0 ? 1 : 0.4;
+            d.drawImage(cur, b.cx - b.w * s / 2, b.cy - b.h * s / 2, b.w * s, b.h * s);
+            d.restore();
+          }
+          break;
+        }
+        case 'focusPull': {
+          const blur = (0.5 + 0.5 * Math.sin(time * 1.5)) * v.amt * px * 0.2;
+          d.filter = `blur(${Math.max(0, blur)}px)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          break;
+        }
+        case 'depthField': {
+          const tmp = this._scratch('depth', cw, ch), tx = tmp.getContext('2d');
+          tx.filter = `blur(${Math.max(1, (v.amt / 100) * 4 * px)}px)`; tx.drawImage(cur, 0, 0); tx.filter = 'none';
+          d.drawImage(tmp, 0, 0);
+          const b = box(), r = Math.min(b.w, b.h) * 0.35;
+          d.save(); d.beginPath(); d.arc(b.cx, b.cy, r, 0, Math.PI * 2); d.clip(); d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'vignettePulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), pulse = 0.5 + 0.5 * Math.sin(time * 2);
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5 * pulse;
+          const g = d.createRadialGradient(b.cx, b.cy, Math.min(b.w, b.h) * 0.3, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'grainPulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), pat = d.createPattern(this._noiseTile(), 'repeat');
+          if (pat) { d.save(); d.globalAlpha = (v.amt / 100) * 0.2 * (0.5 + 0.5 * Math.sin(time * 3)); d.fillStyle = pat; d.fillRect(b.x, b.y, b.w, b.h); d.restore(); }
+          break;
+        }
+        case 'shadowPulse': {
+          const b = box(), pulse = 0.5 + 0.5 * Math.sin(time * 2);
+          const tmp = this._scratch('shP', cw, ch), tx = tmp.getContext('2d');
+          tx.drawImage(cur, 0, 0);
+          tx.globalCompositeOperation = 'source-in'; tx.fillStyle = '#000000'; tx.fillRect(0, 0, cw, ch);
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.6 * pulse; d.filter = 'blur(8px)';
+          d.drawImage(tmp, v.dx * px, v.dy * px); d.filter = 'none'; d.restore();
+          d.drawImage(cur, 0, 0);
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
