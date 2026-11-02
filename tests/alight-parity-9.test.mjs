@@ -39,10 +39,10 @@ ok(!!LAYER_TYPES.draw, 'لایهٔ خط آزاد (draw) هست');
 }
 
 console.log('── افکت‌های تازه ──');
-for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx', 'pinch', 'bend', 'fractal', 'grid', 'matte', 'edgeGlow', 'wordPop', 'drift', 'tilt3d', 'flip3d', 'sphere', 'temperature', 'exposure', 'clarity', 'perspective', 'levels', 'feather', 'sepiaFx', 'vintage', 'neon', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh', 'inkBleed', 'paperGrain', 'lightSweep', 'spinZoom', 'colorPop', 'dream', 'noir', 'solarFlare', 'rainbowShift', 'glowPulse', 'softFocus', 'anaglyph', 'rippleRing', 'gridWarp', 'scanSweep', 'flicker', 'chromaticPulse', 'heatHaze', 'liquid', 'shatter', 'fadePulse', 'blink', 'shear', 'cylinder', 'marble', 'rowShift', 'lightRays', 'pixelWave', 'mosaic', 'slitScan', 'crossProcess', 'lensFlare', 'letterBounce', 'rain', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh', 'inkBleed', 'paperGrain', 'lightSweep', 'spinZoom', 'colorPop', 'dream', 'noir', 'solarFlare', 'rainbowShift', 'glowPulse', 'softFocus', 'anaglyph', 'rippleRing', 'gridWarp', 'scanSweep', 'flicker', 'chromaticPulse', 'heatHaze', 'liquid', 'shatter', 'fadePulse', 'blink', 'shear', 'cylinder', 'marble', 'rowShift', 'lightRays', 'pixelWave']) {
+for (const k of ['clouds', 'checker', 'tiltShift', 'flipH', 'flipV', 'hueShift', 'invertFx', 'pinch', 'bend', 'fractal', 'grid', 'matte', 'edgeGlow', 'wordPop', 'drift', 'tilt3d', 'flip3d', 'sphere', 'temperature', 'exposure', 'clarity', 'perspective', 'levels', 'feather', 'sepiaFx', 'vintage', 'neon', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh', 'inkBleed', 'paperGrain', 'lightSweep', 'spinZoom', 'colorPop', 'dream', 'noir', 'solarFlare', 'rainbowShift', 'glowPulse', 'softFocus', 'anaglyph', 'rippleRing', 'gridWarp', 'scanSweep', 'flicker', 'chromaticPulse', 'heatHaze', 'liquid', 'shatter', 'fadePulse', 'blink', 'shear', 'cylinder', 'marble', 'rowShift', 'lightRays', 'pixelWave', 'electric', 'smoke', 'dust', 'colorBands', 'vhsTracking', 'oldFilm', 'neonSign', 'prismShift', 'mosaic', 'slitScan', 'crossProcess', 'lensFlare', 'letterBounce', 'rain', 'innerShadow', 'bevel', 'oilPaint', 'watercolor', 'pencil', 'comic', 'infrared', 'nightVision', 'thermal', 'tritone', 'surfaceBlur', 'echo', 'smear', 'pageCurl', 'cubeRotate', 'vortex', 'mandala', 'pixelSort', 'dither', 'haze', 'silhouette', 'xray', 'wobble', 'floaty', 'bloom', 'starburst', 'snow', 'confetti', 'fireflies', 'bokeh', 'halo', 'prism', 'aurora', 'tunnel', 'infiniteZoom', 'dataMosh', 'inkBleed', 'paperGrain', 'lightSweep', 'spinZoom', 'colorPop', 'dream', 'noir', 'solarFlare', 'rainbowShift', 'glowPulse', 'softFocus', 'anaglyph', 'rippleRing', 'gridWarp', 'scanSweep', 'flicker', 'chromaticPulse', 'heatHaze', 'liquid', 'shatter', 'fadePulse', 'blink', 'shear', 'cylinder', 'marble', 'rowShift', 'lightRays', 'pixelWave', 'electric', 'smoke', 'dust', 'colorBands', 'vhsTracking', 'oldFilm', 'neonSign', 'prismShift']) {
   ok(!!EFFECTS[k], `افکت ${k} هست`);
 }
-ok(Object.keys(EFFECTS).length === 160, `تعداد افکت‌ها ۱۶۰ است (بود ${Object.keys(EFFECTS).length})`);
+ok(Object.keys(EFFECTS).length === 168, `تعداد افکت‌ها ۱۶۸ است (بود ${Object.keys(EFFECTS).length})`);
 ok(Object.keys(LAYER_TYPES).length === 11, `تعداد نوع لایه ۱۱ است (بود ${Object.keys(LAYER_TYPES).length})`);
 
 
@@ -69,6 +69,15 @@ console.log('── دوربین روی شعر (فاز ۲۲) ──');
   ok(r.includes('evalLayer') && r.includes('L.data?.lyrics'), 'رندرر شعر دوربینِ دارای تیک را اعمال می‌کند');
   ok(sc.includes('lyrics: false'), 'لایهٔ دوربین پیش‌فرض تیک شعر را ندارد (پروژه‌های قدیمی عوض نمی‌شوند)');
   ok(mp.includes('دوربین روی شعر'), 'پنل دوربین تیک شعر را دارد');
+}
+
+
+console.log('── عکس فریم (فاز ۲۶) ──');
+{
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok(html.includes('id="exSnap"'), 'دکمهٔ عکس فریم در پنل خروجی هست');
+  ok(main.includes("exSnap") && main.includes("toBlob"), 'سیم‌کشی عکس فریم با toBlob و saveFile هست');
 }
 
 console.log('── نشانگرهای تایم‌لاین (فاز ۱۸) ──');

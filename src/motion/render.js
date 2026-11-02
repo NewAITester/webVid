@@ -2201,6 +2201,113 @@ export class MotionRenderer {
           }
           break;
         }
+        case 'electric': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), step = Math.floor(time * 6);
+          d.save(); d.strokeStyle = 'rgba(200,230,255,0.9)'; d.lineWidth = Math.max(1, 2 * px); d.globalAlpha = Math.min(1, v.amt / 100);
+          let x = b.cx;
+          d.beginPath(); d.moveTo(x, b.y);
+          for (let y = b.y; y < b.y + b.h; y += Math.max(8, b.h / 12)) {
+            const h = Math.sin((y / 10) * 12.9898 + step) * 43758.5453;
+            x += ((h - Math.floor(h)) - 0.5) * b.w * 0.15;
+            d.lineTo(x, y);
+          }
+          d.stroke(); d.restore();
+          break;
+        }
+        case 'smoke': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.25;
+          for (let i = 0; i < 6; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w + time * 10 * px) % b.w;
+            const fy = b.y + ((h2 - Math.floor(h2)) * b.h);
+            const r = (30 + ((h1 - Math.floor(h1)) * 60)) * px;
+            const g = d.createRadialGradient(fx, fy, 0, fx, fy, r);
+            g.addColorStop(0, 'rgba(200,200,200,0.5)'); g.addColorStop(1, 'rgba(200,200,200,0)');
+            d.fillStyle = g; d.beginPath(); d.arc(fx, fy, r, 0, Math.PI * 2); d.fill();
+          }
+          d.restore();
+          break;
+        }
+        case 'dust': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt);
+          d.save(); d.fillStyle = 'rgba(255,255,255,0.7)';
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w + Math.sin(time + i) * 20 * px) % b.w;
+            const fy = b.y + ((h2 - Math.floor(h2)) * b.h + Math.cos(time * 0.7 + i) * 15 * px) % b.h;
+            d.fillRect(fx, fy, Math.max(1, px), Math.max(1, px));
+          }
+          d.restore();
+          break;
+        }
+        case 'colorBands': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), cols = ['#E4142A', '#FFD84D', '#4DD8FF', '#7CFF6B'];
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.25;
+          for (let i = 0; i < 4; i++) {
+            d.fillStyle = cols[(i + Math.floor(time)) % cols.length];
+            d.fillRect(b.x, b.y + (i / 4) * b.h, b.w, b.h / 4);
+          }
+          d.restore();
+          break;
+        }
+        case 'vhsTracking': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), u = (time * 0.5) % 1, y0 = b.y + u * b.h, band = Math.max(4, b.h * 0.08);
+          const off = Math.sin(Math.floor(time * 4) * 12.9898) * 20 * px * (v.amt / 100);
+          d.drawImage(cur, b.x, y0, b.w, band, b.x + off, y0, b.w, band);
+          d.save(); d.fillStyle = 'rgba(255,255,255,0.4)'; d.fillRect(b.x, y0, b.w, Math.max(1, px)); d.restore();
+          break;
+        }
+        case 'oldFilm': {
+          const k = v.amt / 100;
+          pixelOp(d, (q, i) => {
+            const r = q[i], g = q[i + 1], b = q[i + 2];
+            const sr = r * 0.393 + g * 0.769 + b * 0.189;
+            const sg = r * 0.349 + g * 0.686 + b * 0.168;
+            const sb = r * 0.272 + g * 0.534 + b * 0.131;
+            q[i] = r + (sr - r) * k * 0.7; q[i + 1] = g + (sg - g) * k * 0.7; q[i + 2] = b + (sb - b) * k * 0.7;
+          });
+          const b = box();
+          d.save(); d.globalAlpha = k * 0.5; d.fillStyle = '#FFFFFF';
+          for (let i = 0; i < 3; i++) {
+            const h = Math.sin(i * 12.9898 + Math.floor(time * 2)) * 43758.5453;
+            const sx = b.x + ((h - Math.floor(h)) * b.w);
+            d.fillRect(sx, b.y, Math.max(1, px), b.h);
+          }
+          d.restore();
+          break;
+        }
+        case 'neonSign': {
+          d.drawImage(cur, 0, 0);
+          const tmp = this._scratch('neonS', cw, ch), tx = tmp.getContext('2d');
+          tx.filter = 'blur(8px)'; tx.drawImage(cur, 0, 0); tx.filter = 'none';
+          tx.globalCompositeOperation = 'source-in'; tx.fillStyle = v.color || '#FF2D78'; tx.fillRect(0, 0, cw, ch);
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100); d.globalCompositeOperation = 'lighter'; d.drawImage(tmp, 0, 0); d.restore();
+          break;
+        }
+        case 'prismShift': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), off = Math.round(v.amt * px * 0.3);
+          if (b.w > 4 && b.h > 1) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const at = (x, y, c) => src[((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4 + c];
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              q[o] = at(x - off, y, 0); q[o + 2] = at(x + off, y, 2);
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.25; d.globalCompositeOperation = 'overlay';
+          const g = d.createLinearGradient(b.x, b.y, b.x + b.w, b.y);
+          ['#FF0000', '#FFD84D', '#00C853', '#0091FF'].forEach((c, i, a) => g.addColorStop(i / (a.length - 1), c));
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;

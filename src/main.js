@@ -901,6 +901,16 @@ $('#secAdd').onclick = () => {
 
 $('#zIn').onclick = () => TL.setZoom(1.5);
 $('#tlBeat').onclick = () => { TL.snapBeats = !TL.snapBeats; $('#tlBeat').classList.toggle('primary', TL.snapBeats); $('#tlBeat').classList.toggle('ghost', !TL.snapBeats); };
+$('#exSnap').onclick = async () => {
+  try {
+    draw();
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+    if (!blob) throw new Error('ساخت عکس ناموفق بود');
+    const name = `${(app.song?.title || 'clip').replace(/\s+/g, '_')}_frame_${app.t.toFixed(2)}.png`;
+    const r = await saveFile(blob, name);
+    setMsg(r.where === 'browser' ? 'عکس فریم در پوشهٔ Downloads آماده شد' : `عکس فریم ذخیره شد: ${r.where}`, 'ok');
+  } catch (e) { setMsg('خطا در عکس فریم: ' + e.message, 'err'); }
+};
 $('#tlMark').onclick = () => { TL.addMarkerAtPlayhead(); saveState(); };
 /* جا دادن: بخش انتخاب‌شده را کامل در صفحه می‌آورد تا دستگیره‌هایش
    در دسترس باشند. بدون انتخاب، کل آهنگ را نشان می‌دهد. */
