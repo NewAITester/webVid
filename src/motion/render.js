@@ -2453,6 +2453,128 @@ export class MotionRenderer {
           d.drawImage(cur, 0, 0);
           break;
         }
+        case 'waveShift': {
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * v.amt * px * 0.3;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          break;
+        }
+        case 'colorSplit': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), off = Math.round(v.amt * px * 0.3);
+          if (b.w > 4 && b.h > 1) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const at = (x, y, c) => src[((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4 + c];
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              q[o] = at(x - off, y, 0); q[o + 1] = at(x, y, 1); q[o + 2] = at(x + off, y, 2);
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'zoomSpin': {
+          const b = box(), a = Math.sin(time * 2) * (v.amt / 100) * 0.5, s = 1 + Math.sin(time * 2) * (v.amt / 100) * 0.2;
+          d.save(); d.translate(b.cx, b.cy); d.rotate(a); d.scale(s, s); d.translate(-b.cx, -b.cy); d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'slideEcho': {
+          const b = box(), n = Math.max(1, Math.round(v.n));
+          for (let i = n; i >= 0; i--) {
+            d.save(); d.globalAlpha = i === 0 ? 1 : 0.35;
+            d.drawImage(cur, i * 8 * px, 0); d.restore();
+          }
+          break;
+        }
+        case 'blurPulse': {
+          const blur = (0.5 + 0.5 * Math.sin(time * 6)) * v.amt * px * 0.2;
+          d.filter = `blur(${Math.max(0, blur)}px)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          break;
+        }
+        case 'tintPulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), a = (0.5 + 0.5 * Math.sin(time * 3)) * (v.amt / 100) * 0.5;
+          d.save(); d.globalAlpha = a; d.globalCompositeOperation = 'overlay'; d.fillStyle = v.color || '#FF2D78'; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'mosaicPulse': {
+          const b = box(), size = Math.max(2, Math.round((10 + Math.sin(time * 3) * 8) * (v.amt / 50) * px));
+          const tmp = this._scratch('mosP', Math.max(1, Math.ceil(b.w / size)), Math.max(1, Math.ceil(b.h / size))), tx = tmp.getContext('2d');
+          tx.drawImage(cur, b.x, b.y, b.w, b.h, 0, 0, tmp.width, tmp.height);
+          d.imageSmoothingEnabled = false; d.drawImage(tmp, b.x, b.y, b.w, b.h); d.imageSmoothingEnabled = true;
+          break;
+        }
+        case 'strobeFlash': {
+          d.drawImage(cur, 0, 0);
+          if (Math.floor(time * 8) % 2 === 0) {
+            const b = box();
+            d.save(); d.globalAlpha = v.amt / 100; d.fillStyle = '#000000'; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          }
+          break;
+        }
+        case 'ripplePulse': {
+          const A = (0.5 + 0.5 * Math.sin(time * 2)) * v.amt * px * 0.5, len = Math.max(1, 40 * px);
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist < 0.5) return [dx, dy];
+            const off = Math.sin((dist / len) * Math.PI * 2 - time * 3) * A;
+            return [dx * (1 + off / dist), dy * (1 + off / dist)];
+          });
+          break;
+        }
+        case 'vortexPulse': {
+          const b = box(), r = Math.min(b.w, b.h) / 2, A = (0.5 + 0.5 * Math.sin(time * 2)) * (v.amt / 100) * 3;
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist >= r || dist < 0.5) return [dx, dy];
+            const ang = A * (1 - dist / r);
+            const c = Math.cos(ang), s = Math.sin(ang);
+            return [dx * c - dy * s, dx * s + dy * c];
+          });
+          break;
+        }
+        case 'shearPulse': {
+          const b = box(), k = Math.sin(time * 2) * (v.amt / 100) * 0.5;
+          d.save(); d.translate(b.cx, b.cy); d.transform(1, 0, k, 1, 0, 0); d.translate(-b.cx, -b.cy); d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'skewWave': {
+          warp(d, (dx, dy) => [dx + Math.sin(dy * 0.03 + time * 2) * v.amt * px * 0.3, dy + Math.sin(dx * 0.03 + time * 2) * v.amt * px * 0.3]);
+          break;
+        }
+        case 'tunnelSpin': {
+          const b = box(), A = time * 0.5, zoom = 1 + (v.amt / 100) * 0.3;
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist < 0.5) return [dx, dy];
+            const c = Math.cos(A), s = Math.sin(A);
+            return [(dx * c - dy * s) / zoom, (dx * s + dy * c) / zoom];
+          });
+          break;
+        }
+        case 'fadeZoom': {
+          const b = box(), u = (time % 2) / 2, s = 1 + u * (v.amt / 100);
+          d.save(); d.globalAlpha = 1 - u * 0.5; d.translate(b.cx, b.cy); d.scale(s, s); d.translate(-b.cx, -b.cy); d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'spinFade': {
+          const b = box(), u = (time % 2) / 2;
+          d.save(); d.globalAlpha = 1 - u * 0.5; d.translate(b.cx, b.cy); d.rotate(u * Math.PI * (v.amt / 50)); d.translate(-b.cx, -b.cy); d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'lightLeak': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.x, b.y, 0, b.x, b.y, Math.hypot(b.w, b.h) * 0.6);
+          g.addColorStop(0, 'rgba(255,200,120,0.8)'); g.addColorStop(1, 'rgba(255,200,120,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
