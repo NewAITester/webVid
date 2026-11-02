@@ -2663,6 +2663,92 @@ export class MotionRenderer {
           d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
           break;
         }
+        case 'sunsetGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.4;
+          const g = d.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+          g.addColorStop(0, 'rgba(255,120,0,0.6)'); g.addColorStop(0.5, 'rgba(255,80,120,0.4)'); g.addColorStop(1, 'rgba(120,0,120,0.5)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'moonGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.4;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(220,230,255,0.7)'); g.addColorStop(1, 'rgba(220,230,255,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'cometTrail': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt), u = (time % 3) / 3;
+          d.save();
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w + u * b.w * 0.5) % b.w;
+            const fy = b.y + ((h2 - Math.floor(h2)) * b.h);
+            d.globalAlpha = 0.8; d.fillStyle = '#FFFFFF';
+            d.beginPath(); d.arc(fx, fy, 3 * px, 0, Math.PI * 2); d.fill();
+            d.globalAlpha = 0.3; d.fillRect(fx - 20 * px, fy - Math.max(1, px) / 2, 20 * px, Math.max(1, px));
+          }
+          d.restore();
+          break;
+        }
+        case 'rainbowWave': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.3; d.globalCompositeOperation = 'overlay';
+          const g = d.createLinearGradient(b.x, b.y, b.x + b.w, b.y + Math.sin(time * 2) * 20 * px);
+          ['#FF0000', '#FF7F00', '#FFD84D', '#00C853', '#0091FF', '#7C4DFF'].forEach((c, i, a) => g.addColorStop(i / (a.length - 1), c));
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'emberGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt), u = (time % 2) / 2;
+          d.save(); d.fillStyle = 'rgba(255,140,0,0.9)';
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w);
+            const fy = b.y + b.h - ((h2 - Math.floor(h2)) * b.h + u * b.h * 0.5) % b.h;
+            d.globalAlpha = 0.3 + 0.7 * (1 - u);
+            d.beginPath(); d.arc(fx, fy, 2 * px, 0, Math.PI * 2); d.fill();
+          }
+          d.restore();
+          break;
+        }
+        case 'frostGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.4;
+          const g = d.createRadialGradient(b.cx, b.cy, Math.min(b.w, b.h) * 0.3, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(180,220,255,0.8)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'pulseRing': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), u = (time % 2) / 2;
+          d.save(); d.strokeStyle = 'rgba(255,255,255,0.7)'; d.lineWidth = Math.max(1, 2 * px);
+          for (let i = 0; i < 3; i++) {
+            const uu = (u + i / 3) % 1;
+            d.globalAlpha = (1 - uu) * (v.amt / 100);
+            d.beginPath(); d.arc(b.cx, b.cy, uu * Math.min(b.w, b.h) * 0.5, 0, Math.PI * 2); d.stroke();
+          }
+          d.restore();
+          break;
+        }
+        case 'waveRipple': {
+          const A = v.amt * px * 0.3, len = Math.max(1, 40 * px);
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            const off = Math.sin(dy * 0.05 + time * 3) * A * 0.5 + (dist < 0.5 ? 0 : Math.sin((dist / len) * Math.PI * 2 - time * 3) * A * 0.5);
+            return [dx + off, dy + off * 0.3];
+          });
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
