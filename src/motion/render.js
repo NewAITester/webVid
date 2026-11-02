@@ -2834,6 +2834,87 @@ export class MotionRenderer {
           d.restore();
           break;
         }
+        case 'crystalGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(220,240,255,0.8)'); g.addColorStop(0.5, 'rgba(120,180,255,0.3)'); g.addColorStop(1, 'rgba(120,180,255,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'coralGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,140,120,0.8)'); g.addColorStop(0.5, 'rgba(255,80,100,0.3)'); g.addColorStop(1, 'rgba(255,80,100,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'mintGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(180,255,200,0.8)'); g.addColorStop(0.5, 'rgba(80,220,140,0.3)'); g.addColorStop(1, 'rgba(80,220,140,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'amberGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,200,80,0.8)'); g.addColorStop(0.5, 'rgba(255,160,0,0.3)'); g.addColorStop(1, 'rgba(255,160,0,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'tealGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(120,230,220,0.8)'); g.addColorStop(0.5, 'rgba(0,180,170,0.3)'); g.addColorStop(1, 'rgba(0,180,170,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'violetGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(200,140,255,0.8)'); g.addColorStop(0.5, 'rgba(120,0,220,0.3)'); g.addColorStop(1, 'rgba(120,0,220,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'glowWave': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * 10 * px;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.4;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,255,200,0.7)'); g.addColorStop(1, 'rgba(255,255,200,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'glowRing': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), u = (time % 2) / 2;
+          d.save(); d.strokeStyle = 'rgba(255,255,180,0.8)'; d.lineWidth = Math.max(1, 2 * px);
+          for (let i = 0; i < 3; i++) {
+            const uu = (u + i / 3) % 1;
+            d.globalAlpha = (1 - uu) * (v.amt / 100);
+            d.beginPath(); d.arc(b.cx, b.cy, uu * Math.min(b.w, b.h) * 0.5, 0, Math.PI * 2); d.stroke();
+          }
+          d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
