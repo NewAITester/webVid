@@ -2749,6 +2749,91 @@ export class MotionRenderer {
           });
           break;
         }
+        case 'auroraWave': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.35; d.globalCompositeOperation = 'overlay';
+          const g = d.createLinearGradient(b.x, b.y, b.x, b.y + b.h + Math.sin(time * 2) * 20 * px);
+          g.addColorStop(0, 'rgba(0,255,180,0.7)'); g.addColorStop(0.5, 'rgba(0,120,255,0.5)'); g.addColorStop(1, 'rgba(120,0,255,0.6)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'galaxyGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(180,120,255,0.7)'); g.addColorStop(0.5, 'rgba(80,0,180,0.3)'); g.addColorStop(1, 'rgba(80,0,180,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'cometPulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt), u = (time % 3) / 3, pulse = 0.5 + 0.5 * Math.sin(time * 3);
+          d.save();
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w + u * b.w * 0.5) % b.w;
+            const fy = b.y + ((h2 - Math.floor(h2)) * b.h);
+            d.globalAlpha = 0.5 + 0.5 * pulse; d.fillStyle = '#FFFFFF';
+            d.beginPath(); d.arc(fx, fy, 3 * px, 0, Math.PI * 2); d.fill();
+            d.globalAlpha = 0.25 * pulse; d.fillRect(fx - 20 * px, fy - Math.max(1, px) / 2, 20 * px, Math.max(1, px));
+          }
+          d.restore();
+          break;
+        }
+        case 'oceanWave': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.35; d.globalCompositeOperation = 'overlay';
+          const g = d.createLinearGradient(b.x, b.y, b.x, b.y + b.h + Math.sin(time * 2) * 15 * px);
+          g.addColorStop(0, 'rgba(0,180,255,0.7)'); g.addColorStop(1, 'rgba(0,40,120,0.6)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'mistGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.3;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,255,255,0.6)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'solarGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,220,80,0.8)'); g.addColorStop(0.5, 'rgba(255,160,0,0.3)'); g.addColorStop(1, 'rgba(255,160,0,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'lunarGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(220,230,255,0.8)'); g.addColorStop(0.5, 'rgba(140,170,255,0.3)'); g.addColorStop(1, 'rgba(140,170,255,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'stormCloud': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.25;
+          for (let i = 0; i < 5; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w + time * 8 * px) % b.w;
+            const fy = b.y + ((h2 - Math.floor(h2)) * b.h * 0.5);
+            const r = (30 + ((h1 - Math.floor(h1)) * 50)) * px;
+            const g = d.createRadialGradient(fx, fy, 0, fx, fy, r);
+            g.addColorStop(0, 'rgba(60,60,70,0.6)'); g.addColorStop(1, 'rgba(60,60,70,0)');
+            d.fillStyle = g; d.beginPath(); d.arc(fx, fy, r, 0, Math.PI * 2); d.fill();
+          }
+          d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
