@@ -2308,6 +2308,76 @@ export class MotionRenderer {
           d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
           break;
         }
+        case 'flash': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), a = (0.5 + 0.5 * Math.sin(time * 4)) * (v.amt / 100) * 0.5;
+          d.save(); d.globalAlpha = a; d.fillStyle = '#FFFFFF'; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'invertPulse': {
+          const k = (0.5 + 0.5 * Math.sin(time * 3)) * (v.amt / 100);
+          pixelOp(d, (q, i) => { q[i] = q[i] + (255 - 2 * q[i]) * k; q[i + 1] = q[i + 1] + (255 - 2 * q[i + 1]) * k; q[i + 2] = q[i + 2] + (255 - 2 * q[i + 2]) * k; });
+          break;
+        }
+        case 'huePulse': {
+          d.filter = `hue-rotate(${Math.sin(time * 2) * v.amt}deg)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          break;
+        }
+        case 'edgePulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 2 && b.h > 2) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data, src = new Uint8ClampedArray(q);
+            const lum = (x, y) => { const o = ((Math.max(0, Math.min(b.h - 1, y)) * b.w) + Math.max(0, Math.min(b.w - 1, x))) * 4; return src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114; };
+            const pulse = 0.5 + 0.5 * Math.sin(time * 3);
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const gx = -lum(x - 1, y - 1) - 2 * lum(x - 1, y) - lum(x - 1, y + 1) + lum(x + 1, y - 1) + 2 * lum(x + 1, y) + lum(x + 1, y + 1);
+              const gy = -lum(x - 1, y - 1) - 2 * lum(x, y - 1) - lum(x + 1, y - 1) + lum(x - 1, y + 1) + 2 * lum(x, y + 1) + lum(x + 1, y + 1);
+              const m = Math.min(255, Math.hypot(gx, gy) / 4 * (v.amt / 100) * pulse);
+              const o = (y * b.w + x) * 4;
+              q[o] = q[o + 1] = q[o + 2] = m;
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'warpWave': {
+          warp(d, (dx, dy) => [dx + Math.sin(dy * 0.04 + time * 2) * v.amt * px * 0.3, dy]);
+          break;
+        }
+        case 'swirl': {
+          const b = box(), r = Math.min(b.w, b.h) / 2, A = v.amt / 100 * 4;
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist >= r || dist < 0.5) return [dx, dy];
+            const ang = A * (1 - dist / r) * (1 - dist / r);
+            const c = Math.cos(ang), s = Math.sin(ang);
+            return [dx * c - dy * s, dx * s + dy * c];
+          });
+          break;
+        }
+        case 'gridPulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), step = 40 * px, a = (0.5 + 0.5 * Math.sin(time * 3)) * (v.amt / 100) * 0.5;
+          d.save(); d.strokeStyle = `rgba(255,255,255,${a})`; d.lineWidth = Math.max(1, px);
+          d.beginPath();
+          for (let x = b.x; x <= b.x + b.w; x += step) { d.moveTo(x, b.y); d.lineTo(x, b.y + b.h); }
+          for (let y = b.y; y <= b.y + b.h; y += step) { d.moveTo(b.x, y); d.lineTo(b.x + b.w, y); }
+          d.stroke(); d.restore();
+          break;
+        }
+        case 'scanNoise': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt / 10);
+          d.save(); d.fillStyle = 'rgba(255,255,255,0.3)';
+          for (let i = 0; i < n; i++) {
+            const h = Math.sin(i * 12.9898 + Math.floor(time * 12)) * 43758.5453;
+            const y = b.y + ((h - Math.floor(h)) * b.h);
+            d.fillRect(b.x, y, b.w, Math.max(1, px));
+          }
+          d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
