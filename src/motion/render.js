@@ -2575,6 +2575,94 @@ export class MotionRenderer {
           d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
           break;
         }
+        case 'neonPulse': {
+          d.drawImage(cur, 0, 0);
+          const tmp = this._scratch('neonP', cw, ch), tx = tmp.getContext('2d');
+          tx.filter = 'blur(8px)'; tx.drawImage(cur, 0, 0); tx.filter = 'none';
+          tx.globalCompositeOperation = 'source-in'; tx.fillStyle = v.color || '#00E5FF'; tx.fillRect(0, 0, cw, ch);
+          d.save(); d.globalAlpha = Math.min(1, v.amt / 100) * (0.5 + 0.5 * Math.sin(time * 3)); d.globalCompositeOperation = 'lighter'; d.drawImage(tmp, 0, 0); d.restore();
+          break;
+        }
+        case 'haloPulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), pulse = 0.5 + 0.5 * Math.sin(time * 2);
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.4 * pulse;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.min(b.w, b.h) * 0.5 * (1 + pulse * 0.3));
+          g.addColorStop(0, 'rgba(255,255,200,0.8)'); g.addColorStop(1, 'rgba(255,255,200,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'fireGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,120,0,0.7)'); g.addColorStop(0.5, 'rgba(255,60,0,0.3)'); g.addColorStop(1, 'rgba(255,60,0,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'iceGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(120,200,255,0.7)'); g.addColorStop(0.5, 'rgba(0,120,255,0.3)'); g.addColorStop(1, 'rgba(0,120,255,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'prismWave': {
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * v.amt * px * 0.3;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.25; d.globalCompositeOperation = 'overlay';
+          const g = d.createLinearGradient(b.x, b.y, b.x + b.w, b.y);
+          ['#FF0000', '#FFD84D', '#00C853', '#0091FF'].forEach((c, i, a) => g.addColorStop(i / (a.length - 1), c));
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'colorWave': {
+          d.filter = `hue-rotate(${Math.sin(time * 2) * v.amt}deg)`; d.drawImage(cur, 0, 0); d.filter = 'none';
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * 10 * px;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          break;
+        }
+        case 'starPulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt);
+          d.save(); d.fillStyle = '#FFFFFF';
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w), fy = b.y + ((h2 - Math.floor(h2)) * b.h);
+            const s = (2 + 3 * Math.abs(Math.sin(time * 2 + i))) * px;
+            d.globalAlpha = 0.4 + 0.6 * Math.abs(Math.sin(time * 2 + i * 1.3));
+            d.fillRect(fx - s / 2, fy, s, Math.max(1, px)); d.fillRect(fx, fy - s / 2, Math.max(1, px), s);
+          }
+          d.restore();
+          break;
+        }
+        case 'vignetteWave': {
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * 8 * px;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, Math.min(b.w, b.h) * 0.3, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
