@@ -2138,6 +2138,69 @@ export class MotionRenderer {
           }
           break;
         }
+        case 'shear': {
+          const b = box(), k = Math.tan((v.amt * Math.PI) / 180);
+          d.save(); d.translate(b.cx, b.cy); d.transform(1, 0, k, 1, 0, 0); d.translate(-b.cx, -b.cy);
+          d.drawImage(cur, 0, 0); d.restore();
+          break;
+        }
+        case 'cylinder': {
+          const b = box(), r = b.w / 2;
+          warp(d, (dx, dy) => {
+            const u = dx / r;
+            if (Math.abs(u) >= 1) return [dx, dy];
+            const k = 1 - (v.amt / 100) * 0.5 * (1 - Math.cos(u * Math.PI / 2));
+            return [dx * k, dy];
+          });
+          break;
+        }
+        case 'marble': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          if (b.w > 1 && b.h > 1) {
+            const img = d.getImageData(b.x, b.y, b.w, b.h), q = img.data;
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const o = (y * b.w + x) * 4;
+              const m = Math.sin(x * 0.05 + Math.sin(y * 0.05) * 2) * 0.5 + 0.5;
+              const k = 1 - (v.amt / 100) * 0.3 * m;
+              q[o] *= k; q[o + 1] *= k; q[o + 2] *= (1 - (v.amt / 100) * 0.15 * m);
+            }
+            d.putImageData(img, b.x, b.y);
+          }
+          break;
+        }
+        case 'rowShift': {
+          const b = box(), band = 8;
+          d.drawImage(cur, 0, 0);
+          const step = Math.floor(time * 8);
+          for (let y = b.y; y < b.y + b.h; y += band) {
+            const h = Math.sin((y / band) * 12.9898 + step) * 43758.5453;
+            const off = (h - Math.floor(h) - 0.5) * (v.amt / 100) * b.w * 0.3;
+            if (Math.abs(off) > 2) d.drawImage(cur, b.x, y, b.w, band, b.x + off, y, b.w, band);
+          }
+          break;
+        }
+        case 'lightRays': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.max(4, Math.round(v.n)), R = Math.hypot(b.w, b.h) / 2, rot = time * v.speed;
+          d.save(); d.globalAlpha = 0.35; d.strokeStyle = '#FFFFFF'; d.lineWidth = Math.max(1, px);
+          d.beginPath();
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + rot;
+            d.moveTo(b.cx, b.cy); d.lineTo(b.cx + Math.cos(a) * R, b.cy + Math.sin(a) * R);
+          }
+          d.stroke(); d.restore();
+          break;
+        }
+        case 'pixelWave': {
+          const b = box(), bs = 16;
+          d.drawImage(cur, 0, 0);
+          for (let x = b.x; x < b.x + b.w; x += bs) {
+            const dy = Math.sin(x * 0.02 + time * 3) * v.amt * px * 0.5;
+            d.drawImage(cur, x, b.y, bs, b.h, x, b.y + dy, bs, b.h);
+          }
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;

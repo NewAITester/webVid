@@ -95,6 +95,11 @@ export function moveMods(fxs, lt, env) {
       parts.push({ dx: Math.sin(t * v.freq * Math.PI * 2) * (v.amt / U), dy: Math.cos(t * v.freq * Math.PI * 2) * (v.amt / U) * 0.5 });
     } else if (f.type === 'floaty') {
       parts.push({ dy: Math.sin(t * v.freq * Math.PI * 2) * (v.amt / U), rot: Math.sin(t * v.freq * Math.PI * 2) * 2 });
+    } else if (f.type === 'fadePulse') {
+      parts.push({ a: 1 - (v.amt / 100) * 0.5 * (1 - Math.sin(t * v.freq * Math.PI * 2)) });
+    } else if (f.type === 'blink') {
+      const on = ((t * v.rate) % 1) < 0.5 ? 1 : 1 - v.depth / 100;
+      parts.push({ a: on });
     } else if (f.type === 'drift') {
       parts.push({ dx: (lt * v.speed) / U, rot: lt * v.rot });
     } else if (f.type === 'strobe') {
