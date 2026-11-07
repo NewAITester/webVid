@@ -132,7 +132,7 @@ console.log('── نوار انتخاب آلایت (فاز ۴۶) ──');
   ok(html.includes('id="selBar"') && html.includes('id="selBottom"'), 'نوار انتخاب بالا و نوار گزینه‌های پایین هست');
   ok(html.includes('id="selMask"') && html.includes('id="selGroup"') && html.includes('id="selDel"'), 'دکمه‌های گروه/ماسک/حذف در نوار انتخاب هست');
   ok(html.includes('id="sbSplit"') && html.includes('id="sbTrimA"') && html.includes('id="sbTrimB"'), 'دکمه‌های برش/تقسیم در نوار پایین هست');
-  ok(css.includes('#selBar') && css.includes('background:#00FFA8'), 'نوار انتخاب سبز نعنایی آلایت (Y1) است');
+  ok(css.includes('#selBar') && css.includes('background:var(--mint)'), 'نوار انتخاب سبز نعنایی آلایت (Y1) است');
   ok(css.includes('#selBottom'), 'نوار گزینه‌های پایین استایل شناور دارد');
   ok(main.includes('function syncSelBars'), 'همگام‌سازی نمایش نوارهای انتخاب هست');
   ok(main.includes("L.clip === 'none' ? 'below'") && main.includes("'belowInv'"), 'ماسک سه‌حالته است: خاموش / زیرین / معکوس');
@@ -153,6 +153,21 @@ console.log('── فهرست پروژه‌های آلایت (فاز ۴۷) ─�
   ok(css.includes('.pcard.add') && css.includes('#drawer.open'), 'کاشی ＋ و کشوی بازشونده استایل دارند');
   ok(main.includes('function openNewSheet') && main.includes("add.id = 'newProj'"), 'کاشی ＋ همان id قدیمی را دارد و شیت ساخت را باز می‌کند');
   ok(main.includes('openDrawer') && main.includes("$('#libNew').onclick"), 'سیم‌کشی کشو و نوار پایین خانه هست');
+}
+
+console.log('── توکن‌های دیزاین‌سیستم آلایت (فاز ۵۱) ──');
+{
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const root = css.slice(css.indexOf(':root{'), css.indexOf('}', css.indexOf(':root{')));
+  for (const tok of ['--bg:#0C0D13','--surf:#141620','--surf2:#191C25','--surf3:#1E2239','--surf4:#242636',
+    '--line:#262B3A','--line2:#3A4253','--ink:#FAFAFA','--ink2:#C4C5CB','--dim:#9395A1',
+    '--red:#E01445','--pink:#F16586','--mint:#00FFA8','--ok:#29E59C',
+    '--dur-med:200ms','--ease-out:cubic-bezier(.2,0,0,1)'])
+    ok(root.includes(tok), 'توکن ' + tok + ' در :root هست');
+  // بیرون از :root هیچ هگز دستی نمانده (به‌جز #000 صحنه و #fff متن روی اکسنت)
+  const body = css.slice(css.indexOf('}', css.indexOf(':root{')) + 1);
+  const stray = [...body.matchAll(/#[0-9A-Fa-f]{3,8}\b/g)].map(m => m[0]).filter(h => !['#000','#fff'].includes(h));
+  ok(stray.length === 0, 'رنگ دستی بیرون از توکن‌ها نمانده' + (stray.length ? ': ' + [...new Set(stray)].join(',') : ''));
 }
 
 console.log('── پیش‌نمایش خروجی آلایت (فاز ۴۸) ──');
