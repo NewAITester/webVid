@@ -111,6 +111,19 @@ console.log('── شیت پایینی و سربرگ تایم‌لاین (فا�
   ok(!tl.includes('برچسب ردیف‌ها — تا معلوم باشد هر ردیف چیست'), 'برچسب‌های شناور قدیمی برداشته شدند');
 }
 
+console.log('── منوی ＋ آلایت (فاز ۴۵) ──');
+{
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const mp = readFileSync(new URL('../src/ui/motionpanel.js', import.meta.url), 'utf8');
+  ok(css.includes('grid-template-columns:58px 1fr'), 'پاپ‌آپ دو ستونه است: ستون سریع ۵۸ پیکسل + محتوا');
+  ok(css.includes('.addtabs') && css.includes('.quickbar') && css.includes('.addtab'), 'نوار تب و ستون سریع و تب‌ها استایل دارند');
+  ok(css.includes('calc(132px + env(safe-area-inset-bottom))'), 'پاپ‌آپ بالای دکمهٔ ＋ شناور لنگر انداخته است');
+  ok(mp.includes("'addtabs'") && mp.includes("'quickbar'"), 'منوی افزودن تب‌ها و ستون سریع را می‌سازد');
+  ok(mp.includes("dataset.cat") && mp.includes("activeTab"), 'کاشی‌ها بر اساس تب آلایت فیلتر می‌شوند');
+  ok(mp.includes("'خط آزاد'") && mp.includes("'برداری'") && mp.includes("'متن'"), 'ستون سریع: خط آزاد، برداری، متن');
+  ok(mp.includes("['shape', '◆', 'شکل']") && mp.includes("['template', '✦', 'قالب']"), 'تب‌ها پنج‌تایی آلایت‌اند: شکل، رسانه، صدا، المان، قالب');
+}
+
 console.log('── دوربین روی شعر (فاز ۲۲) ──');
 {
   const r = readFileSync(new URL('../src/engine/renderer.js', import.meta.url), 'utf8');

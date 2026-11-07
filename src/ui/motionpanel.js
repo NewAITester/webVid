@@ -150,10 +150,15 @@ export class MotionPanel {
     document.querySelector('.addsheet')?.remove();
     const run = (fn, open = true) => () => { sheet.remove(); fn(); if (open) this.host.openPane?.(); };
     const tiles = [];
-    const tile = (ic, label, desc, fn, img = null) => {
+    let activeTab = 'shape';
+    /* دسته‌بندی تب‌های آلایت: shape / media / audio / object / template؛
+       'all' یعنی همیشه دیده شود (کارهای شعر) و 'quick' یعنی فقط در
+       ستون سریع است (متن و خط آزاد در تب‌ها نیستند). */
+    const tile = (ic, label, desc, fn, img = null, cat = 'object') => {
       const b = h('button', { class: 'stile' + (img ? ' has' : ''), onclick: fn, title: desc || label },
         img || h('i', {}, ic), h('b', {}, label), desc ? h('small', {}, desc) : null);
       b.dataset.q = (label + ' ' + (desc || '')).toLowerCase();
+      b.dataset.cat = cat;
       tiles.push(b);
       return b;
     };
@@ -161,20 +166,18 @@ export class MotionPanel {
       h('div', { class: 'sgh' }, h('b', {}, title), hint ? h('small', {}, hint) : null),
       h('div', { class: 'sgrid' }, ...kids));
     const basic = [
-      ['text', 'T', 'متن', 'نوشتهٔ خالی'],
-      ['media', '▣', 'عکس یا ویدیو', 'از گالری گوشی'],
-      ['shape', '◆', 'شکل', 'مستطیل، دایره، ستاره…'],
-      ['spectrum', '≋', 'موج صدا', 'با آهنگ می‌رقصد'],
-      ['code', '{}', 'کد', 'با برنامه‌نویسی بکشید'],
-      ['adjust', '◐', 'لایهٔ تنظیم', 'افکت روی همهٔ زیرین‌ها'],
-      ['null', '⊕', 'والد خالی', 'برای حرکت گروهی'],
-      ['audio', '♪', 'صدا', 'فایل صوتی مستقل از آهنگ'],
-      ['camera', '🎥', 'دوربین', 'پن، زوم و چرخش کل صحنه'],
-      ['draw', '〰', 'خط آزاد', 'خط موجی که مثل دست کشیده می‌شود'],
-    ].map(([type, ic, label, desc]) => tile(ic, label, desc,
-      type === 'media' ? run(() => this.pickMedia()) : run(() => this.add(type))));
+      ['media', '▣', 'عکس یا ویدیو', 'از گالری گوشی', 'media'],
+      ['shape', '◆', 'شکل', 'مستطیل، دایره، ستاره…', 'shape'],
+      ['spectrum', '≋', 'موج صدا', 'با آهنگ می‌رقصد', 'audio'],
+      ['code', '{}', 'کد', 'با برنامه‌نویسی بکشید', 'object'],
+      ['adjust', '◐', 'لایهٔ تنظیم', 'افکت روی همهٔ زیرین‌ها', 'object'],
+      ['null', '⊕', 'والد خالی', 'برای حرکت گروهی', 'object'],
+      ['audio', '♪', 'صدا', 'فایل صوتی مستقل از آهنگ', 'audio'],
+      ['camera', '🎥', 'دوربین', 'پن، زوم و چرخش کل صحنه', 'object'],
+    ].map(([type, ic, label, desc, cat]) => tile(ic, label, desc,
+      type === 'media' ? run(() => this.pickMedia()) : run(() => this.add(type)), null, cat));
     const styles = TEXT_STYLES.map(st => tile(st.ic, st.label, '', run(() => this.addTextStyle(st)),
-      thumb('style:' + st.id, () => { const L = sampleText('متن'); applyTextStyle(L, st, 600, 400); L.props.y = { v: 0 }; return [L]; })));
+      thumb('style:' + st.id, () => { const L = sampleText('متن'); applyTextStyle(L, st, 600, 400); L.props.y = { v: 0 }; return [L]; }), 'template'));
     const els = ELEMENTS.map(el => tile(el.ic, el.label, '', run(() => this.addElement(el)),
       el.type === 'adjust' ? null : thumb('el:' + el.id, () => {
         const L = buildElement(el, 0, 5, 600, 400);
@@ -183,31 +186,52 @@ export class MotionPanel {
         if (L.props.w && L.type !== 'code' && L.type !== 'spectrum') L.props.sc = { v: Math.min(100, Math.round(100 * 340 / Math.max(L.props.w.v, L.props.h?.v || 0))) };
         if (L.type === 'spectrum') L.props.sc = { v: 55 };
         return [L];
-      }, 1.6)));
+      }, 1.6), 'object'));
     const flows = ['flowTitle', 'flowPulse', 'flowText'].map(k => ELEMENTS.find(el => el.id === 'el_' + k)).filter(Boolean)
       .map(el => tile(el.ic, el.label, ELEMENT_KINDS[el.kind].desc, run(() => this.addElement(el)),
-        thumb('el:' + el.id, () => { const L = buildElement(el, 0, 5, 600, 400); L.props.w = { v: 600 }; L.props.h = { v: 400 }; L.props.y = { v: 0 }; return [L]; }, el.kind === 'flowText' ? 1.9 : el.kind === 'flowPulse' ? 1.04 : 1.6)));
-    const ext = extras.map(x => tile(x.ic, x.label, x.desc, run(x.fn, x.openLayers !== false)));
+        thumb('el:' + el.id, () => { const L = buildElement(el, 0, 5, 600, 400); L.props.w = { v: 600 }; L.props.h = { v: 400 }; L.props.y = { v: 0 }; return [L]; }, el.kind === 'flowText' ? 1.9 : el.kind === 'flowPulse' ? 1.04 : 1.6), 'template'));
+    const ext = extras.map(x => tile(x.ic, x.label, x.desc, run(x.fn, x.openLayers !== false), null, 'all'));
 
     const q = h('input', { class: 'txt', type: 'search', placeholder: 'جستجو: نئون، قلب، برف…',
-      oninput: () => {
-        const v = q.value.trim().toLowerCase();
-        for (const t of tiles) t.classList.toggle('hidden', !!v && !t.dataset.q.includes(v));
-        for (const g of sheet.querySelectorAll('.sgrp')) g.classList.toggle('hidden', ![...g.querySelectorAll('.stile')].some(t => !t.classList.contains('hidden')));
-      } });
+      oninput: () => applyFilter() });
+    const applyFilter = () => {
+      const v = q.value.trim().toLowerCase();
+      for (const t of tiles) {
+        const tabOk = t.dataset.cat === 'all' || t.dataset.cat === activeTab;
+        t.classList.toggle('hidden', !tabOk || (!!v && !t.dataset.q.includes(v)));
+      }
+      for (const g of sheet.querySelectorAll('.sgrp')) g.classList.toggle('hidden', ![...g.querySelectorAll('.stile')].some(t => !t.classList.contains('hidden')));
+    };
+    const tabs = [['shape', '◆', 'شکل'], ['media', '▣', 'رسانه'], ['audio', '♪', 'صدا'], ['object', '◍', 'المان'], ['template', '✦', 'قالب']]
+      .map(([id, ic, label]) => h('button', {
+        class: 'addtab' + (id === activeTab ? ' on' : ''),
+        onclick: e => {
+          activeTab = id;
+          sheet.querySelectorAll('.addtab').forEach(b => b.classList.remove('on'));
+          e.currentTarget.classList.add('on');
+          applyFilter();
+        } }, h('i', {}, ic), h('b', {}, label)));
+    const qbtn = (ic, label, fn, fix = false) => h('button', { class: 'qbtn' + (fix ? ' fix' : ''), onclick: fn },
+      h('i', {}, ic), h('b', {}, label));
     const sheet = h('div', { class: 'addsheet', onclick: e => { if (e.target === sheet) sheet.remove(); } },
       h('div', { class: 'sbody' },
-        h('div', { class: 'shd' }, h('b', {}, '＋ چه چیزی اضافه شود؟'), h('div', { class: 'spacer' }),
-          h('button', { class: 'icon sm', onclick: () => sheet.remove(), title: 'بستن' }, '✕')),
-        q,
-        h('div', { class: 'sscroll' },
-          grp('🌊 تازه: افکت ذره‌ای FLOW', 'از کد پایتون شوریل — عنوان ریتمیک برای اسم اول ویدیو، جریان برای هر جای ویدیو', ...flows),
-          grp('لایهٔ خالی', 'از صفر بسازید', ...basic),
-          grp('متن آماده', 'یک ضربه = متن با رنگ، افکت و انیمیشن', ...styles),
-          grp('کد و اسکریپت', 'کل ویدیو را با کد بنویسید، بعد دستی ویرایش کنید',
-            tile('📜', 'موشن‌اسکریپت', 'صحنه‌ها با کد ← لایه‌ها', run(() => this.openScript(), false))),
-          grp('عنصرهای آماده', 'شکل متحرک، ذرات، نوار و…', ...els),
-          ext.length ? grp('شعر و زیرنویس', 'برای بخش‌های آهنگ', ...ext) : null)));
+        h('div', { class: 'quickbar' },
+          qbtn('〰', 'خط آزاد', run(() => this.add('draw'))),
+          qbtn('⬡', 'برداری', run(() => this.add('code'))),
+          qbtn('T', 'متن', run(() => this.add('text')), true),
+          h('button', { class: 'qclose', onclick: () => sheet.remove(), title: 'بستن' }, '✕')),
+        h('div', { class: 'addmain' },
+          h('div', { class: 'addtabs' }, ...tabs),
+          q,
+          h('div', { class: 'sscroll' },
+            grp('🌊 تازه: افکت ذره‌ای FLOW', 'از کد پایتون شوریل — عنوان ریتمیک برای اسم اول ویدیو، جریان برای هر جای ویدیو', ...flows),
+            grp('لایهٔ خالی', 'از صفر بسازید', ...basic),
+            grp('متن آماده', 'یک ضربه = متن با رنگ، افکت و انیمیشن', ...styles),
+            grp('کد و اسکریپت', 'کل ویدیو را با کد بنویسید، بعد دستی ویرایش کنید',
+              tile('📜', 'موشن‌اسکریپت', 'صحنه‌ها با کد ← لایه‌ها', run(() => this.openScript(), false), null, 'template')),
+            grp('عنصرهای آماده', 'شکل متحرک، ذرات، نوار و…', ...els),
+            ext.length ? grp('شعر و زیرنویس', 'برای بخش‌های آهنگ', ...ext) : null))));
+    applyFilter();
     document.body.append(sheet);
     setTimeout(() => sheet.classList.add('in'), 0);
     return sheet;

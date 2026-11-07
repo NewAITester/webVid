@@ -493,14 +493,35 @@ canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto
 .addtop{padding:6px 12px;font-size:12px;border-radius:999px;white-space:nowrap}
 .addbig{margin-bottom:12px;padding:11px;font-size:13px}
 
-/* برگهٔ «＋ افزودن» */
-.addsheet{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;
-  align-items:flex-end;justify-content:center;opacity:0;transition:opacity .15s}
+/* برگهٔ «＋ افزودن» — پاپ‌آپ آلایت (addpopup، ۲۵۱dp): بالای دکمهٔ ＋،
+   نوار تب بالا (شکل/رسانه/صدا/المان/قالب) + ستون سریع سمت راست
+   (خط آزاد/برداری/متن) و دکمهٔ بستن پایین آن. */
+.addsheet{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:flex;
+  align-items:flex-end;justify-content:flex-start;opacity:0;transition:opacity .15s}
 .addsheet.in{opacity:1}
-.addsheet .sbody{width:100%;max-width:720px;max-height:86vh;display:flex;flex-direction:column;gap:9px;
-  background:var(--surf);border:1px solid var(--line);border-bottom:none;border-radius:18px 18px 0 0;
-  padding:12px 14px 0;transform:translateY(30px);transition:transform .18s}
+.addsheet .sbody{width:min(430px,calc(100vw - 24px));height:min(420px,62dvh);
+  display:grid;grid-template-columns:58px 1fr;
+  background:var(--surf);border:1px solid var(--line);border-radius:14px;
+  margin:0 12px calc(132px + env(safe-area-inset-bottom));overflow:hidden;
+  transform:translateY(12px);transition:transform .18s;box-shadow:0 10px 34px rgba(0,0,0,.6)}
 .addsheet.in .sbody{transform:none}
+.addmain{display:flex;flex-direction:column;min-width:0;min-height:0}
+.addmain .txt{margin:8px 10px 0}
+.addtabs{display:flex;flex:0 0 58px;border-bottom:1px solid var(--line)}
+.addtab{flex:1;background:none;border:none;color:var(--dim);cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:1px;padding-bottom:6px}
+.addtab i{font-style:normal;font-size:19px;line-height:1.2}
+.addtab b{font-size:9px;font-weight:bold}
+.addtab.on{color:var(--red)}
+.quickbar{display:flex;flex-direction:column;border-left:1px solid var(--line);background:var(--surf2)}
+.qbtn{flex:1;background:none;border:none;color:var(--dim);cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px 0}
+.qbtn.fix{flex:0 0 58px}
+.qbtn i{font-style:normal;font-size:19px;line-height:1.2}
+.qbtn b{font-size:9px;font-weight:bold}
+.qbtn:active,.addtab:active{background:#1A1E27}
+.qclose{flex:0 0 50px;background:none;border:none;border-top:1px solid var(--line);
+  color:var(--ink2);font-size:16px;cursor:pointer}
 .shd{display:flex;align-items:center;gap:8px;font-size:14px}
 .sscroll{overflow-y:auto;padding-bottom:22px;display:flex;flex-direction:column;gap:14px;
   -webkit-overflow-scrolling:touch}
