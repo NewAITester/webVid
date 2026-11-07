@@ -342,6 +342,7 @@ function go(name, toggle = false) {
   $$('.subnav button').forEach(b => b.classList.toggle('on', b.dataset.goto === name));
   sizePane();
   $('#panes').classList.add('open');
+  syncSelBars();
   R.editMode = name === 'words';
   canvas.classList.toggle('editing', name === 'words');
   draw();
@@ -360,6 +361,7 @@ $$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go, tru
 function closePane() {
   POOL.stop(); POOL2.stop(); POOL3.stop();
   $('#panes').classList.remove('open');
+  syncSelBars();
   $$('#nav button').forEach(b => b.classList.remove('on'));
   app.pane = null;
   R.editMode = false;
@@ -511,6 +513,22 @@ function pickedText() {
   return p?.kind === 'text' ? texts.find(x => x.id === p.id) : null;
 }
 
+/* نوارهای انتخاب آلایت: نوار سبز بالا همیشه با انتخاب لایه می‌آید؛
+   نوار گزینه‌های پایین فقط وقتی شیت باز نیست، و جایش دکمهٔ ＋ پنهان می‌شود. */
+function syncSelBars() {
+  const L = TL.pick?.kind === 'layer' ? pickedLayer() : null;
+  $('#selBar').classList.toggle('hidden', !L);
+  const paneOpen = $('#panes').classList.contains('open');
+  $('#selBottom').classList.toggle('hidden', !L || paneOpen);
+  $('#addFab').classList.toggle('hidden', !!L && !paneOpen);
+  if (L) {
+    $('#selName').textContent = L.name || L.type;
+    const m = $('#selMask');
+    m.classList.toggle('on', L.clip && L.clip !== 'none');
+    m.querySelector('b').textContent = L.clip === 'belowInv' ? 'ماسک معکوس' : 'ماسک';
+  }
+}
+
 function showClipBar(p) {
   const bar = $('#clipBar');
   R.selText = p?.kind === 'text' ? p.id : null;
@@ -528,7 +546,7 @@ function showClipBar(p) {
     $('#cbTime').textContent = 'روی بخش، خط شعر یا لایه در تایم‌لاین بزنید';
     $('#cbActs').innerHTML = '';
   };
-  if (!p) { empty(); if (app.pane === 'clip') closePane(); draw(); return; }
+  if (!p) { empty(); if (app.pane === 'clip') closePane(); syncSelBars(); draw(); return; }
   bar.classList.remove('empty');
   sizePane();
 
@@ -564,6 +582,7 @@ function showClipBar(p) {
     host.append(b);
   }
   if (app.pane === 'clip') buildClipPanel();
+  syncSelBars();
   draw();
 }
 
@@ -2290,6 +2309,32 @@ $('#railGrid').onclick = () => {
   const g = $('#stageGrid'), on = g.classList.toggle('hidden');
   $('#railGrid').classList.toggle('on', !on);
 };
+$('#selClose').onclick = () => TL.choose(null);
+$('#selGroup').onclick = () => {
+  const L = pickedLayer(); if (!L) return;
+  const g = OPS.groupLayers([L]);
+  layers.splice(layers.indexOf(L) + 1, 0, g);
+  TL.choose({ kind: 'layer', id: g.id });
+  saveState(); TL.draw(); if (app.pane === 'layers') MP.render(); draw();
+};
+$('#selMask').onclick = () => {
+  const L = pickedLayer(); if (!L) return;
+  L.clip = L.clip === 'none' ? 'below' : L.clip === 'below' ? 'belowInv' : 'none';
+  saveState(); syncSelBars(); draw();
+};
+$('#selDel').onclick = () => clipAct('del');
+$('#sbTrimA').onclick = () => clipAct('setA');
+$('#sbSplit').onclick = () => clipAct('split');
+$('#sbTrimB').onclick = () => clipAct('setB');
+$('#sbAlignA').onclick = () => alignSel('a');
+$('#sbAlignB').onclick = () => alignSel('b');
+function alignSel(which) {
+  const L = pickedLayer(); if (!L) return;
+  const len = L.t1 - L.t0, dur = app.duration || len;
+  if (which === 'a') { L.t0 = Math.max(0, Math.min(app.t, dur - len)); L.t1 = L.t0 + len; }
+  else { L.t1 = Math.max(len, Math.min(app.t, dur)); L.t0 = L.t1 - len; }
+  saveState(); TL.draw(); showClipBar(TL.pick); draw();
+}
 $('#railSolo').onclick = () => {
   const on = MP.toggleSoloSelected?.();
   $('#railSolo').classList.toggle('on', !!on);

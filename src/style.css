@@ -109,6 +109,26 @@ body{
     linear-gradient(90deg,rgba(255,255,255,.14) 1px,transparent 1px);
   background-size:40px 40px}
 
+/* ── نوار انتخاب آلایت (فاز ۴۶) ─────────────────────────────
+   نوار بالا سبز نعنایی (Y1 = #00FFA8) جای نوار بالا می‌آید؛ نوار
+   گزینه‌های پایین (۴۲dp) جای دکمهٔ ＋ می‌نشیند و موقع باز بودن
+   شیت پنهان می‌شود. */
+#selBar{position:absolute;top:0;left:0;right:0;z-index:35;display:flex;align-items:center;gap:2px;
+  height:calc(42px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 6px 0;
+  background:#00FFA8;color:#06281C}
+#selBar .sname{flex:1;font-size:13px;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-inline:4px}
+.sbtn{background:none;border:none;color:inherit;cursor:pointer;font-family:inherit;min-width:44px;height:40px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;border-radius:9px;font-size:15px}
+.sbtn b{font-size:9px;font-weight:bold}
+.sbtn.on{background:rgba(0,0,0,.16)}
+#selBottom{position:absolute;left:12px;right:12px;bottom:calc(66px + env(safe-area-inset-bottom));z-index:35;
+  height:42px;display:flex;align-items:center;gap:2px;padding:0 6px;
+  background:#141824;border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+.sbtn2{background:none;border:none;color:var(--ink2);cursor:pointer;font-family:inherit;min-width:46px;height:38px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;border-radius:8px;font-size:14px}
+.sbtn2 b{font-size:9px;font-weight:normal}
+.sbtn2:active{background:#1A1E27}
+
 /* ── دکمه‌ها ─────────────────────────────────────────────── */
 .btn{background:#1A1E27;color:var(--ink);border:1px solid var(--line);border-radius:10px;
   padding:9px 15px;font-size:13.5px;cursor:pointer;font-family:inherit;transition:.15s;

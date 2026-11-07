@@ -124,6 +124,22 @@ console.log('── منوی ＋ آلایت (فاز ۴۵) ──');
   ok(mp.includes("['shape', '◆', 'شکل']") && mp.includes("['template', '✦', 'قالب']"), 'تب‌ها پنج‌تایی آلایت‌اند: شکل، رسانه، صدا، المان، قالب');
 }
 
+console.log('── نوار انتخاب آلایت (فاز ۴۶) ──');
+{
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok(html.includes('id="selBar"') && html.includes('id="selBottom"'), 'نوار انتخاب بالا و نوار گزینه‌های پایین هست');
+  ok(html.includes('id="selMask"') && html.includes('id="selGroup"') && html.includes('id="selDel"'), 'دکمه‌های گروه/ماسک/حذف در نوار انتخاب هست');
+  ok(html.includes('id="sbSplit"') && html.includes('id="sbTrimA"') && html.includes('id="sbTrimB"'), 'دکمه‌های برش/تقسیم در نوار پایین هست');
+  ok(css.includes('#selBar') && css.includes('background:#00FFA8'), 'نوار انتخاب سبز نعنایی آلایت (Y1) است');
+  ok(css.includes('#selBottom'), 'نوار گزینه‌های پایین استایل شناور دارد');
+  ok(main.includes('function syncSelBars'), 'همگام‌سازی نمایش نوارهای انتخاب هست');
+  ok(main.includes("L.clip === 'none' ? 'below'") && main.includes("'belowInv'"), 'ماسک سه‌حالته است: خاموش / زیرین / معکوس');
+  ok(main.includes('OPS.groupLayers([L])'), 'دکمهٔ گروه از groupLayers استفاده می‌کند');
+  ok(main.includes("clipAct('split')"), 'تقسیم از همان split موجود استفاده می‌کند');
+}
+
 console.log('── دوربین روی شعر (فاز ۲۲) ──');
 {
   const r = readFileSync(new URL('../src/engine/renderer.js', import.meta.url), 'utf8');

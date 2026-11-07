@@ -67,6 +67,13 @@
 
 <!-- ══════════ صفحهٔ ۲: ویرایشگر ══════════ -->
 <section class="screen" data-screen="editor">
+  <div id="selBar" class="hidden">
+    <button id="selClose" class="sbtn" title="لغو انتخاب">✕</button>
+    <span id="selName" class="sname">—</span>
+    <button id="selGroup" class="sbtn" title="گروه با این لایه">▣<b>گروه</b></button>
+    <button id="selMask" class="sbtn" title="ماسک با لایهٔ زیرین">◐<b>ماسک</b></button>
+    <button id="selDel" class="sbtn" title="حذف">🗑<b>حذف</b></button>
+  </div>
   <header class="top">
     <button id="backBtn" class="icon">→</button>
     <div class="etitle" id="nowName">—</div>
@@ -323,6 +330,14 @@
   </div>
 
   <button id="addFab" class="addfab" title="افزودن لایه: متن، عکس، شکل، افکت">＋</button>
+  <div id="selBottom" class="hidden">
+    <button id="sbTrimA" class="sbtn2" title="برش شروع تا نشانگر">⇤<b>شروع</b></button>
+    <button id="sbSplit" class="sbtn2" title="تقسیم در نشانگر">✂<b>تقسیم</b></button>
+    <button id="sbTrimB" class="sbtn2" title="برش پایان تا نشانگر">⇥<b>پایان</b></button>
+    <div class="spacer"></div>
+    <button id="sbAlignA" class="sbtn2" title="شروع کلیپ به نشانگر">⏮<b>شروع</b></button>
+    <button id="sbAlignB" class="sbtn2" title="پایان کلیپ به نشانگر">⏭<b>پایان</b></button>
+  </div>
 
   <nav class="nav" id="nav">
     <button data-go="lyrics" class="on" title="نوشتن و هم‌زمان کردن شعر"><i>✎</i><b>شعر</b></button>
