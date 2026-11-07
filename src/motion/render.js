@@ -3137,6 +3137,99 @@ export class MotionRenderer {
           d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
           break;
         }
+        case 'nebulaGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,120,220,0.7)'); g.addColorStop(0.5, 'rgba(120,0,220,0.3)'); g.addColorStop(1, 'rgba(120,0,220,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'quasarGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), pulse = 0.5 + 0.5 * Math.sin(time * 3);
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5 * pulse;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'eclipseGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), r = Math.min(b.w, b.h) * 0.3;
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.6;
+          d.fillStyle = 'rgba(0,0,0,0.7)'; d.beginPath(); d.arc(b.cx, b.cy, r, 0, Math.PI * 2); d.fill();
+          d.strokeStyle = 'rgba(255,220,120,0.9)'; d.lineWidth = Math.max(1, 3 * px);
+          d.beginPath(); d.arc(b.cx, b.cy, r + 4 * px, 0, Math.PI * 2); d.stroke();
+          d.restore();
+          break;
+        }
+        case 'supernova': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt), u = (time % 2) / 2;
+          d.save(); d.fillStyle = 'rgba(255,240,180,0.9)';
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2;
+            const r = u * Math.min(b.w, b.h) * 0.45;
+            d.globalAlpha = (1 - u) * 0.8;
+            d.beginPath(); d.arc(b.cx + Math.cos(a) * r, b.cy + Math.sin(a) * r, 3 * px, 0, Math.PI * 2); d.fill();
+          }
+          d.restore();
+          d.save(); d.globalAlpha = (1 - u) * (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,255,220,0.9)'); g.addColorStop(1, 'rgba(255,255,220,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'blackhole': {
+          const b = box(), r = Math.min(b.w, b.h) / 2, A = v.amt / 100 * 2;
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist < 0.5) return [dx, dy];
+            const pull = 1 - (A * 0.3 * (1 - dist / (r * 2)));
+            return [dx * pull, dy * pull];
+          });
+          break;
+        }
+        case 'wormhole': {
+          const b = box(), A = time * 0.5, zoom = 1 + (v.amt / 100) * 0.5;
+          warp(d, (dx, dy) => {
+            const dist = Math.hypot(dx, dy);
+            if (dist < 0.5) return [dx, dy];
+            const c = Math.cos(A), s = Math.sin(A);
+            return [(dx * c - dy * s) / zoom, (dx * s + dy * c) / zoom];
+          });
+          break;
+        }
+        case 'stardust': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), n = Math.round(v.amt);
+          d.save(); d.fillStyle = 'rgba(255,255,255,0.8)';
+          for (let i = 0; i < n; i++) {
+            const h1 = Math.sin(i * 12.9898) * 43758.5453, h2 = Math.sin(i * 78.233) * 12543.21;
+            const fx = b.x + ((h1 - Math.floor(h1)) * b.w + Math.sin(time + i) * 15 * px) % b.w;
+            const fy = b.y + ((h2 - Math.floor(h2)) * b.h + Math.cos(time * 0.7 + i) * 10 * px) % b.h;
+            d.globalAlpha = 0.3 + 0.7 * Math.abs(Math.sin(time * 2 + i));
+            d.fillRect(fx, fy, Math.max(1, px), Math.max(1, px));
+          }
+          d.restore();
+          break;
+        }
+        case 'cosmosWave': {
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * 8 * px;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.35; d.globalCompositeOperation = 'overlay';
+          const g = d.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+          g.addColorStop(0, 'rgba(120,0,255,0.7)'); g.addColorStop(0.5, 'rgba(0,120,255,0.5)'); g.addColorStop(1, 'rgba(255,0,180,0.6)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
