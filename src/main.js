@@ -255,6 +255,7 @@ function draw() {
     if (!app.playing || now - lastTick > 150) { lastTick = now; MP.tick(); }
   }
 
+  if (app.pane === 'export') syncExPrev();
   if (app.playing) {
     frames++;
     const now = performance.now();
@@ -279,6 +280,7 @@ function play() {
   app.playing = true;
   R.playing = true;
   $('#play').textContent = '❚❚';
+  const ep = $('#exPrevPlay'); if (ep) ep.textContent = '❚❚';
   if (app.audio) { app.audio.currentTime = app.t; app.audio.play().catch(() => {}); }
   lastFpsAt = performance.now(); frames = 0;
   app.raf = requestAnimationFrame(loop);
@@ -290,6 +292,7 @@ function pause() {
   if (app.pane === 'fx') { POOL.start(fxPreviewTime(sections()[styleSecIndex()])); startIdleAnim(); }
   if (app.pane === 'clip') POOL2.start(app.t);
   $('#play').textContent = '▶';
+  const ep2 = $('#exPrevPlay'); if (ep2) ep2.textContent = '▶';
   rangeEnd = null;
   $('#fps').textContent = '—';
   app.audio?.pause();
@@ -354,7 +357,7 @@ function go(name, toggle = false) {
   if (name === 'lyrics') syncLyricsPane();
   if (name === 'fx') { buildFxCats(); buildFxGrid(); buildCfList(); }
   if (name === 'layers') MP.render();
-  if (name === 'export') FF.render();
+  if (name === 'export') { FF.render(); setTimeout(() => syncExPrev(), 60); }
 }
 $$('#nav button[data-go]').forEach(b => { b.onclick = () => go(b.dataset.go, true); });
 
@@ -1526,6 +1529,25 @@ let exAbort = null;
 let exportBusy = false;
 let lastExport = null;        // آخرین ویدیوی ساخته‌شده {blob, name}
 const setMsg = (t, cls = '') => { $('#exMsg').textContent = t; $('#exMsg').className = 'msg ' + cls; };
+
+/* پیش‌نمایش خروجی: کپی فریم صحنه + سیک‌بار بازه (مثل صفحهٔ پیش‌نمایش خروجی آلایت) */
+function syncExPrev() {
+  const cv = $('#exPrev'); if (!cv || !canvas) return;
+  const w = cv.clientWidth || 320, h = Math.round(w * 9 / 16);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  cv.getContext('2d').drawImage(canvas, 0, 0, cv.width, cv.height);
+  const sk = $('#exSeek');
+  if (sk) {
+    sk.max = app.duration || 10;
+    if (document.activeElement !== sk) sk.value = app.t;
+    $('#exSeekT').textContent = faTime(app.t);
+  }
+}
+$('#exClose').onclick = () => closePane();
+$('#exPrevPlay').onclick = () => toggle();
+$('#exPrevTo').onclick = () => seek(Math.max(0, parseFloat($('#exFrom').value) || 0));
+$('#exPrevEnd').onclick = () => seek(Math.min(app.duration, parseFloat($('#exTo').value) || 0));
+$('#exSeek').oninput = e => { pause(); seek(parseFloat(e.target.value) || 0); };
 
 $('#exGo').onclick = async () => {
   const from = Math.max(0, parseFloat($('#exFrom').value) || 0);

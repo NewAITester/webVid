@@ -306,15 +306,28 @@
     </section>
 
     <section class="pane" data-pane="export">
-      <div class="phead">خروجی ویدیو</div>
+      <div class="phead">خروجی ویدیو<div class="spacer"></div>
+        <button id="exClose" class="icon sm" title="بستن">✕</button></div>
+      <div class="exprev">
+        <canvas id="exPrev"></canvas>
+        <div class="exprevbar">
+          <button id="exPrevTo" class="icon sm" title="رفتن به شروع بازه">⏮</button>
+          <button id="exPrevPlay" class="icon sm" title="پخش / توقف">▶</button>
+          <button id="exPrevEnd" class="icon sm" title="رفتن به پایان بازه">⏭</button>
+          <input id="exSeek" type="range" min="0" max="10" step="0.01" value="0" class="rng" dir="ltr">
+          <span class="time" id="exSeekT">۰۰:۰۰</span>
+        </div>
+        <div id="exBar" class="bar2 hidden"><i></i></div>
+        <div id="exMsg" class="msg"></div>
+      </div>
       <div class="form">
         <div class="frow"><label>از</label><input id="exFrom" type="number" value="0" min="0" step="1">
           <label>تا</label><input id="exTo" type="number" value="10" min="1" step="1">
           <span class="dim">ثانیه</span></div>
-        <div class="frow btns">
-          <button class="btn sm ghost" data-range="0,10">۱۰ ثانیه</button>
-          <button class="btn sm ghost" data-range="0,30">۳۰ ثانیه</button>
-          <button class="btn sm ghost" id="exAll">کل پروژه</button></div>
+        <div class="exitems">
+          <button class="exitem" data-range="0,10">۱۰ ثانیه</button>
+          <button class="exitem" data-range="0,30">۳۰ ثانیه</button>
+          <button class="exitem" id="exAll">کل پروژه</button></div>
         <div class="frow"><label>پریست خروجی</label><select id="exPreset"></select></div>
         <div class="frow"><label>کیفیت</label><select id="exRes"></select>
           <label>فریم</label><select id="exFps">
@@ -330,13 +343,11 @@
         <p class="note">در هر دو حالت، زمان مراحل و سنجه‌های در دسترس گوشی خودکار و فقط محلی ثبت می‌شود؛ ۲۰ گزارش آخر نگه داشته می‌شود. گزارش شامل کد، شعر یا فایل رسانه نیست. دمای باتری با دمای CPU فرق دارد و سرعت بیشتر لزوماً فشار کمتر نیست.</p>
         <button id="exLogs" class="btn sm ghost">ذخیره / ارسال گزارش‌های خروجی</button>
         <div id="exLogMsg" class="msg" aria-live="polite"></div>
-        <div class="frow btns">
+        <div class="frow btns exactions">
           <button id="exGo" class="btn primary">شروع خروجی</button>
           <button id="exSnap" class="btn sm ghost" title="عکس PNG از فریم فعلی">📷 عکس فریم</button>
           <button id="exCancel" class="btn sm hidden">لغو</button>
           <button id="exShare" class="btn sm hidden">اشتراک‌گذاری</button></div>
-        <div id="exBar" class="bar2 hidden"><i></i></div>
-        <div id="exMsg" class="msg"></div>
       </div>
       <!-- فشرده‌سازی و تبدیل با FFmpeg (src/ui/ffmpegpanel.js) -->
       <div id="ffRoot" class="ffm"></div>

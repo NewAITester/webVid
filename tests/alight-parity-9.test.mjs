@@ -155,6 +155,21 @@ console.log('── فهرست پروژه‌های آلایت (فاز ۴۷) ─�
   ok(main.includes('openDrawer') && main.includes("$('#libNew').onclick"), 'سیم‌کشی کشو و نوار پایین خانه هست');
 }
 
+console.log('── پیش‌نمایش خروجی آلایت (فاز ۴۸) ──');
+{
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok(html.includes('id="exPrev"') && html.includes('id="exSeek"') && html.includes('id="exPrevPlay"'), 'پیش‌نمایش خروجی با پخش و سیک‌بار هست');
+  ok(html.includes('id="exClose"'), 'دکمهٔ بستن در سربرگ خروجی هست');
+  ok(html.includes('class="exitems"') && html.includes('class="exitem"'), 'لیست بازه‌ها افقی و کارتی است');
+  ok(html.includes('exactions'), 'دکمه‌های ذخیره/اشتراک‌گذاری به پایین پنل چسبیده‌اند');
+  ok(!html.includes('id="exBar" class="bar2 hidden"><i></i></div>\n        <div id="exMsg" class="msg"></div>\n      </div>\n      <!-- فشرده‌سازی'), 'نوار پیشرفت و پیام فقط یک بار زیر پیش‌نمایش‌اند');
+  ok(css.includes('.exprev') && css.includes('.exitems'), 'استایل پیش‌نمایش و لیست بازه‌ها هست');
+  ok(main.includes('function syncExPrev') && main.includes('drawImage(canvas'), 'کپی فریم صحنه به پیش‌نمایش خروجی هست');
+  ok(main.includes("$('#exSeek').oninput") && main.includes("$('#exClose').onclick"), 'سیم‌کشی سیک‌بار و بستن خروجی هست');
+}
+
 console.log('── دوربین روی شعر (فاز ۲۲) ──');
 {
   const r = readFileSync(new URL('../src/engine/renderer.js', import.meta.url), 'utf8');

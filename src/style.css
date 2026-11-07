@@ -149,6 +149,19 @@ body{
 .sbtn2 b{font-size:9px;font-weight:normal}
 .sbtn2:active{background:#1A1E27}
 
+/* ── پیش‌نمایش خروجی آلایت (فاز ۴۸) ─────────────────────────
+   پیش‌نمایش ویدیو بالا، نوار پخش و سیک‌بار زیرش، لیست بازه‌ها
+   افقی، دکمه‌های ذخیره/اشتراک‌گذاری چسبیده به پایین پنل. */
+.exprev{margin-bottom:10px}
+.exprev canvas{width:100%;aspect-ratio:16/9;display:block;background:#000;border-radius:10px;border:1px solid var(--line)}
+.exprevbar{display:flex;align-items:center;gap:6px;padding:8px 0 2px}
+.exprevbar .rng{flex:1}
+.exprevbar .time{width:52px;text-align:center}
+.exitems{display:flex;gap:7px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none}
+.exitem{flex:0 0 auto;padding:8px 14px;border-radius:10px;background:var(--surf2);
+  border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;cursor:pointer}
+.exactions{position:sticky;bottom:0;background:#0D0F14;padding:10px 0 4px}
+
 /* ── دکمه‌ها ─────────────────────────────────────────────── */
 .btn{background:#1A1E27;color:var(--ink);border:1px solid var(--line);border-radius:10px;
   padding:9px 15px;font-size:13.5px;cursor:pointer;font-family:inherit;transition:.15s;
