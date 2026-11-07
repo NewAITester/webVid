@@ -188,6 +188,20 @@ console.log('── سیستم حرکت مشترک (فاز ۵۴) ──');
   ok(css.includes('@media (prefers-reduced-motion:reduce)'), 'حالت کاهش حرکت هست');
 }
 
+console.log('── تایپوگرافی آلایت (فاز ۵۲) ──');
+{
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const base = new URL('../', import.meta.url);
+  ok(existsSync(new URL('public/fonts/IRANSansX-Regular.ttf', base)), 'فونت Regular در public/fonts هست');
+  ok(existsSync(new URL('public/fonts/IRANSansX-Medium.ttf', base)), 'فونت Medium در public/fonts هست');
+  ok(css.includes('font-family:"IRANSansX";src:url("../fonts/IRANSansX-Regular.ttf")') && css.includes('font-weight:400'), 'وزن ۴۰۰ (Regular) تعریف شده');
+  ok(css.includes('font-family:"IRANSansX";src:url("../fonts/IRANSansX-Medium.ttf")') && css.includes('font-weight:500'), 'وزن ۵۰۰ (Medium) تعریف شده');
+  ok(css.includes('font-family:"IRANSansX",system-ui,sans-serif'), 'بدنه با خانوادهٔ IRANSansX (رگولار) است، نه Bold');
+  ok(css.includes('button,input,select,textarea{font-weight:500}'), 'کنترل‌ها مدیوم‌اند');
+  ok(css.includes('.brand{font-family:"IRANSansX";font-weight:900'), 'تیترها بلک (۹۰۰) هستند');
+  ok(css.includes('font-family:"IRANSansX Bold"') && css.includes('font-family:"IRANSansX Black"'), 'نام‌های قدیمی برای فونت‌های بوم (JS) مانده‌اند');
+}
+
 console.log('── پیش‌نمایش خروجی آلایت (فاز ۴۸) ──');
 {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -223,7 +237,7 @@ console.log('── عکس فریم (فاز ۲۶) ──');
 }
 
 console.log('── نشانگرهای تایم‌لاین (فاز ۱۸) ──');
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 {
   const tl = readFileSync(new URL('../src/ui/timeline.js', import.meta.url), 'utf8');
   const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
