@@ -463,18 +463,23 @@ export class MotionPanel {
     if (L.type === 'draw') {
       const pad = h('details', { class: 'grp', open: true },
         h('summary', {}, '✏ خط با دست — روی پد زیر بکشید'));
+      const strokeCount = () => (L.data?.strokes?.length || (L.data?.mode === 'free' && L.data.points?.length ? 1 : 0));
+      const pointCount = () => (L.data?.strokes?.flat().length || L.data?.points?.length || 0);
       const info = h('p', { class: 'note' },
-        L.data?.mode === 'free' && L.data.points?.length
-          ? `خط ضبط‌شده با ${faN(L.data.points.length)} نقطه — الان همین خط کشیده می‌شود`
+        L.data?.mode === 'free' && pointCount()
+          ? `${faN(strokeCount())} ضربه، ${faN(pointCount())} نقطه — الان همین خط کشیده می‌شود`
           : 'هنوز خطی ضبط نشده؛ الان خط موجی کشیده می‌شود');
       const cv = h('canvas', { width: 320, height: 140, style: 'width:100%;height:140px;background:#11141c;border:1px dashed #3a4258;border-radius:10px;touch-action:none;cursor:crosshair' });
       const drawPad = () => {
         const x = cv.getContext('2d');
         x.clearRect(0, 0, 320, 140);
-        const pts = L.data?.points || [];
-        if (pts.length > 1) {
-          const w = L.props.w?.v || 800, hh = L.props.h?.v || 200;
-          x.strokeStyle = '#E4142A'; x.lineWidth = 2; x.beginPath();
+        const w = L.props.w?.v || 800, hh = L.props.h?.v || 200;
+        const strokes = L.data?.strokes?.length ? L.data.strokes
+          : (L.data?.mode === 'free' && L.data.points?.length ? [L.data.points] : []);
+        x.strokeStyle = '#E4142A'; x.lineWidth = 2;
+        for (const pts of strokes) {
+          if (pts.length < 2) continue;
+          x.beginPath();
           pts.forEach(([px, py], i) => {
             const cx = (px / w + 0.5) * 320, cy = (py / hh + 0.5) * 140;
             i ? x.lineTo(cx, cy) : x.moveTo(cx, cy);
@@ -505,17 +510,35 @@ export class MotionPanel {
       const finish = () => {
         if (!cur) return;
         if (cur.length > 1 && cur.length <= 500) {
-          L.data = { mode: 'free', points: cur };
-          info.textContent = `خط ضبط‌شده با ${faN(cur.length)} نقطه — الان همین خط کشیده می‌شود`;
-          this.host.draw(); this.host.save();
+          const strokes = [...(L.data?.strokes || (L.data?.mode === 'free' && L.data.points?.length ? [L.data.points] : []))];
+          if (strokes.length >= 20) {
+            info.textContent = 'حداکثر ۲۰ ضربه — اول یک ضربه را حذف کنید';
+          } else {
+            strokes.push(cur);
+            L.data = { mode: 'free', strokes, points: strokes.flat() };
+            info.textContent = `${faN(strokes.length)} ضربه، ${faN(strokes.flat().length)} نقطه — الان همین خط کشیده می‌شود`;
+            this.host.draw(); this.host.save();
+          }
         }
-        cur = null;
+        cur = null; drawPad();
       };
       cv.addEventListener('pointerup', finish);
       cv.addEventListener('pointercancel', () => { cur = null; drawPad(); });
       pad.append(info, cv,
         h('button', { class: 'btn sm ghost', onclick: () => {
-          L.data = { mode: 'wave', points: [] };
+          const strokes = [...(L.data?.strokes || [])];
+          strokes.pop();
+          if (strokes.length) {
+            L.data = { mode: 'free', strokes, points: strokes.flat() };
+            info.textContent = `${faN(strokes.length)} ضربه، ${faN(strokes.flat().length)} نقطه — الان همین خط کشیده می‌شود`;
+          } else {
+            L.data = { mode: 'wave', points: [], strokes: [] };
+            info.textContent = 'آخرین ضربه حذف شد؛ الان خط موجی کشیده می‌شود';
+          }
+          this.host.draw(); this.host.save(); drawPad();
+        } }, '↩ حذف آخرین ضربه'),
+        h('button', { class: 'btn sm ghost', onclick: () => {
+          L.data = { mode: 'wave', points: [], strokes: [] };
           info.textContent = 'برگشت به خط موجی';
           this.host.draw(); this.host.save(); drawPad();
         } }, '↩ برگشت به خط موجی'));

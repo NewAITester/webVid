@@ -60,6 +60,24 @@ import { drawPathPoints } from '../src/motion/render.js';
   ok(trimmed.length === 2, 'برش مسیر روی خط ضبط‌شده هم کار می‌کند');
 }
 
+console.log('── خط با دست چندضربه‌ای (فاز ۴۲) ──');
+import { drawPathStrokes } from '../src/motion/render.js';
+{
+  const P = { w: 800, h: 200, trimS: 0, trimE: 100 };
+  const multi = { mode: 'free', strokes: [[[0, 0], [10, 5], [20, 0]], [[30, 0], [40, 5], [50, 0], [60, 5]]], points: [[0, 0], [10, 5], [20, 0], [30, 0], [40, 5], [50, 0], [60, 5]] };
+  const ss = drawPathStrokes(P, multi);
+  ok(ss.length === 2 && ss[0].length === 3 && ss[1].length === 4, 'دو ضربه جدا با طول درست برمی‌گردند');
+  ok(drawPathPoints(P, multi).length === 7, 'drawPathPoints قدیمی با دادهٔ چندضربه‌ای مسطح برمی‌گرداند');
+  const trimmed = drawPathStrokes({ ...P, trimS: 50, trimE: 100 }, multi);
+  ok(trimmed[0].length === 2 && trimmed[1].length === 2, 'برش مسیر روی هر ضربه جدا اعمال می‌شود');
+  const legacy = drawPathStrokes(P, { mode: 'free', points: [[0, 0], [10, 5], [20, 0]] });
+  ok(legacy.length === 1 && legacy[0].length === 3, 'دادهٔ قدیمی تک‌ضربه‌ای یک ضربه می‌دهد');
+  const wave = drawPathStrokes(P, { mode: 'wave' });
+  ok(wave.length === 1 && wave[0].length === 61, 'حالت موجی هنوز یک ضربهٔ ۶۱ نقطه‌ای است');
+  const mp = readFileSync(new URL('../src/ui/motionpanel.js', import.meta.url), 'utf8');
+  ok(mp.includes('حذف آخرین ضربه') && mp.includes('strokes'), 'پنل خط آزاد دکمهٔ حذف آخرین ضربه و دادهٔ strokes دارد');
+}
+
 
 console.log('── دوربین روی شعر (فاز ۲۲) ──');
 {

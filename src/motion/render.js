@@ -427,6 +427,7 @@ export function scribblePoints(w, h, P) {
 /* فاز ۱۹ — نقاطی که لایهٔ خط آزاد باید بکشد: موج قطعی، یا خطی که کاربر
    با دست روی پد ضبط کرده (L.data.mode === 'free'). خالص و قابل تست. */
 export function drawPathPoints(P, data) {
+  // سازگار با چندضربه‌ای: points مسطح‌شدهٔ همهٔ ضربه‌هاست
   const all = data?.mode === 'free' && Array.isArray(data.points) && data.points.length > 1
     ? data.points.map(([x, y]) => [x, y])
     : scribblePoints(P.w, P.h, P);
@@ -434,15 +435,32 @@ export function drawPathPoints(P, data) {
   const b = Math.max(a + 1, Math.ceil(all.length * Math.max(0, Math.min(1, (P.trimE ?? 100) / 100))));
   return all.slice(a, b);
 }
+/* فاز ۴۲ — خط با دست چندضربه‌ای: هر ضربه یک مسیر جدا است.
+   دادهٔ قدیمی (یک points) همچنان به‌عنوان یک ضربه خوانده می‌شود. */
+export function drawPathStrokes(P, data) {
+  const trim = pts => {
+    const a = Math.floor(pts.length * Math.max(0, Math.min(1, (P.trimS || 0) / 100)));
+    const b = Math.max(a + 1, Math.ceil(pts.length * Math.max(0, Math.min(1, (P.trimE ?? 100) / 100))));
+    return pts.slice(a, b);
+  };
+  if (Array.isArray(data?.strokes) && data.strokes.length) {
+    return data.strokes
+      .filter(s => Array.isArray(s) && s.length > 1)
+      .map(s => trim(s.map(([x, y]) => [x, y])));
+  }
+  return [drawPathPoints(P, data)];
+}
 function drawScribble(ctx, st) {
   const { L, P } = st;
-  const pts = drawPathPoints(P, L.data);
+  const strokes = drawPathStrokes(P, L.data);
   ctx.save();
   ctx.strokeStyle = P.stroke; ctx.lineWidth = Math.max(1, P.strokeW);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.beginPath();
-  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-  ctx.stroke();
+  for (const pts of strokes) {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
