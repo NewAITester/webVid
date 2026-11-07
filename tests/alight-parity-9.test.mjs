@@ -140,6 +140,21 @@ console.log('── نوار انتخاب آلایت (فاز ۴۶) ──');
   ok(main.includes("clipAct('split')"), 'تقسیم از همان split موجود استفاده می‌کند');
 }
 
+console.log('── فهرست پروژه‌های آلایت (فاز ۴۷) ──');
+{
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok(html.includes('id="menuBtn"'), 'دکمهٔ همبرگر در نوار بالای خانه هست');
+  ok(html.includes('id="drawer"') && html.includes('id="drawerBg"'), 'کشوی کناری و پس‌زمینه‌اش هست');
+  ok(html.includes('id="libNav"') && html.includes('id="libNew"'), 'نوار پایین خانه با دکمهٔ ＋ وسط هست');
+  ok(!html.includes('id="newProj" class="btn primary wide big"'), 'دکمهٔ بزرگ قدیمی پروژهٔ جدید برداشته شد');
+  ok(css.includes('grid-template-columns:repeat(auto-fill,minmax(160px,1fr))'), 'کارت‌های پروژه شبکه‌ای‌اند');
+  ok(css.includes('.pcard.add') && css.includes('#drawer.open'), 'کاشی ＋ و کشوی بازشونده استایل دارند');
+  ok(main.includes('function openNewSheet') && main.includes("add.id = 'newProj'"), 'کاشی ＋ همان id قدیمی را دارد و شیت ساخت را باز می‌کند');
+  ok(main.includes('openDrawer') && main.includes("$('#libNew').onclick"), 'سیم‌کشی کشو و نوار پایین خانه هست');
+}
+
 console.log('── دوربین روی شعر (فاز ۲۲) ──');
 {
   const r = readFileSync(new URL('../src/engine/renderer.js', import.meta.url), 'utf8');

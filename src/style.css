@@ -44,23 +44,43 @@ body{
 .hero{margin-bottom:16px}
 .hero h1{font-family:"IRANSansX Black";font-size:21px;letter-spacing:-.4px}
 .hero .sub{font-size:12px;color:var(--dim);margin-top:3px}
-.cards{display:flex;flex-direction:column;gap:9px;margin-bottom:18px}
-.pcard{display:flex;align-items:center;gap:12px;padding:12px;background:var(--surf);
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:18px}
+.pcard{position:relative;display:flex;flex-direction:column;padding:0;overflow:hidden;background:var(--surf);
   border:1px solid var(--line);border-radius:14px;cursor:pointer;transition:.15s}
 .pcard:hover{border-color:#333B4A;background:var(--surf2)}
 .pcard:active{transform:scale(.99)}
 .pcard.on{border-color:var(--red)}
-.pcard .pi{width:48px;height:48px;border-radius:11px;display:grid;place-items:center;
-  font-family:"IRANSansX Black";font-size:17px;flex:0 0 auto;
+.pcard .pi{width:100%;height:88px;display:grid;place-items:center;
+  font-family:"IRANSansX Black";font-size:26px;flex:0 0 auto;
   background:linear-gradient(145deg,#1C2029,#0D1014);color:var(--red);
-  border:1px solid var(--line)}
+  border-bottom:1px solid var(--line)}
 .pcard.on .pi{background:linear-gradient(145deg,#2A121A,#14080C);border-color:#4A1420}
-.pcard .pm{flex:1;min-width:0}
+.pcard .pm{padding:10px 12px 12px;width:100%}
 .pcard .pt{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pcard .ps{font-size:11.5px;color:var(--dim);margin-top:3px}
-.pcard .px{background:none;border:none;color:var(--dim);font-size:19px;cursor:pointer;
-  padding:6px 8px;border-radius:8px;flex:0 0 auto}
+.pcard .px{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);border:none;color:var(--dim);
+  font-size:17px;cursor:pointer;padding:1px 9px;border-radius:8px}
 .pcard .px:hover{color:#FF6B6B;background:#1A1016}
+.pcard.add{align-items:center;justify-content:center;gap:6px;min-height:142px;
+  border-style:dashed;color:var(--ink2)}
+.pcard.add .addplus{font-size:34px;line-height:1;color:var(--red)}
+.pcard.add .addlbl{font-size:12.5px}
+/* کشوی کناری آلایت (NavigationView) + نوار پایین خانه */
+#drawerBg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70}
+#drawer{position:fixed;top:0;bottom:0;right:0;width:min(280px,82vw);background:var(--surf);z-index:71;
+  transform:translateX(102%);transition:transform .2s;padding:14px;display:flex;flex-direction:column;gap:4px;
+  border-inline-start:1px solid var(--line)}
+#drawer.open{transform:none}
+#drawer .dhead{display:flex;align-items:center;gap:8px;font-size:15px;margin-bottom:10px}
+#drawer .dhead span{color:var(--red)}
+.ditem{display:flex;align-items:center;gap:10px;background:none;border:none;color:var(--ink);
+  font-family:inherit;font-size:13.5px;text-align:right;padding:12px 10px;border-radius:10px;cursor:pointer}
+.ditem:hover{background:var(--surf2)}
+.ditem b{font-weight:normal}
+#libNav .mid{flex:0 0 auto;width:54px;height:54px;min-width:54px;border-radius:50%;
+  background:var(--red);color:#fff;font-size:26px;margin-top:-26px;border:3px solid var(--bg);
+  display:grid;place-items:center;align-self:center;padding:0}
+#libNav .mid i{font-size:26px}
 
 /* ── صحنه ────────────────────────────────────────────────── */
 .stagewrap{flex:1 1 auto;position:relative;display:grid;place-items:center;

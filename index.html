@@ -46,6 +46,8 @@
 <!-- ══════════ صفحهٔ ۱: کتابخانه ══════════ -->
 <section class="screen" data-screen="library">
   <header class="top">
+    <button id="menuBtn" class="icon" title="منو">☰</button>
+    <div class="spacer"></div>
     <div class="brand">لیریک<span>استودیو</span></div>
     <div class="spacer"></div>
     <button id="learnBtn" class="icon" title="آموزش">؟</button>
@@ -57,13 +59,27 @@
       <p id="projCount" class="sub"></p>
     </div>
     <div id="projList" class="cards"></div>
-    <button id="newProj" class="btn primary wide big">+ پروژهٔ جدید</button>
     <button id="importBtn" class="btn ghost wide">📥 وارد کردن پروژه یا کد</button>
     <button id="codeProj" class="btn ghost wide" title="کد بوم JS/HTML، پایتون MoviePy/Manim یا موشن‌اسکریپت — می‌شود چند فایل را با هم انتخاب کرد">🧩 پروژه از کد ویدیو (JS/HTML/Python)</button>
     <input id="codeFile" type="file" multiple accept=".js,.mjs,.html,.htm,.py,.txt,text/plain,text/html,text/javascript" class="hidden">
     <button id="reelTpl" class="btn ghost wide" title="ویدیوی نمونهٔ ۱۵ ثانیه‌ای که با قطعه‌های موشن همین برنامه ساخته شده">🎬 نمونهٔ آماده: شوریل موشن ۱۵ ثانیه</button>
   </div>
+
+  <nav class="nav" id="libNav">
+    <button id="libHome" class="on" title="پروژه‌ها"><i>▦</i><b>پروژه‌ها</b></button>
+    <button id="libNew" class="mid" title="پروژهٔ جدید"><i>＋</i></button>
+    <button id="libLearn" title="آموزش"><i>؟</i><b>آموزش</b></button>
+  </nav>
 </section>
+
+<div id="drawerBg" class="hidden"></div>
+<aside id="drawer" aria-label="منو">
+  <div class="dhead"><b>لیریک<span>استودیو</span></b><div class="spacer"></div><button id="drawerX" class="icon sm" title="بستن">✕</button></div>
+  <button id="drLearn" class="ditem">؟<b>آموزش</b></button>
+  <button id="drImport" class="ditem">📥<b>وارد کردن پروژه یا کد</b></button>
+  <button id="drCode" class="ditem">🧩<b>پروژه از کد ویدیو</b></button>
+  <button id="drReel" class="ditem">🎬<b>نمونهٔ آماده: شوریل موشن</b></button>
+</aside>
 
 <!-- ══════════ صفحهٔ ۲: ویرایشگر ══════════ -->
 <section class="screen" data-screen="editor">

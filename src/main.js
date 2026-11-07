@@ -1149,6 +1149,12 @@ async function buildProjList() {
   const when = p => +p.createdAt || +String(p.id || '').replace(/\D/g, '').slice(0, 13) || 0;
   list.sort((a, b) => when(b) - when(a));
   host.innerHTML = '';
+  // کاشی ＋ اول شبکه (مثل آلایت) — همان id قدیمی تا تست‌های e2e سالم بمانند
+  const add = document.createElement('div');
+  add.className = 'pcard add'; add.id = 'newProj';
+  add.innerHTML = `<div class="addplus">＋</div><div class="addlbl">پروژهٔ جدید</div>`;
+  add.onclick = () => openNewSheet();
+  host.append(add);
   const mk = (id, title, sub, removable, badge) => {
     const el = document.createElement('div');
     el.className = 'pcard' + (id === app.projectId ? ' on' : '');
@@ -1292,11 +1298,23 @@ function buildAspectPicker() {
     host.append(el);
   }
 }
-$('#newProj').onclick = () => {
+function openNewSheet() {
   newAspect = '16:9'; buildAspectPicker();
   $('#nwName').value = ''; $('#nwArtist').value = ''; $('#nwTg').value = '';
   $('#sheet').classList.remove('hidden');
-};
+}
+const openDrawer = () => { $('#drawer').classList.add('open'); $('#drawerBg').classList.remove('hidden'); };
+const closeDrawer = () => { $('#drawer').classList.remove('open'); $('#drawerBg').classList.add('hidden'); };
+$('#menuBtn').onclick = openDrawer;
+$('#drawerX').onclick = closeDrawer;
+$('#drawerBg').onclick = closeDrawer;
+$('#drLearn').onclick = () => { closeDrawer(); $('#learnBtn').click(); };
+$('#drImport').onclick = () => { closeDrawer(); $('#importBtn').click(); };
+$('#drCode').onclick = () => { closeDrawer(); $('#codeProj').click(); };
+$('#drReel').onclick = () => { closeDrawer(); $('#reelTpl').click(); };
+$('#libNew').onclick = () => openNewSheet();
+$('#libLearn').onclick = () => screen('learn');
+$('#libHome').onclick = () => document.querySelector('[data-screen="library"] .scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
 $('#sheetX').onclick = () => $('#sheet').classList.add('hidden');
 $('#sheet').onclick = e => { if (e.target.id === 'sheet') $('#sheet').classList.add('hidden'); };
 
