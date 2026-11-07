@@ -178,6 +178,16 @@ console.log('── کامپوننت‌ها و بازخورد فشردن (فاز
   ok(css.includes('button{touch-action:manipulation}'), 'تأخیر ضربهٔ دکمه‌ها حذف شده');
 }
 
+console.log('── سیستم حرکت مشترک (فاز ۵۴) ──');
+{
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const bare = css.match(/transition:[^;{]*\.(?:15|12|2|4|18)s/g) || [];
+  ok(bare.length === 0, 'هیچ transition با مدت دستی نمانده' + (bare.length ? ': ' + bare.join(',') : ''));
+  ok(css.includes('transition:transform var(--dur-slow) var(--ease-emph)'), 'کشو با منحنی emphasized باز می‌شود');
+  ok(css.includes('transition:height var(--dur-med) var(--ease-emph)'), 'شیت با منحنی emphasized باز می‌شود');
+  ok(css.includes('@media (prefers-reduced-motion:reduce)'), 'حالت کاهش حرکت هست');
+}
+
 console.log('── پیش‌نمایش خروجی آلایت (فاز ۴۸) ──');
 {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');

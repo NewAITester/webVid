@@ -44,7 +44,7 @@ body{
 .spacer{flex:1}
 .icon{width:34px;height:34px;flex:0 0 auto;display:grid;place-items:center;
   background:var(--surf2);border:1px solid var(--line);border-radius:10px;color:var(--ink2);
-  font-size:16px;cursor:pointer;font-family:inherit;transition:.15s}
+  font-size:16px;cursor:pointer;font-family:inherit;transition:var(--dur-med) var(--ease-out)}
 .icon:hover{color:var(--ink);background:var(--surf3)}
 .icon:active{transform:scale(.94)}
 .pill{font-size:11px;color:var(--dim);background:var(--surf);border:1px solid var(--line);
@@ -59,7 +59,7 @@ body{
 .hero .sub{font-size:12px;color:var(--dim);margin-top:3px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:18px}
 .pcard{position:relative;display:flex;flex-direction:column;padding:0;overflow:hidden;background:var(--surf);
-  border:1px solid var(--line);border-radius:14px;cursor:pointer;transition:.15s}
+  border:1px solid var(--line);border-radius:14px;cursor:pointer;transition:var(--dur-med) var(--ease-out)}
 .pcard:hover{border-color:var(--line2);background:var(--surf2)}
 .pcard:active{transform:scale(.99)}
 .pcard.on{border-color:var(--red)}
@@ -81,7 +81,7 @@ body{
 /* کشوی کناری آلایت (NavigationView) + نوار پایین خانه */
 #drawerBg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70}
 #drawer{position:fixed;top:0;bottom:0;right:0;width:min(280px,82vw);background:var(--surf);z-index:71;
-  transform:translateX(102%);transition:transform .2s;padding:14px;display:flex;flex-direction:column;gap:4px;
+  transform:translateX(102%);transition:transform var(--dur-slow) var(--ease-emph);padding:14px;display:flex;flex-direction:column;gap:4px;
   border-inline-start:1px solid var(--line)}
 #drawer.open{transform:none}
 #drawer .dhead{display:flex;align-items:center;gap:8px;font-size:15px;margin-bottom:10px}
@@ -103,7 +103,7 @@ body{
 #stage.editing.dragging{cursor:grabbing}
 .loading,.overlay{position:absolute;inset:0;display:flex;flex-direction:column;gap:12px;
   align-items:center;justify-content:center;background:#000;color:var(--dim);font-size:13px}
-.loading{transition:opacity .4s}
+.loading{transition:opacity var(--dur-slow) var(--ease-out)}
 .loading.gone{opacity:0;pointer-events:none}
 .overlay{background:rgba(0,0,0,.92)}
 .bigicon{font-size:38px;color:var(--red);opacity:.6}
@@ -177,7 +177,7 @@ body{
 
 /* ── دکمه‌ها ─────────────────────────────────────────────── */
 .btn{background:var(--surf3);color:var(--ink);border:1px solid var(--line);border-radius:10px;
-  padding:9px 15px;font-size:13.5px;cursor:pointer;font-family:inherit;transition:.15s;
+  padding:9px 15px;font-size:13.5px;cursor:pointer;font-family:inherit;transition:var(--dur-med) var(--ease-out);
   white-space:nowrap}
 .btn:hover{background:var(--surf3)}
 .btn:active{transform:scale(.97)}
@@ -204,7 +204,7 @@ body{
 .panes{position:absolute;left:0;right:0;bottom:0;z-index:20;height:0;overflow:hidden;
   background:var(--bg);border-top:1px solid var(--line);border-radius:16px 16px 0 0;
   box-shadow:0 -10px 30px rgba(0,0,0,.55);-webkit-overflow-scrolling:touch;
-  transition:height .2s cubic-bezier(.3,.8,.4,1)}
+  transition:height var(--dur-med) var(--ease-emph)}
 .panes.open{height:var(--paneH,300px);overflow-y:auto}
 .pane{display:none;padding:4px 14px 18px}
 .pane.on{display:block}
@@ -244,7 +244,7 @@ input[type=file]::file-selector-button{background:var(--surf3);color:var(--ink);
   cursor:pointer;border:3px solid var(--bg)}
 .bar2{height:5px;background:var(--surf3);border-radius:99px;overflow:hidden}
 .bar2 i{display:block;height:100%;width:0;background:var(--red);border-radius:99px;
-  transition:width .2s}
+  transition:width var(--dur-med) var(--ease-out)}
 
 /* ── فهرست بخش‌ها ────────────────────────────────────────── */
 .list{display:flex;flex-direction:column;gap:6px}
@@ -260,7 +260,7 @@ input[type=file]::file-selector-button{background:var(--surf3);color:var(--ink);
 .strip{display:flex;gap:7px;overflow-x:auto;padding-bottom:9px;margin-bottom:11px;
   scrollbar-width:thin}
 .card{flex:0 0 auto;width:112px;border:1px solid var(--line);border-radius:10px;
-  overflow:hidden;background:var(--surf);cursor:pointer;transition:.15s}
+  overflow:hidden;background:var(--surf);cursor:pointer;transition:var(--dur-med) var(--ease-out)}
 .card.on{border-color:var(--red)}
 .card canvas{display:block;width:100%;height:auto;background:#000}
 .card .lb{padding:5px 7px 6px;font-size:10.5px;color:var(--dim);white-space:nowrap;
@@ -274,7 +274,7 @@ input[type=file]::file-selector-button{background:var(--surf3);color:var(--ink);
 
 .nav button{flex:1;background:none;border:none;color:var(--dim);cursor:pointer;
   padding:9px 2px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;
-  font-family:inherit;transition:.15s;border-top:2px solid transparent}
+  font-family:inherit;transition:var(--dur-med) var(--ease-out);border-top:2px solid transparent}
 .nav button i{font-style:normal;font-size:16px;line-height:1}
 .nav button b{font-size:10.5px;font-weight:normal}
 .nav button.on{color:var(--red);border-top-color:var(--red)}
@@ -291,7 +291,7 @@ input[type=file]::file-selector-button{background:var(--surf3);color:var(--ink);
 .shead.sm{font-size:12px;color:var(--dim);margin:6px 0 2px;font-family:inherit}
 .aspects{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .asp{display:flex;align-items:center;gap:10px;padding:10px 11px;background:var(--surf2);
-  border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:.15s}
+  border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:var(--dur-med) var(--ease-out)}
 .asp.on{border-color:var(--red);background:var(--selbg)}
 .asp .box{background:var(--line2);border-radius:3px;flex:0 0 auto}
 .asp.on .box{background:var(--red)}
@@ -312,7 +312,7 @@ textarea.code.bad{border-color:var(--err)}
 .lcat{font-size:11px;color:var(--dim);margin:0 0 -7px}
 .lgrid{display:flex;flex-direction:column;gap:7px}
 .litem{display:flex;align-items:center;gap:11px;padding:11px 12px;background:var(--surf);
-  border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:.15s}
+  border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:var(--dur-med) var(--ease-out)}
 .litem:hover{border-color:var(--line2);background:var(--surf2)}
 .litem .n{width:24px;height:24px;border-radius:7px;background:var(--field);color:var(--red);
   display:grid;place-items:center;font-size:11px;flex:0 0 auto}
@@ -361,7 +361,7 @@ textarea.lyr:focus{border-color:var(--line2)}
 /* ── گالری افکت ──────────────────────────────────────────── */
 .fxgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
 .fxcard{border:1px solid var(--line);border-radius:11px;overflow:hidden;
-  background:var(--surf);cursor:pointer;transition:.15s}
+  background:var(--surf);cursor:pointer;transition:var(--dur-med) var(--ease-out)}
 .fxcard:hover{border-color:var(--line2)}
 .fxcard.on{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset}
 .fxcard canvas{display:block;width:100%;height:auto;background:#000}
@@ -373,7 +373,7 @@ textarea.lyr:focus{border-color:var(--line2)}
 .chip.on{background:var(--red);border-color:var(--red);color:#fff}
 
 /* ── تایم‌لاین ───────────────────────────────────────────── */
-.tlwrap{flex:0 0 auto;background:var(--bg);border-top:1px solid var(--line);
+.tlwrap{flex:0 0 auto;background:var(--bg);border-top:1px solid var(--line);overscroll-behavior:contain;
   border-bottom:1px solid var(--line);position:relative}
 #tl{display:block;width:100%;height:181px;touch-action:none}  /* ارتفاع دقیق را timeline.js از TL_HEIGHT می‌گذارد */
 .icon.sm{width:30px;height:30px;font-size:13px;border-radius:9px}
@@ -386,7 +386,7 @@ textarea.lyr:focus{border-color:var(--line2)}
 .cinfo span{font-size:10.5px;color:var(--dim);direction:ltr}
 .cb{background:none;border:none;color:var(--ink2);cursor:pointer;font-family:inherit;
   display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 9px;
-  border-radius:9px;flex:0 0 auto;transition:.15s}
+  border-radius:9px;flex:0 0 auto;transition:var(--dur-med) var(--ease-out)}
 .cb i{font-style:normal;font-size:15px;line-height:1}
 .cb b{font-size:10px;font-weight:normal}
 .cb:hover{background:var(--surf3);color:var(--ink)}
@@ -412,7 +412,7 @@ textarea.lyr:focus{border-color:var(--line2)}
 .addbar{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:6px;margin-bottom:12px}
 .addb{display:flex;flex-direction:column;align-items:center;gap:4px;padding:9px 4px;
   background:var(--surf2);border:1px solid var(--line);border-radius:11px;color:var(--ink2);
-  cursor:pointer;font-family:inherit;transition:.15s}
+  cursor:pointer;font-family:inherit;transition:var(--dur-med) var(--ease-out)}
 .addb i{font-style:normal;font-size:17px;line-height:1;color:var(--ink)}
 .addb b{font-size:10.5px;font-weight:normal}
 .addb:hover{border-color:var(--line2);color:var(--ink)}
@@ -442,7 +442,7 @@ textarea.lyr:focus{border-color:var(--line2)}
 .kgrp{display:flex;align-items:center;gap:4px}
 .kft{font-size:11px;color:var(--dim)}
 .kbtn{background:none;border:1px solid var(--line);color:var(--dim3);cursor:pointer;
-  width:26px;height:26px;border-radius:7px;font-size:12px;flex:0 0 auto;line-height:1;transition:.12s}
+  width:26px;height:26px;border-radius:7px;font-size:12px;flex:0 0 auto;line-height:1;transition:var(--dur-fast) var(--ease-out)}
 .kbtn.has{color:var(--ink2)}
 .kbtn.on{color:var(--warn);border-color:var(--warn);background:rgba(232,179,57,.1)}
 .kbtn.big{width:34px;height:30px;font-size:15px}
@@ -563,13 +563,13 @@ canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto
    نوار تب بالا (شکل/رسانه/صدا/المان/قالب) + ستون سریع سمت راست
    (خط آزاد/برداری/متن) و دکمهٔ بستن پایین آن. */
 .addsheet{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:flex;
-  align-items:flex-end;justify-content:flex-start;opacity:0;transition:opacity .15s}
+  align-items:flex-end;justify-content:flex-start;opacity:0;transition:opacity var(--dur-med) var(--ease-out)}
 .addsheet.in{opacity:1}
 .addsheet .sbody{width:min(430px,calc(100vw - 24px));height:min(420px,62dvh);
   display:grid;grid-template-columns:58px 1fr;
   background:var(--surf);border:1px solid var(--line);border-radius:14px;
   margin:0 12px calc(132px + env(safe-area-inset-bottom));overflow:hidden;
-  transform:translateY(12px);transition:transform .18s;box-shadow:0 10px 34px rgba(0,0,0,.6)}
+  transform:translateY(12px);transition:transform var(--dur-med) var(--ease-emph);box-shadow:0 10px 34px rgba(0,0,0,.6)}
 .addsheet.in .sbody{transform:none}
 .addmain{display:flex;flex-direction:column;min-width:0;min-height:0}
 .addmain .txt{margin:8px 10px 0}
@@ -597,7 +597,7 @@ canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto
 .sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px}
 .stile{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 5px 8px;
   background:var(--surf2);border:1px solid var(--line);border-radius:12px;color:var(--ink2);
-  cursor:pointer;font-family:inherit;text-align:center;transition:.12s}
+  cursor:pointer;font-family:inherit;text-align:center;transition:var(--dur-fast) var(--ease-out)}
 .stile:hover{border-color:var(--line2);color:var(--ink)}
 .stile:active{transform:scale(.96)}
 .stile i{font-style:normal;font-size:22px;line-height:1.3;color:var(--ink)}
@@ -709,7 +709,7 @@ button{touch-action:manipulation}
 .fold{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
 .fold>summary{cursor:pointer;list-style:none;padding:10px 12px;font-size:13px;display:flex;gap:6px;align-items:center}
 .fold>summary::-webkit-details-marker{display:none}
-.fold>summary::before{content:'‹';display:inline-block;transition:transform .15s;color:var(--dim)}
+.fold>summary::before{content:'‹';display:inline-block;transition:transform var(--dur-med) var(--ease-out);color:var(--dim)}
 .fold[open]>summary::before{transform:rotate(-90deg)}
 .fold>summary .dim{font-size:11px}
 .fold>*:not(summary){margin:0 10px 10px}
@@ -790,7 +790,7 @@ textarea.code.script{min-height:46vh;direction:ltr;text-align:left;font-size:12.
 /* پرسش «با این کد چطور ساخته شود؟» */
 .impcard .imx{gap:7px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
 .impcard .imxr{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border:1px solid var(--line);
-  border-radius:11px;cursor:pointer;background:var(--surf2);transition:.15s}
+  border-radius:11px;cursor:pointer;background:var(--surf2);transition:var(--dur-med) var(--ease-out)}
 .impcard .imxr.on{border-color:var(--red);background:var(--selbg)}
 .impcard .imxr input{margin-top:3px;accent-color:var(--red)}
 .impcard .imxr b{display:block;font-size:12.5px;font-weight:normal;color:var(--ink)}
@@ -837,3 +837,8 @@ body.kb .panes.open{flex:1 1 0 !important;min-height:0}
 body.kb .sheet, body.kb .addsheet{top:var(--vvt,0px);bottom:auto;height:var(--vvh,100dvh)}
 body.kb .sheet .sheetbox, body.kb .addsheet .sbody{max-height:calc(var(--vvh,100dvh) - 12px)}
 body.kb textarea.code{min-height:120px}
+
+/* ── فاز ۵۴: کاهش حرکت ── */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:.01ms !important;animation-duration:.01ms !important}
+}
