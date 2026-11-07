@@ -79,6 +79,24 @@ import { drawPathStrokes } from '../src/motion/render.js';
 }
 
 
+console.log('── چیدمان ویرایشگر آلایت (فاز ۴۳) ──');
+{
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const mp = readFileSync(new URL('../src/ui/motionpanel.js', import.meta.url), 'utf8');
+  ok(html.includes('id="addFab"'), 'دکمهٔ ＋ شناور پایین-راست هست');
+  ok(html.includes('id="prevFrame"') && html.includes('id="nextFrame"'), 'دکمه‌های فریم قبل/بعد هست');
+  ok(html.includes('id="railGrid"') && html.includes('id="railSolo"'), 'ریل پیش‌نمایش (شبکه/تک‌نمایش) هست');
+  ok(html.includes('id="topExport"'), 'دکمهٔ خروجی در نوار بالای ویرایشگر هست');
+  const tr = html.indexOf('id="undoBtn"'), pl = html.indexOf('id="play"'), tf = html.indexOf('id="tlBeat"');
+  ok(tr !== -1 && pl !== -1 && tr < pl && pl < tf, 'ترتیب نوار پخش آلایتی است: واگرد/ازنو، پخش، بعد ضرب/نشانگر');
+  ok(!html.includes('id="addBtn"'), 'دکمهٔ افزودن قدیمی از نوار پخش برداشته شد (جایش ＋ شناور است)');
+  ok(main.includes("addFab") && main.includes("prevFrame") && main.includes("railSolo") && main.includes("topExport"), 'سیم‌کشی دکمه‌های جدید در main.js هست');
+  ok(mp.includes('toggleSoloSelected'), 'تک‌نمایش لایهٔ انتخاب‌شده از ریل قابل صدا زدن است');
+  ok(css.includes('.addfab') && css.includes('.rail') && css.includes('.stagegrid'), 'استایل ＋ شناور، ریل و شبکهٔ راهنما هست');
+}
+
 console.log('── دوربین روی شعر (فاز ۲۲) ──');
 {
   const r = readFileSync(new URL('../src/engine/renderer.js', import.meta.url), 'utf8');

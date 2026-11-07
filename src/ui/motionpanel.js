@@ -61,6 +61,13 @@ export class MotionPanel {
   /* ── کمک‌ها ─────────────────────────────────────────────── */
   get layers() { return this.host.getLayers(); }
   get sel() { const id = this.host.selectedId(); return this.layers.find(L => L.id === id) || null; }
+  /** تک‌نمایش لایهٔ انتخاب‌شده (ریل پیش‌نمایش آلایت) — true یعنی تک‌نمایش روشن شد */
+  toggleSoloSelected() {
+    const L = this.sel;
+    if (!L) return false;
+    if (this._soloId === L.id) { restoreSolo(this.layers, this._soloPrev); this._soloId = null; this._soloPrev = null; this.changed(true); return false; }
+    this._soloPrev = applySolo(this.layers, L.id); this._soloId = L.id; this.changed(true); return true;
+  }
   lt(L) { return Math.max(0, Math.min(L.t1 - L.t0, this.host.getTime() - L.t0)); }
   changed(rebuild = false) {
     this.host.save();

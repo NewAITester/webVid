@@ -2282,7 +2282,18 @@ const MP = new MotionPanel($('#mpRoot'), {
       fn: () => $('#txtAdd').click() },
   ],
 });
-$('#addBtn').onclick = () => MP.openAdd();
+$('#addFab').onclick = () => MP.openAdd();
+$('#topExport').onclick = () => go('export');
+$('#prevFrame').onclick = () => { pause(); seek(app.t - 1 / 60); };
+$('#nextFrame').onclick = () => { pause(); seek(app.t + 1 / 60); };
+$('#railGrid').onclick = () => {
+  const g = $('#stageGrid'), on = g.classList.toggle('hidden');
+  $('#railGrid').classList.toggle('on', !on);
+};
+$('#railSolo').onclick = () => {
+  const on = MP.toggleSoloSelected?.();
+  $('#railSolo').classList.toggle('on', !!on);
+};
 document.querySelectorAll('[data-goto]').forEach(a => { a.onclick = e => { e.preventDefault(); go(a.dataset.goto); }; });
 MP.attachGizmo();
 

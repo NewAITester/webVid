@@ -72,12 +72,21 @@
     <div class="etitle" id="nowName">—</div>
     <div class="spacer"></div>
     <div id="fps" class="pill">—</div>
+    <button id="topExport" class="icon" title="خروجی و اشتراک‌گذاری">↗</button>
     <button id="gearBtn" class="icon" title="تنظیمات پروژه">⚙</button>
   </header>
 
   <div class="ebody">
   <main class="stagewrap" id="stagewrap">
     <canvas id="stage"></canvas>
+    <div id="stageGrid" class="stagegrid hidden" aria-hidden="true"></div>
+    <div class="rail" id="rail">
+      <button id="railGrid" class="icon sm" title="شبکهٔ راهنما روی پیش‌نمایش">▦</button>
+      <button id="railSolo" class="icon sm" title="تک‌نمایش لایهٔ انتخاب‌شده">◎</button>
+      <button id="zIn" class="icon sm" title="بزرگ‌نمایی">+</button>
+      <button id="zOut" class="icon sm" title="کوچک‌نمایی">−</button>
+      <button id="zFit" class="icon sm" title="جا دادن">⤢</button>
+    </div>
     <div id="loading" class="loading">در حال آماده‌سازی…</div>
     <div id="noAudio" class="overlay hidden">
       <div class="bigicon">♪</div>
@@ -90,21 +99,19 @@
   </main>
 
   <section class="transport">
-    <button id="play" class="btn primary round">▶</button>
-    <div class="tbox"><span class="time" id="tc">۰۰:۰۰٫۰۰</span><span class="tsep">/</span><span class="time dim" id="tdur">—</span></div>
-    <div class="tgroup">
+    <div class="tgroup playbar">
       <button id="undoBtn" class="icon sm" title="واگرد (Ctrl+Z)" disabled>↶</button>
       <button id="redoBtn" class="icon sm" title="ازنو (Ctrl+Shift+Z)" disabled>↷</button>
+      <button id="prevFrame" class="icon sm" title="یک فریم عقب">⏮</button>
+      <button id="play" class="icon sm" title="پخش / توقف">▶</button>
+      <button id="nextFrame" class="icon sm" title="یک فریم جلو">⏭</button>
     </div>
+    <div class="tbox"><span class="time" id="tc">۰۰:۰۰٫۰۰</span><span class="tsep">/</span><span class="time dim" id="tdur">—</span></div>
     <div class="spacer"></div>
     <div class="tgroup">
-      <button id="zOut" class="icon sm" title="کوچک‌نمایی">−</button>
-      <button id="zFit" class="icon sm" title="جا دادن">⤢</button>
-      <button id="zIn" class="icon sm" title="بزرگ‌نمایی">+</button>
       <button id="tlBeat" class="btn sm primary" title="چسبیدن تایم‌لاین به ضرب‌های آهنگ">♪ ضرب</button>
       <button id="tlMark" class="btn sm ghost" title="نشانگر در زمان فعلی (دوباره بزن تا حذف شود)">⚑ نشانگر</button>
     </div>
-    <button id="addBtn" class="btn sm primary addtop" title="افزودن متن، عکس، شکل، افکت آماده یا بخش شعر">＋ افزودن</button>
     <!-- این دو حالا از داخل برگهٔ «＋ افزودن» صدا زده می‌شوند -->
     <button id="secAdd" class="hidden" tabindex="-1">بخش تازه</button>
     <button id="txtAdd" class="hidden" tabindex="-1">زیرنویس ساده</button>
@@ -314,6 +321,8 @@
   </div>
 
   </div>
+
+  <button id="addFab" class="addfab" title="افزودن لایه: متن، عکس، شکل، افکت">＋</button>
 
   <nav class="nav" id="nav">
     <button data-go="lyrics" class="on" title="نوشتن و هم‌زمان کردن شعر"><i>✎</i><b>شعر</b></button>
