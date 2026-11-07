@@ -97,6 +97,20 @@ console.log('── چیدمان ویرایشگر آلایت (فاز ۴۳) ─�
   ok(css.includes('.addfab') && css.includes('.rail') && css.includes('.stagegrid'), 'استایل ＋ شناور، ریل و شبکهٔ راهنما هست');
 }
 
+console.log('── شیت پایینی و سربرگ تایم‌لاین (فاز ۴۴) ──');
+{
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const tl = readFileSync(new URL('../src/ui/timeline.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok(css.includes('.panes{position:absolute;left:0;right:0;bottom:0'), 'پنل شیت پایینی است: روی تایم‌لاین می‌آید، چیدمان را تکان نمی‌دهد');
+  ok(css.includes('border-radius:16px 16px 0 0'), 'شیت گوشه‌های گرد بالایی دارد');
+  ok(main.includes('max(200, h * 0.45)'), 'ارتفاع شیت برای حالت روکار به‌روز شد');
+  ok(tl.includes('const HDR = 70'), 'عرض سربرگ ردیف‌ها ۷۰ است (مثل آلایت)');
+  ok(tl.includes('_headerTap') && tl.includes('سربرگ ردیف'), 'ضربه روی سربرگ ردیف، آن ردیف را انتخاب می‌کند');
+  ok(tl.includes("fillRect(W - HDR, 0, HDR, H)"), 'سربرگ ستون ثابت سمت راست تایم‌لاین است');
+  ok(!tl.includes('برچسب ردیف‌ها — تا معلوم باشد هر ردیف چیست'), 'برچسب‌های شناور قدیمی برداشته شدند');
+}
+
 console.log('── دوربین روی شعر (فاز ۲۲) ──');
 {
   const r = readFileSync(new URL('../src/engine/renderer.js', import.meta.url), 'utf8');

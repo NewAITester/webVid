@@ -22,6 +22,7 @@ import { allKeyTimes, moveKeyTime, trimStart, trimEnd } from '../motion/ops.js';
  */
 
 const RULER = 15, SECT_H = 34, LYR_H = 22, TXT_H = 22, MOT_H = 38, WAVE_H = 30, GAP = 4;
+const HDR = 70;                  // عرض سربرگ ردیف‌ها (آلایت: timeline_header_width_expanded = 70dp)
 export const TL_HEIGHT = RULER + SECT_H + LYR_H + TXT_H + MOT_H + WAVE_H + GAP * 5;
 const LANES = 3;                 // لایه‌های حرکتی در سه باریکه کنار هم
 
@@ -98,6 +99,8 @@ export class Timeline {
 
     cv.addEventListener('pointerdown', e => {
       const { x, y } = pt(e);
+      // ضربه روی سربرگ ردیف (ستون ثابت سمت راست) = انتخاب آن ردیف
+      if (x >= this.cssW - HDR) { this._headerTap(y); e.preventDefault(); return; }
       const secs = this.host.getSections() || [];
       const R = this.rows();
       cv.setPointerCapture?.(e.pointerId);
@@ -353,6 +356,27 @@ export class Timeline {
 
   select(i) { this.choose(i >= 0 ? { kind: 'section', i } : null); }
 
+  /** ضربه روی سربرگ یک ردیف: همان چیزی را انتخاب می‌کند که زیر
+      نشانگرِ زمان در آن ردیف است (مثل سربرگ ردیف در آلایت). */
+  _headerTap(y) {
+    const R = this.rows();
+    const t = this.host.getTime();
+    if (y >= R.sec[0] && y <= R.sec[1]) {
+      const secs = this.host.getSections() || [];
+      const i = secs.findIndex(s => t >= s[0] && t < s[1]);
+      this.choose(i >= 0 ? { kind: 'section', i } : null);
+    } else if (y >= R.lyr[0] && y <= R.lyr[1]) {
+      const sg = this.host.getSong();
+      const L = sg?.lines.find(l => t >= l.words[0].t && t <= sg.lineOut(l.i));
+      this.choose(L ? { kind: 'line', i: L.i } : null);
+    } else if (y >= R.txt[0] && y <= R.txt[1]) {
+      const L = (this.host.getTexts() || []).find(z => t >= z.t0 && t <= z.t1);
+      this.choose(L ? { kind: 'text', id: L.id } : null);
+    } else if (y >= R.mot[0] && y <= R.mot[1]) {
+      this._tapAt(this.cssW / 2, y);
+    }
+  }
+
   choose(p) {
     this.pick = p;
     this.sel = p?.kind === 'section' ? p.i : -1;
@@ -397,16 +421,28 @@ export class Timeline {
       ctx.strokeStyle = '#FFD84D'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(gx, RULER); ctx.lineTo(gx, H); ctx.stroke(); ctx.setLineDash([]);
     }
-    // برچسب ردیف‌ها — تا معلوم باشد هر ردیف چیست
+    // سربرگ ردیف‌ها — ستون ثابت سمت راست (آلایت: سربرگ ۷۰dp هر ردیف
+    // تایم‌لاین)؛ روی کلیپ‌ها می‌نشیند و با لغزش تایم‌لاین تکان نمی‌خورد.
+    // ردیف لایه‌ها نام لایهٔ انتخاب‌شده را هم نشان می‌دهد.
+    const sel = this._pickedLayer();
+    ctx.fillStyle = '#0B0D12';
+    ctx.fillRect(W - HDR, 0, HDR, H);
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(W - HDR + 0.5, 0); ctx.lineTo(W - HDR + 0.5, H); ctx.stroke();
     ctx.font = '8.5px "IRANSansX Bold", system-ui, sans-serif';
     ctx.textBaseline = 'middle'; ctx.direction = 'rtl'; ctx.textAlign = 'right';
     for (const [k, lb] of [['sec', 'بخش‌ها'], ['lyr', 'شعر'], ['txt', 'زیرنویس'], ['mot', 'لایه‌ها'], ['wav', 'صدا']]) {
-      const [a] = R[k];
-      const tw = ctx.measureText(lb).width + 8;
-      ctx.fillStyle = 'rgba(11,13,18,0.82)';
-      roundRect(ctx, W - tw - 2, a + 1, tw, 12, 4); ctx.fill();
-      ctx.fillStyle = '#6E7790';
-      ctx.fillText(lb, W - 6, a + 7);
+      const [a, b] = R[k];
+      ctx.fillStyle = '#141824';
+      ctx.fillRect(W - HDR + 1, a + 1, HDR - 2, b - a - 2);
+      ctx.fillStyle = '#8A93A6';
+      ctx.fillText(lb, W - 6, a + (b - a) / 2 - (k === 'mot' && sel ? 6 : 0));
+      if (k === 'mot' && sel) {
+        ctx.fillStyle = '#E8E4FF';
+        ctx.font = '8px "IRANSansX Bold", system-ui, sans-serif';
+        ctx.fillText((sel.name || sel.type || '').slice(0, 12), W - 6, a + (b - a) / 2 + 7);
+        ctx.font = '8.5px "IRANSansX Bold", system-ui, sans-serif';
+      }
     }
 
     // نشانگر ثابت وسط

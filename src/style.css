@@ -128,18 +128,18 @@ body{
 .hidden{display:none !important}
 
 /* ── پنل‌ها ──────────────────────────────────────────────────
-   پنل روی تایم‌لاین می‌آید و چیدمان را جابه‌جا نمی‌کند. قبلاً
-   چون در جریان عادی بود، باز شدنش صحنه را فشرده می‌کرد ولی بوم
-   اندازهٔ قبلی‌اش را نگه می‌داشت و روی نوار پخش می‌افتاد. */
+   شیت پایینی به سبک آلایت (elementFragmentHolder): روی تایم‌لاین
+   می‌لغزد و چیدمان را جابه‌جا نمی‌کند؛ صحنه اندازه‌اش را نگه
+   می‌دارد و نوار پخش و ناوبری پایین همیشه دیده می‌شوند. */
 .ebody{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;
   position:relative;overflow:hidden}
-/* پنل در جریان چیدمان می‌ماند تا تایم‌لاین را نپوشاند، ولی
-   ارتفاعش ثابت است (از جاوااسکریپت تنظیم می‌شود) تا عوض کردن تب
-   هیچ‌چیز را تکان ندهد. محتوا داخل خودش می‌لغزد. */
-.panes{flex:0 0 0px;overflow:hidden;background:#0D0F14;
-  border-top:1px solid var(--line);-webkit-overflow-scrolling:touch;
-  transition:flex-basis .2s cubic-bezier(.3,.8,.4,1)}
-.panes.open{flex-basis:var(--paneH,300px);overflow-y:auto}
+/* ارتفاع شیت از جاوااسکریپت (--paneH) تنظیم می‌شود؛ عوض کردن تب
+   هیچ‌چیز را تکان نمی‌دهد. محتوا داخل خودش می‌لغزد. */
+.panes{position:absolute;left:0;right:0;bottom:0;z-index:20;height:0;overflow:hidden;
+  background:#0D0F14;border-top:1px solid var(--line);border-radius:16px 16px 0 0;
+  box-shadow:0 -10px 30px rgba(0,0,0,.55);-webkit-overflow-scrolling:touch;
+  transition:height .2s cubic-bezier(.3,.8,.4,1)}
+.panes.open{height:var(--paneH,300px);overflow-y:auto}
 .pane{display:none;padding:4px 14px 18px}
 .pane.on{display:block}
 .grab{display:flex;justify-content:center;padding:7px 0 3px;cursor:pointer}

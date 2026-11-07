@@ -2452,9 +2452,8 @@ function sizePane() {
   const body = document.querySelector('.ebody');
   if (!body) return;
   const h = body.clientHeight;
-  const chrome = 60 + TL_HEIGHT + 2 + 58;
-  const avail = Math.max(120, h - chrome - 110);   // ۱۱۰ = کمینهٔ صحنه
-  const paneH = Math.round(Math.min(avail, Math.max(180, h * 0.40)));
+  const avail = Math.max(160, h - 180);   // شیت روی تایم‌لاین می‌آید، صحنه له نمی‌شود
+  const paneH = Math.round(Math.min(avail, Math.max(200, h * 0.45)));
   document.documentElement.style.setProperty('--paneH', paneH + 'px');
 }
 
