@@ -7,6 +7,7 @@ import { parseColor } from './tracks.js';
 import { EASINGS } from './easing.js';
 import { noise } from './expr.js';
 import * as M from './mat.js';
+import { WebGLRenderer } from './webgl.js';
 
 /**
  * کشیدن لایه‌های حرکتی روی بوم
@@ -543,6 +544,21 @@ export class MotionRenderer {
   constructor() {
     this._c = {};
     this.errors = new Map();        // id لایه ← پیام خطای کد
+    this._gl = null;                // رندر WebGL (فاز ۴۰) — تنبل، با fallback
+    this._glTried = false;
+  }
+
+  /** تنظیم رنگی با WebGL اگر در دسترس باشد، وگرنه null (fallback به Canvas) */
+  _glAdjust(cur, opts) {
+    try {
+      if (typeof document === 'undefined') return null;
+      if (!this._glTried) {
+        this._glTried = true;
+        this._gl = new WebGLRenderer(document.createElement('canvas'));
+      }
+      if (!this._gl || !this._gl.supported) return null;
+      return this._gl.adjust(cur, opts);
+    } catch { return null; }
   }
 
   _scratch(name, w, h) {
@@ -1297,6 +1313,8 @@ export class MotionRenderer {
           break;
         }
         case 'hueShift': {
+          const glOut = this._glAdjust(cur, { hue: v.deg });
+          if (glOut) { d.drawImage(glOut, 0, 0); break; }
           d.filter = `hue-rotate(${v.deg}deg)`; d.drawImage(cur, 0, 0); d.filter = 'none';
           break;
         }
