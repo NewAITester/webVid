@@ -170,6 +170,14 @@ console.log('── توکن‌های دیزاین‌سیستم آلایت (فا
   ok(stray.length === 0, 'رنگ دستی بیرون از توکن‌ها نمانده' + (stray.length ? ': ' + [...new Set(stray)].join(',') : ''));
 }
 
+console.log('── کامپوننت‌ها و بازخورد فشردن (فاز ۵۳) ──');
+{
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  ok(css.includes('.chip:active') && css.includes('.fxcard:active') && css.includes('.seg button:active'), 'بازخورد فشردن مشترک روی کامپوننت‌ها هست');
+  ok(css.includes('.scrub:active::-webkit-slider-thumb') && css.includes('scale(1.3)'), 'شستی اسلایدر موقع لمس بزرگ می‌شود');
+  ok(css.includes('button{touch-action:manipulation}'), 'تأخیر ضربهٔ دکمه‌ها حذف شده');
+}
+
 console.log('── پیش‌نمایش خروجی آلایت (فاز ۴۸) ──');
 {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');

@@ -665,6 +665,20 @@ canvas.bez{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:0 auto
 #imSheet textarea.code{min-height:150px;margin:8px 0}
 #lkFont .frow{margin-bottom:6px}
 
+/* ── فاز ۵۳: بازخورد فشردن (مثل آلایت، همهٔ کنترل‌ها زیر انگشت جمع می‌شوند) ── */
+.chip:active,.tbtn:active,.asp:active,.litem:active,.card:active,.fxcard:active,
+.seg button:active,.subnav button:active,.tabs.big .tab:active,.echip:active,
+.kchip:active,.achip:active,.ebtn:active,.gw:active,.sbtn:active,.impcard .imxr:active
+  {transform:scale(.96)}
+.scrub::-webkit-slider-thumb,.rng::-webkit-slider-thumb
+  {transition:transform var(--dur-fast) var(--ease-out)}
+.scrub:active::-webkit-slider-thumb,.rng:active::-webkit-slider-thumb{transform:scale(1.3)}
+.scrub::-moz-range-thumb,.rng::-moz-range-thumb
+  {transition:transform var(--dur-fast) var(--ease-out)}
+.scrub:active::-moz-range-thumb,.rng:active::-moz-range-thumb{transform:scale(1.3)}
+.addfab{transition:transform var(--dur-fast) var(--ease-out),box-shadow var(--dur-med) var(--ease-out)}
+button{touch-action:manipulation}
+
 /* ── سازندهٔ سبک موشن‌گرافی ── */
 .mxtop{display:flex;gap:10px;align-items:flex-start;margin:6px 0 10px}
 .mxprev{flex:0 0 auto;width:96px;pointer-events:none}
