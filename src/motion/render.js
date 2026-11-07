@@ -3230,6 +3230,111 @@ export class MotionRenderer {
           d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
           break;
         }
+        case 'lunarEclipse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), r = Math.min(b.w, b.h) * 0.3;
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.6;
+          d.fillStyle = 'rgba(20,20,30,0.85)'; d.beginPath(); d.arc(b.cx, b.cy, r, 0, Math.PI * 2); d.fill();
+          d.strokeStyle = 'rgba(220,230,255,0.9)'; d.lineWidth = Math.max(1, 3 * px);
+          d.beginPath(); d.arc(b.cx, b.cy, r + 4 * px, 0, Math.PI * 2); d.stroke();
+          d.restore();
+          break;
+        }
+        case 'auroraPulse': {
+          d.drawImage(cur, 0, 0);
+          const b = box(), pulse = 0.5 + 0.5 * Math.sin(time * 2);
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.35 * pulse; d.globalCompositeOperation = 'overlay';
+          const g = d.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+          g.addColorStop(0, 'rgba(0,255,180,0.7)'); g.addColorStop(0.5, 'rgba(0,120,255,0.5)'); g.addColorStop(1, 'rgba(120,0,255,0.6)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'galaxyWave': {
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * 8 * px;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(180,120,255,0.7)'); g.addColorStop(1, 'rgba(180,120,255,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'nebulaWave': {
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * 8 * px;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5;
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,120,220,0.7)'); g.addColorStop(1, 'rgba(255,120,220,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'quasarWave': {
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * 8 * px;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.5 * (0.5 + 0.5 * Math.sin(time * 3));
+          const g = d.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, Math.hypot(b.w, b.h) / 2);
+          g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'supernovaWave': {
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * 8 * px;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          const u = (time % 2) / 2, n = Math.round(v.amt);
+          d.save(); d.fillStyle = 'rgba(255,240,180,0.9)';
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2;
+            const r = u * Math.min(b.w, b.h) * 0.45;
+            d.globalAlpha = (1 - u) * 0.8;
+            d.beginPath(); d.arc(b.cx + Math.cos(a) * r, b.cy + Math.sin(a) * r, 3 * px, 0, Math.PI * 2); d.fill();
+          }
+          d.restore();
+          break;
+        }
+        case 'cosmosGlow': {
+          d.drawImage(cur, 0, 0);
+          const b = box();
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.35; d.globalCompositeOperation = 'overlay';
+          const g = d.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+          g.addColorStop(0, 'rgba(120,0,255,0.7)'); g.addColorStop(0.5, 'rgba(0,120,255,0.5)'); g.addColorStop(1, 'rgba(255,0,180,0.6)');
+          d.fillStyle = g; d.fillRect(b.x, b.y, b.w, b.h); d.restore();
+          break;
+        }
+        case 'eclipseWave': {
+          const b = box(), step = Math.max(4, Math.round(4 * px));
+          d.save(); d.beginPath(); d.rect(b.x, b.y, b.w, b.h); d.clip();
+          for (let y = b.y; y < b.y + b.h; y += step) {
+            const off = Math.sin(y * 0.05 + time * 3) * 8 * px;
+            d.drawImage(cur, b.x, y, b.w, step, b.x + off, y, b.w, step);
+          }
+          d.restore();
+          const r = Math.min(b.w, b.h) * 0.3;
+          d.save(); d.globalAlpha = (v.amt / 100) * 0.6;
+          d.fillStyle = 'rgba(0,0,0,0.7)'; d.beginPath(); d.arc(b.cx, b.cy, r, 0, Math.PI * 2); d.fill();
+          d.strokeStyle = 'rgba(255,220,120,0.9)'; d.lineWidth = Math.max(1, 3 * px);
+          d.beginPath(); d.arc(b.cx, b.cy, r + 4 * px, 0, Math.PI * 2); d.stroke();
+          d.restore();
+          break;
+        }
         default: d.drawImage(cur, 0, 0);
       }
       cur = dst;
