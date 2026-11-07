@@ -187,3 +187,75 @@ export class WebGLRenderer {
     }
   }
 }
+
+/**
+ * مرجع پیکسلی خالص JS برای شیدر فرگمنت — فاز ۴۱
+ * همان ریاضی شیدر (چرخش فام YIQ، روشنایی/کنتراست، اشباع، وینیت،
+ * تاری جعبه‌ای ۳×۳) را روی Uint8ClampedArray اجرا می‌کند تا نتیجهٔ
+ * شیدر روی بوم واقعی با یک مرجع قطعی قابل‌سنجش باشد.
+ * data درجا تغییر می‌کند و همان آرایه برگردانده می‌شود.
+ */
+export function applyColorAdjustPixels(data, w, h, opts = {}) {
+  const hue = ((opts.hue || 0) * Math.PI) / 180;
+  const brightness = opts.brightness || 0;
+  const contrast = opts.contrast == null ? 1 : opts.contrast;
+  const saturation = opts.saturation == null ? 1 : opts.saturation;
+  const vignette = opts.vignette || 0;
+  const blur = opts.blur || 0;
+  const cosA = Math.cos(hue), sinA = Math.sin(hue);
+  const smoothstep = (a, b, x) => {
+    const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  // تاری جعبه‌ای ۳×۳ با فاصلهٔ blur پیکسل (مانند نمونه‌گیری شیدر)
+  let src = data;
+  if (blur > 0.5) {
+    const r = Math.max(1, Math.round(blur));
+    const tmp = new Uint8ClampedArray(data);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let sr = 0, sg = 0, sb = 0, sa = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = Math.max(0, Math.min(w - 1, x + dx * r));
+        const yy = Math.max(0, Math.min(h - 1, y + dy * r));
+        const o = (yy * w + xx) * 4;
+        sr += tmp[o]; sg += tmp[o + 1]; sb += tmp[o + 2]; sa += tmp[o + 3];
+      }
+      const o = (y * w + x) * 4;
+      data[o] = sr / 9; data[o + 1] = sg / 9; data[o + 2] = sb / 9; data[o + 3] = sa / 9;
+    }
+    src = data;
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const o = (y * w + x) * 4;
+    let r = src[o] / 255, g = src[o + 1] / 255, b = src[o + 2] / 255;
+    // چرخش فام YIQ — همان شیدر
+    const Y = 0.299 * r + 0.587 * g + 0.114 * b;
+    const I = 0.596 * r - 0.274 * g - 0.322 * b;
+    const Q = 0.211 * r - 0.523 * g + 0.312 * b;
+    const I2 = I * cosA - Q * sinA;
+    const Q2 = I * sinA + Q * cosA;
+    r = Y + 0.956 * I2 + 0.621 * Q2;
+    g = Y - 0.272 * I2 - 0.647 * Q2;
+    b = Y - 1.106 * I2 + 1.703 * Q2;
+    // روشنایی و کنتراست — همان شیدر
+    r = Math.max(0, Math.min(1, (r - 0.5) * contrast + 0.5 + brightness));
+    g = Math.max(0, Math.min(1, (g - 0.5) * contrast + 0.5 + brightness));
+    b = Math.max(0, Math.min(1, (b - 0.5) * contrast + 0.5 + brightness));
+    // اشباع — همان شیدر
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+    r = luma + (r - luma) * saturation;
+    g = luma + (g - luma) * saturation;
+    b = luma + (b - luma) * saturation;
+    // وینیت — همان شیدر
+    if (vignette > 0.001) {
+      const u = (x + 0.5) / w, v = (y + 0.5) / h;
+      const d = Math.hypot(u - 0.5, v - 0.5);
+      const f = 1 - vignette * smoothstep(0.3, 0.9, d);
+      r *= f; g *= f; b *= f;
+    }
+    data[o] = Math.round(Math.max(0, Math.min(1, r)) * 255);
+    data[o + 1] = Math.round(Math.max(0, Math.min(1, g)) * 255);
+    data[o + 2] = Math.round(Math.max(0, Math.min(1, b)) * 255);
+  }
+  return data;
+}

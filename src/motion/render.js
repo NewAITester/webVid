@@ -809,11 +809,17 @@ export class MotionRenderer {
           d.filter = `drop-shadow(${v.dx * px}px ${v.dy * px}px ${Math.max(0, v.r * px)}px ${rgbaStr(v.color, v.op / 100)})`;
           d.drawImage(cur, 0, 0); d.filter = 'none';
           break;
-        case 'color':
+        case 'color': {
+          // شیدر WebGL خاکستری/سپیا/نگاتیو ندارد — فقط وقتی همه صفرند از GL استفاده می‌شود
+          if (!v.gray && !v.sepia && !v.invert) {
+            const glOut = this._glAdjust(cur, { hue: v.hue, brightness: (v.bright - 100) / 100, contrast: v.contrast / 100, saturation: v.sat / 100 });
+            if (glOut) { d.drawImage(glOut, 0, 0); break; }
+          }
           d.filter = `brightness(${v.bright}%) contrast(${v.contrast}%) saturate(${v.sat}%) `
             + `hue-rotate(${v.hue}deg) grayscale(${v.gray}%) sepia(${v.sepia}%) invert(${v.invert}%)`;
           d.drawImage(cur, 0, 0); d.filter = 'none';
           break;
+        }
         case 'tint':
           d.drawImage(cur, 0, 0);
           d.globalCompositeOperation = 'source-atop';
@@ -2338,6 +2344,8 @@ export class MotionRenderer {
           break;
         }
         case 'huePulse': {
+          const glOut = this._glAdjust(cur, { hue: Math.sin(time * 2) * v.amt });
+          if (glOut) { d.drawImage(glOut, 0, 0); break; }
           d.filter = `hue-rotate(${Math.sin(time * 2) * v.amt}deg)`; d.drawImage(cur, 0, 0); d.filter = 'none';
           break;
         }
@@ -2435,6 +2443,8 @@ export class MotionRenderer {
         }
         case 'focusPull': {
           const blur = (0.5 + 0.5 * Math.sin(time * 1.5)) * v.amt * px * 0.2;
+          const glOut = this._glAdjust(cur, { blur: Math.max(0, blur) });
+          if (glOut) { d.drawImage(glOut, 0, 0); break; }
           d.filter = `blur(${Math.max(0, blur)}px)`; d.drawImage(cur, 0, 0); d.filter = 'none';
           break;
         }
