@@ -35,8 +35,8 @@ export class Editor {
     $('#railGrid').onclick = () => { $('#stageGrid').classList.toggle('hidden'); $('#railGrid').classList.toggle('on'); };
     $('#railSolo').onclick = () => {
       const l = this.store.selection; if (!l) return;
-      this._solo = this._solo === l.id ? null : l.id;
-      $('#railSolo').classList.toggle('on', !!this._solo);
+      this.store.toggleSolo(l.id);
+      $('#railSolo').classList.toggle('on', this.store.soloId === l.id);
       this.draw();
     };
     $('#zIn').onclick = () => this._zoom(1.2);
@@ -45,7 +45,11 @@ export class Editor {
     $('#selClose').onclick = () => this.store.select(null);
     $('#selDel').onclick = () => { if (this.store.selection) this.store.removeLayer(this.store.selection.id); };
     $('#selGroup').onclick = () => this._groupSelected();
+    $('#selUngroup').onclick = () => this._ungroupSelected();
+    $('#selCopy').onclick = () => { if (this.store.selection) this.store.copyLayer(this.store.selection.id); };
     $('#selMask').onclick = () => this._cycleMask();
+    $('#pasteLayerBtn').onclick = () => this.store.pasteLayer();
+    window.addEventListener('keydown', e => this._onKey(e));
     $('#sbTrimA').onclick = () => this._trimSel('a');
     $('#sbSplit').onclick = () => this._splitSel();
     $('#sbTrimB').onclick = () => this._trimSel('b');
@@ -100,7 +104,8 @@ export class Editor {
     $('#dur').textContent = fmtTime(p.duration);
     $('#scrub').max = p.duration; $('#scrub').value = this.store.time;
     $('#play').textContent = this.store.playing ? '❚❚' : '▶';
-    $('#undoBtn').disabled = false; $('#redoBtn').disabled = false;
+    $('#undoBtn').disabled = !this.store.canUndo;
+    $('#redoBtn').disabled = !this.store.canRedo;
     const l = this.store.selection;
     $('#selBar').classList.toggle('hidden', !l);
     $('#selBottom').classList.toggle('hidden', !l || !!this.store.pane);
@@ -109,6 +114,8 @@ export class Editor {
       $('#selName').textContent = l.name;
       $('#selMask').classList.toggle('on', l.clip !== 'none');
       $('#selMask b').textContent = l.clip === 'belowInv' ? 'ماسک معکوس' : 'ماسک';
+      $('#selUngroup').classList.toggle('hidden', l.type !== 'group');
+      $('#selGroup').classList.toggle('hidden', l.type === 'group');
     }
     if (this.store.pane === 'inspector') renderInspector(this.store);
     if (this.store.pane === 'layers') this._renderLayers();
@@ -166,8 +173,8 @@ export class Editor {
     const ctx = this.canvas.getContext('2d');
     ctx.setTransform(this._dpr || 1, 0, 0, this._dpr || 1, 0, 0);
     let proj = p;
-    if (this._solo) {
-      proj = { ...p, layers: p.layers.filter(l => l.id === this._solo || l.type === 'camera') };
+    if (this.store.soloId) {
+      proj = { ...p, layers: p.layers.filter(l => l.id === this.store.soloId || l.type === 'camera') };
     }
     renderFrame(ctx, proj, this.store.time, this.media);
   }
@@ -284,6 +291,28 @@ export class Editor {
     this.project.layers.push(g);
     this.store.selId = g.id;
     this.store.emit();
+  }
+  _ungroupSelected() {
+    const l = this.store.selection; if (!l) return;
+    this.store.ungroupLayer(l.id);
+  }
+
+  /** میانبرها: Space پخش، Delete حذف، Ctrl+Z/Y واگرد/ازنو، Ctrl+C/V کپی/چسباندن، Ctrl+D کپی لایه. */
+  _onKey(e) {
+    if ($('#app').dataset.screen !== 'editor') return;
+    const tag = (e.target?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
+    const mod = e.ctrlKey || e.metaKey;
+    const l = this.store.selection;
+    if (e.code === 'Space') { e.preventDefault(); this.toggle(); }
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && l) { this.store.removeLayer(l.id); }
+    else if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); this.store.undo(); }
+    else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); this.store.redo(); }
+    else if (mod && e.key.toLowerCase() === 'c' && l) { this.store.copyLayer(l.id); }
+    else if (mod && e.key.toLowerCase() === 'v') { this.store.pasteLayer(); }
+    else if (mod && e.key.toLowerCase() === 'd' && l) { e.preventDefault(); this.store.duplicateLayer(l.id); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); this.seek(this.store.time - 1 / 30); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); this.seek(this.store.time + 1 / 30); }
   }
   _cycleMask() {
     const l = this.store.selection; if (!l) return;

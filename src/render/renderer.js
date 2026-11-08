@@ -172,6 +172,25 @@ function drawLayerContent(ctx, layer, t, project, media) {
   }
 }
 
+/** رسم یک لایه روی بومِ تازه (با ترنسفورم، شفافیت، فیلتر و افکت‌های canvas) — بدون ماسک. */
+function renderLayerCanvas(layer, t, project, media, W, H) {
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const c2 = cv.getContext('2d');
+  const tr = layerTransform(layer, t);
+  const op = layerOpacity(layer, t);
+  c2.save();
+  c2.translate(tr.x, tr.y);
+  c2.rotate((tr.rotation * Math.PI) / 180);
+  c2.scale(tr.scaleX, tr.scaleY);
+  c2.globalAlpha = op;
+  c2.filter = filterString(layer);
+  drawLayerContent(c2, layer, t, project, media);
+  c2.filter = 'none';
+  c2.restore();
+  return applyCanvasFx(cv, layer, t, W, H);
+}
+
 /** رسم یک فریم کامل روی ctx (اندازهٔ ctx = اندازهٔ پروژه). */
 export function renderFrame(ctx, project, t, media) {
   const W = project.width, H = project.height;
@@ -189,26 +208,41 @@ export function renderFrame(ctx, project, t, media) {
     ctx.scale(tr.scaleX * (cam.camera?.zoom || 1), tr.scaleY * (cam.camera?.zoom || 1));
     ctx.translate(-W / 2 + tr.x, -H / 2 + tr.y);
   }
-  for (const layer of layers) {
+  for (let idx = 0; idx < layers.length; idx++) {
+    const layer = layers[idx];
     if (layer.type === 'camera' || layer.type === 'audio' || layer.type === 'null') continue;
-    const tr = layerTransform(layer, t);
     const op = layerOpacity(layer, t);
     if (op <= 0.01) continue;
-    const needsFx = canvasEffects(layer).length > 0;
-    const target = needsFx ? document.createElement('canvas') : null;
-    if (target) { target.width = W; target.height = H; }
-    const c2 = target ? target.getContext('2d') : ctx;
-    c2.save();
-    if (!target) { c2.translate(tr.x, tr.y); c2.rotate((tr.rotation * Math.PI) / 180); c2.scale(tr.scaleX, tr.scaleY); c2.globalAlpha = op; }
-    else { c2.translate(tr.x, tr.y); c2.rotate((tr.rotation * Math.PI) / 180); c2.scale(tr.scaleX, tr.scaleY); c2.globalAlpha = op; }
-    c2.filter = filterString(layer);
-    drawLayerContent(c2, layer, t, project, media);
-    c2.filter = 'none';
-    c2.restore();
-    if (target) {
-      const done = applyCanvasFx(target, layer, t, W, H);
-      ctx.drawImage(done, 0, 0);
+    // ماسک: لایه با clip، آلفای لایهٔ زیرین را می‌گیرد (below) یا برعکس (belowInv)
+    if (layer.clip === 'below' || layer.clip === 'belowInv') {
+      const below = layers[idx - 1];
+      if (!below || below.type === 'camera' || below.type === 'audio' || below.type === 'null') {
+        if (layer.clip === 'below') continue; // ماسک خالی = هیچ‌چیز دیده نمی‌شود
+      } else {
+        const mine = renderLayerCanvas(layer, t, project, media, W, H);
+        const mask = renderLayerCanvas(below, t, project, media, W, H);
+        const mc = mine.getContext('2d');
+        mc.globalCompositeOperation = layer.clip === 'below' ? 'destination-in' : 'destination-out';
+        mc.drawImage(mask, 0, 0);
+        mc.globalCompositeOperation = 'source-over';
+        ctx.drawImage(mine, 0, 0);
+        continue;
+      }
     }
+    if (canvasEffects(layer).length > 0) {
+      ctx.drawImage(renderLayerCanvas(layer, t, project, media, W, H), 0, 0);
+      continue;
+    }
+    const tr = layerTransform(layer, t);
+    ctx.save();
+    ctx.translate(tr.x, tr.y);
+    ctx.rotate((tr.rotation * Math.PI) / 180);
+    ctx.scale(tr.scaleX, tr.scaleY);
+    ctx.globalAlpha = op;
+    ctx.filter = filterString(layer);
+    drawLayerContent(ctx, layer, t, project, media);
+    ctx.filter = 'none';
+    ctx.restore();
   }
   ctx.restore();
 }

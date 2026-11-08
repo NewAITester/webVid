@@ -78,5 +78,46 @@ console.log('── فروشگاه ──');
   ok(s.projects.length === 0, 'حذف پروژه');
 }
 
+console.log('── ویرایش لایه (فاز R2) ──');
+{
+  const s = new Store();
+  s.projects = [];
+  s.createProject('R2');
+  ok(!s.canUndo && !s.canRedo, 'در ابتدا واگرد/ازنو خالی‌اند');
+  const a = newLayer('shape', { name: 'الف', start: 0, end: 4 });
+  const b = newLayer('text', { name: 'ب', start: 1, end: 5 });
+  s.addLayer(a); s.addLayer(b);
+  ok(s.canUndo, 'بعد از افزودن، واگرد فعال است');
+  // کپی/چسباندن
+  s.setTime(2);
+  ok(s.copyLayer(a.id), 'کپی لایه');
+  const pasted = s.pasteLayer();
+  ok(pasted && pasted.id !== a.id && pasted.name === 'الف کپی' && pasted.start === 2 && pasted.end === 6, 'چسباندن در زمان فعلی با شناسهٔ تازه');
+  ok(s.project.layers.length === 3, 'بعد از چسباندن ۳ لایه هست');
+  // گروه و باز کردن گروه
+  s.select(b.id);
+  const g = { ...newLayer('group', { name: 'گروه', start: b.start, end: b.end }) };
+  g.children = [JSON.parse(JSON.stringify(b))];
+  g.children[0].start = 0; g.children[0].end = b.end - b.start;
+  s._snapshot();
+  s.project.layers = s.project.layers.filter(x => x.id !== b.id);
+  s.project.layers.push(g);
+  ok(s.project.layers.some(l => l.type === 'group' && l.children.length === 1), 'گروه ساخته شد');
+  ok(s.ungroupLayer(g.id), 'باز کردن گروه');
+  ok(!s.project.layers.some(l => l.type === 'group'), 'بعد از باز کردن، گروهی نیست');
+  ok(s.project.layers.some(l => l.name === 'ب'), 'بچهٔ گروه برگشت');
+  ok(!s.ungroupLayer(a.id), 'باز کردن لایهٔ غیرگروه false می‌دهد');
+  // تک‌نمایش
+  s.toggleSolo(a.id);
+  ok(s.soloId === a.id, 'تک‌نمایش فعال شد');
+  s.toggleSolo(a.id);
+  ok(s.soloId === null, 'تک‌نمایش دوباره خاموش شد');
+  // ماسک: فقط مقداردهی در اسکیما
+  s.updateLayer(a.id, { clip: 'below' });
+  ok(s.project.layers.find(l => l.id === a.id).clip === 'below', 'ماسک below ثبت شد');
+  s.updateLayer(a.id, { clip: 'belowInv' });
+  ok(s.project.layers.find(l => l.id === a.id).clip === 'belowInv', 'ماسک معکوس ثبت شد');
+}
+
 console.log(fail === 0 ? '\n✅ همهٔ تست‌ها گذشت' : `\n❌ ${fail} تست ناموفق`);
 process.exit(fail ? 1 : 0);

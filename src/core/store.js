@@ -11,9 +11,72 @@ export class Store {
     this.time = 0;
     this.playing = false;
     this.pane = null; // 'layers' | 'inspector' | 'effects' | 'export' | null
+    this.soloId = null; // تک‌نمایش (فقط نشست، ذخیره نمی‌شود)
+    this._clipboard = null;
     this._listeners = new Set();
     this._undo = [];
     this._redo = [];
+  }
+
+  get canUndo() { return this._undo.length > 0; }
+  get canRedo() { return this._redo.length > 0; }
+
+  /** تک‌نمایش یک لایه (بقیه پنهان می‌شوند). */
+  toggleSolo(id) {
+    this.soloId = this.soloId === id ? null : id;
+    this.emit();
+  }
+
+  /** کپی لایه در حافظهٔ موقت. */
+  copyLayer(id) {
+    const l = this.project?.layers.find(l => l.id === id);
+    if (!l) return false;
+    this._clipboard = JSON.parse(JSON.stringify(l));
+    return true;
+  }
+  /** چسباندن کپی در زمان فعلی. */
+  pasteLayer() {
+    if (!this.project || !this._clipboard) return null;
+    this._snapshot();
+    const dur = this._clipboard.end - this._clipboard.start;
+    const start = Math.min(this.time, Math.max(0, this.project.duration - dur));
+    const copy = JSON.parse(JSON.stringify(this._clipboard));
+    copy.id = uid(); copy.name = copy.name + ' کپی';
+    copy.start = start; copy.end = start + dur;
+    this.project.layers.push(copy);
+    this.project.duration = Math.max(this.project.duration, copy.end);
+    this.selId = copy.id;
+    this.emit();
+    return copy;
+  }
+
+  /** باز کردن گروه: بچه‌ها با ترنسفورم گروه ترکیب می‌شوند و جای گروه می‌نشینند. */
+  ungroupLayer(id) {
+    const ls = this.project?.layers; if (!ls) return false;
+    const i = ls.findIndex(l => l.id === id);
+    if (i < 0 || ls[i].type !== 'group') return false;
+    this._snapshot();
+    const g = ls[i];
+    const kids = (g.children || []).map(ch => {
+      const k = JSON.parse(JSON.stringify(ch));
+      k.id = uid();
+      k.start = g.start + (ch.start || 0);
+      k.end = g.start + (ch.end || (g.end - g.start));
+      const gt = g.transform || {};
+      k.transform = {
+        ...k.transform,
+        x: (k.transform?.x || 0) + (gt.x || 0),
+        y: (k.transform?.y || 0) + (gt.y || 0),
+        scaleX: (k.transform?.scaleX || 1) * (gt.scaleX || 1),
+        scaleY: (k.transform?.scaleY || 1) * (gt.scaleY || 1),
+        rotation: (k.transform?.rotation || 0) + (gt.rotation || 0),
+      };
+      return k;
+    });
+    ls.splice(i, 1, ...kids);
+    this.selId = kids[0]?.id || null;
+    this.emit();
+    return true;
   }
 
   get project() { return this.projects.find(p => p.id === this.currentId) || null; }

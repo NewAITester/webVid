@@ -48,8 +48,11 @@ export class Timeline {
     }
     // ردیف‌ها
     const selId = this.store.selId;
+    const soloId = this.store.soloId;
     for (const { layer, y, h } of this.rows()) {
+      const dimmed = soloId && layer.id !== soloId;
       const x0 = this.xAt(layer.start), x1 = this.xAt(layer.end);
+      ctx.globalAlpha = dimmed ? 0.35 : 1;
       ctx.fillStyle = layer.id === selId ? '#1E2239' : '#141620';
       ctx.fillRect(0, y, W, h - 1);
       ctx.fillStyle = layer.id === selId ? '#E01445' : '#2B2F39';
@@ -60,6 +63,7 @@ export class Timeline {
         ctx.font = '11px "IRANSansX", system-ui, sans-serif'; ctx.textAlign = 'left';
         if (bw > 30) ctx.fillText(layer.name, bx + 6, y + h / 2 + 4);
       }
+      ctx.globalAlpha = 1;
     }
     // خط پخش
     const px = this.playheadX, t = this.store.time;
@@ -79,7 +83,7 @@ export class Timeline {
   _bind() {
     const cv = this.cv;
     cv.addEventListener('pointerdown', e => {
-      cv.setPointerCapture(e.pointerId);
+      try { cv.setPointerCapture(e.pointerId); } catch { /* وب‌ویوی قدیمی */ }
       const { x, y } = this._pos(e);
       const p = this.project; if (!p) return;
       if (y < RULER_H) { // اسکراب
