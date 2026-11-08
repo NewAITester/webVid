@@ -2,408 +2,167 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#0A0B0E">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>لیریک استودیو</title>
-<link rel="stylesheet" href="./src/style.css">
+<link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <filter id="tone" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
-      <feOffset id="chromaR" in="SourceGraphic" dx="1" dy="0" result="sr"/>
-      <feOffset id="chromaB" in="SourceGraphic" dx="-1" dy="0" result="sb"/>
-      <feColorMatrix in="sr" type="matrix" result="cR"
-        values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-      <feColorMatrix in="SourceGraphic" type="matrix" result="cG"
-        values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-      <feColorMatrix in="sb" type="matrix" result="cB"
-        values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
-      <feComposite in="cR" in2="cG" operator="arithmetic" k2="1" k3="1" result="cRG"/>
-      <feComposite in="cRG" in2="cB" operator="arithmetic" k2="1" k3="1" result="cRGB"/>
-      <feComponentTransfer in="cRGB">
-        <feFuncR type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
-        <feFuncG type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
-        <feFuncB type="table" tableValues="0 0.00397 0.01223 0.02474 0.04141 0.06205 0.08644 0.11433 0.14548 0.17959 0.21636 0.2555 0.29667 0.33956 0.38384 0.42915 0.47514 0.52147 0.56778 0.61368 0.65882 0.70282 0.7453 0.78587 0.82415 0.85974 0.89225 0.92128 0.94642 0.96727 0.98343 0.99448 1"/>
-      </feComponentTransfer>
-    </filter>
-    <filter id="bloomThresh" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
-      <feComponentTransfer>
-        <feFuncR type="linear" slope="2.5" intercept="-1.5"/>
-        <feFuncG type="linear" slope="2.5" intercept="-1.5"/>
-        <feFuncB type="linear" slope="2.5" intercept="-1.5"/>
-      </feComponentTransfer>
-    </filter>
-    <filter id="erode" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
-      <feMorphology id="erodeOp" operator="erode" radius="5"/>
-    </filter>
-  </defs>
-</svg>
-
 <div id="app" data-screen="library">
 
-<!-- ══════════ صفحهٔ ۱: کتابخانه ══════════ -->
-<section class="screen" data-screen="library">
-  <header class="top">
-    <div class="brand">لیریک<span>استودیو</span></div>
-    <div class="spacer"></div>
-    <button id="learnBtn" class="icon" title="آموزش">؟</button>
-  </header>
-
-  <div class="scroll">
-    <div class="hero">
-      <h1>پروژه‌های من</h1>
-      <p id="projCount" class="sub"></p>
+  <!-- ── کتابخانه ── -->
+  <section class="screen" data-screen="library">
+    <div class="top">
+      <button id="menuBtn" class="icon" title="منو">☰</button>
+      <div class="brand">لیریک <span>استودیو</span></div>
+      <div class="spacer"></div>
+      <button id="learnBtn" class="icon" title="آموزش">؟</button>
     </div>
-    <div id="projList" class="cards"></div>
-    <button id="newProj" class="btn primary wide big">+ پروژهٔ جدید</button>
-    <button id="importBtn" class="btn ghost wide">📥 وارد کردن پروژه یا کد</button>
-    <button id="codeProj" class="btn ghost wide" title="کد بوم JS/HTML، پایتون MoviePy/Manim یا موشن‌اسکریپت — می‌شود چند فایل را با هم انتخاب کرد">🧩 پروژه از کد ویدیو (JS/HTML/Python)</button>
-    <input id="codeFile" type="file" multiple accept=".js,.mjs,.html,.htm,.py,.txt,text/plain,text/html,text/javascript" class="hidden">
-    <button id="reelTpl" class="btn ghost wide" title="ویدیوی نمونهٔ ۱۵ ثانیه‌ای که با قطعه‌های موشن همین برنامه ساخته شده">🎬 نمونهٔ آماده: شوریل موشن ۱۵ ثانیه</button>
-  </div>
-</section>
-
-<!-- ══════════ صفحهٔ ۲: ویرایشگر ══════════ -->
-<section class="screen" data-screen="editor">
-  <header class="top">
-    <button id="backBtn" class="icon">→</button>
-    <div class="etitle" id="nowName">—</div>
-    <div class="spacer"></div>
-    <div id="fps" class="pill">—</div>
-    <button id="gearBtn" class="icon" title="تنظیمات پروژه">⚙</button>
-  </header>
-
-  <div class="ebody">
-  <main class="stagewrap" id="stagewrap">
-    <canvas id="stage"></canvas>
-    <div id="loading" class="loading">در حال آماده‌سازی…</div>
-    <div id="noAudio" class="overlay hidden">
-      <div class="bigicon">♪</div>
-      <div>پروژهٔ خالی — آهنگ اضافه کنید، یا بی‌صدا با لایه‌ها بسازید</div>
-      <div class="frow btns">
-        <button id="addAudioBtn" class="btn sm">افزودن آهنگ</button>
-        <button id="noAudioLayers" class="btn sm primary">＋ افزودن متن، عکس یا شکل</button>
+    <div class="scroll">
+      <div class="hero">
+        <h1>پروژه‌های من</h1>
+        <div class="sub">ویدیوی موشن‌گرافی بساز — مثل آلایت موشن</div>
       </div>
+      <div class="cards" id="projGrid"></div>
     </div>
-  </main>
-
-  <section class="transport">
-    <button id="play" class="btn primary round">▶</button>
-    <div class="tbox"><span class="time" id="tc">۰۰:۰۰٫۰۰</span><span class="tsep">/</span><span class="time dim" id="tdur">—</span></div>
-    <div class="tgroup">
-      <button id="undoBtn" class="icon sm" title="واگرد (Ctrl+Z)" disabled>↶</button>
-      <button id="redoBtn" class="icon sm" title="ازنو (Ctrl+Shift+Z)" disabled>↷</button>
+    <div class="nav" id="libNav">
+      <button id="libHome"><i>▦</i><b>پروژه‌ها</b></button>
+      <button id="libNew" class="mid" title="پروژهٔ تازه">+</button>
+      <button id="libLearn"><i>؟</i><b>آموزش</b></button>
     </div>
-    <div class="spacer"></div>
-    <div class="tgroup">
-      <button id="zOut" class="icon sm" title="کوچک‌نمایی">−</button>
-      <button id="zFit" class="icon sm" title="جا دادن">⤢</button>
-      <button id="zIn" class="icon sm" title="بزرگ‌نمایی">+</button>
+    <div id="drawerBg" class="hidden"></div>
+    <div id="drawer">
+      <div class="dhead"><span>◆</span> لیریک استودیو <div class="spacer"></div><button id="drClose" class="icon sm">✕</button></div>
+      <button class="ditem" id="drLearn"><b>آموزش</b></button>
+      <button class="ditem" id="drImport"><b>وارد کردن پروژه</b></button>
+      <button class="ditem" id="drCode"><b>پروژه از کد</b></button>
+      <button class="ditem" id="drReel"><b>قالب ریل</b></button>
     </div>
-    <button id="addBtn" class="btn sm primary addtop" title="افزودن متن، عکس، شکل، افکت آماده یا بخش شعر">＋ افزودن</button>
-    <!-- این دو حالا از داخل برگهٔ «＋ افزودن» صدا زده می‌شوند -->
-    <button id="secAdd" class="hidden" tabindex="-1">بخش تازه</button>
-    <button id="txtAdd" class="hidden" tabindex="-1">زیرنویس ساده</button>
   </section>
 
-  <div class="tlwrap">
-    <canvas id="tl"></canvas>
-  </div>
-
-  <!-- نوار کارِ بلوک انتخاب‌شده -->
-  <div id="clipBar" class="clipbar empty">
-    <div class="cinfo"><b id="cbName">—</b><span id="cbTime"></span></div>
-    <div class="spacer"></div>
-    <div id="cbActs" class="cbacts"></div>
-  </div>
-
-  <div class="panes" id="panes">
-    <div class="grab" id="paneGrab"><i></i></div>
-
-    <!-- تنظیمات کلیپ -->
-    <section class="pane" data-pane="clip">
-      <div class="phead" id="clHead">تنظیمات<div class="spacer"></div>
-        <button id="clAll" class="btn sm ghost">اعمال روی همه</button>
-        <button id="clClear" class="btn sm ghost">پیش‌فرض</button></div>
-      <div id="clBody" class="form"></div>
-    </section>
-
-    <!-- لایه‌های موشن: متن، شکل، عکس، ویدیو، کد … (src/ui/motionpanel.js) -->
-    <section class="pane" data-pane="layers">
-      <div id="mpRoot"></div>
-    </section>
-
-    <!-- شعر -->
-    <section class="pane" data-pane="lyrics">
-      <div class="subnav">
-        <button data-goto="lyrics">✎ متن و زمان</button>
-        <button data-goto="fx">♪ سبک نمایش</button>
-        <button data-goto="words">✥ جای کلمات</button>
-      </div>
-      <div class="phead">شعر<div class="spacer"></div>
-        <button id="secAuto" class="btn sm ghost">چیدمان خودکار</button>
-        <button id="lyWrite" class="btn sm ghost on">نوشتن</button>
-        <button id="lySync" class="btn sm ghost">هم‌زمان‌سازی</button></div>
-
-      <div id="lyWritePane">
-        <p class="note">هر خط شعر را در یک سطر بنویسید. بعد برای زمان‌بندی
-          به «هم‌زمان‌سازی» بروید.</p>
-        <textarea id="lyText" class="lyr" spellcheck="false"
-          placeholder="خط اول شعر&#10;خط دوم شعر&#10;…"></textarea>
-        <div class="frow btns">
-          <button id="lyApply" class="btn primary sm">اعمال</button>
-          <button id="lyFromFile" class="btn sm ghost">از فایل</button>
-          <input id="lyFile" type="file" accept=".lrc,.txt,text/plain" class="hidden">
-          <span id="lyMsg" class="msg"></span>
+  <!-- ── ویرایشگر ── -->
+  <section class="screen" data-screen="editor">
+    <div class="top">
+      <button id="backBtn" class="icon" title="بازگشت">→</button>
+      <input id="etitle" class="etitle txt" value="پروژه">
+      <div class="spacer"></div>
+      <button id="topExport" class="icon" title="خروجی">⤓</button>
+    </div>
+    <div class="ebody">
+      <div class="stagewrap">
+        <canvas id="stage"></canvas>
+        <div id="stageGrid" class="stagegrid hidden"></div>
+        <div class="rail">
+          <button id="railGrid" class="icon sm" title="شبکه">#</button>
+          <button id="railSolo" class="icon sm" title="تک‌نمایش">◉</button>
+          <button id="zIn" class="icon sm" title="بزرگ‌نمایی">+</button>
+          <button id="zOut" class="icon sm" title="کوچک‌نمایی">−</button>
+          <button id="zFit" class="icon sm" title="برازش">⤢</button>
+        </div>
+        <button id="addFab" class="addfab" title="افزودن">+</button>
+        <div id="selBar" class="hidden">
+          <button id="selClose" class="sbtn">✕</button>
+          <span id="selName" class="sname"></span>
+          <button id="selGroup" class="sbtn">▣<b>گروه</b></button>
+          <button id="selMask" class="sbtn">◐<b>ماسک</b></button>
+          <button id="selDel" class="sbtn">🗑<b>حذف</b></button>
+        </div>
+        <div id="selBottom" class="hidden">
+          <button id="sbTrimA" class="sbtn2">◂<b>برش اول</b></button>
+          <button id="sbSplit" class="sbtn2">✂<b>تقسیم</b></button>
+          <button id="sbTrimB" class="sbtn2">▸<b>برش آخر</b></button>
+          <button id="sbAlignA" class="sbtn2">⇤<b>شروع</b></button>
+          <button id="sbAlignB" class="sbtn2">⇥<b>پایان</b></button>
         </div>
       </div>
-
-      <div id="lySyncPane" class="hidden">
-        <p class="note">پخش را بزنید و هر جا خط تازه شروع شد، دکمهٔ بزرگ را
-          بزنید. زمان کلمات خودکار پخش می‌شود.</p>
-        <div class="syncnow" id="syncNow">—</div>
-        <div class="frow btns">
-          <button id="syncTap" class="btn primary big tap">ثبت این خط</button>
-          <button id="syncUndo" class="btn sm ghost">یکی عقب</button>
-          <button id="syncRestart" class="btn sm ghost">از اول</button>
+      <div class="transport">
+        <button id="undoBtn" class="icon sm" title="واگرد">↩</button>
+        <button id="redoBtn" class="icon sm" title="ازنو">↪</button>
+        <button id="prevFrame" class="icon sm" title="فریم قبل">⏮</button>
+        <button id="play" class="icon sm" title="پخش">▶</button>
+        <button id="nextFrame" class="icon sm" title="فریم بعد">⏭</button>
+        <div class="tbox"><span id="tc" class="time">00:00</span><span class="tsep">/</span><span id="dur" class="time dim">00:10</span></div>
+        <input id="scrub" class="scrub" type="range" min="0" max="10" step="0.01" value="0">
+        <span id="fps" class="pill">—</span>
+      </div>
+      <div class="tlwrap"><canvas id="tl"></canvas></div>
+      <div class="panes" id="panes">
+        <div class="grab" id="paneClose"><i></i></div>
+        <div class="ptabs">
+          <button class="ptab" data-pane="layers">لایه‌ها</button>
+          <button class="ptab" data-pane="inspector">بازرس</button>
+          <button class="ptab" data-pane="effects">افکت</button>
+          <button class="ptab" data-pane="export">خروجی</button>
         </div>
-        <div class="syncprog"><span id="syncCount">۰</span> از <span id="syncTotal">۰</span></div>
-        <div id="syncList" class="synclist"></div>
+        <div class="pane" data-pane="layers">
+          <div class="llist" id="layerList"></div>
+          <div class="frow btns" style="margin-top:10px">
+            <button class="btn" id="addLayerBtn">+ افزودن لایه</button>
+          </div>
+        </div>
+        <div class="pane" data-pane="inspector"><div id="inspector"></div></div>
+        <div class="pane" data-pane="effects"><div id="fxList" class="llist"></div></div>
+        <div class="pane" data-pane="export">
+          <div class="form">
+            <div class="frow"><label>از</label><input id="exFrom" type="number" value="0" min="0" step="1">
+              <label>تا</label><input id="exTo" type="number" value="10" min="1" step="1"><span class="dim">ثانیه</span></div>
+            <div id="exEst" class="msg"></div>
+            <div class="frow btns">
+              <button id="exGo" class="btn primary">شروع خروجی</button>
+              <button id="exSnap" class="btn sm ghost">📷 عکس فریم</button>
+            </div>
+            <div id="exBar" class="bar2 hidden"><i></i></div>
+            <div id="exMsg" class="msg"></div>
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
+    <div class="nav">
+      <button class="ptab" data-pane="layers"><i>☰</i><b>لایه‌ها</b></button>
+      <button class="ptab" data-pane="inspector"><i>⚙</i><b>بازرس</b></button>
+      <button class="ptab" data-pane="effects"><i>✦</i><b>افکت</b></button>
+      <button class="ptab" data-pane="export"><i>⤓</i><b>خروجی</b></button>
+    </div>
+  </section>
 
-    <!-- گالری افکت -->
-    <section class="pane" data-pane="fx">
-      <div class="subnav">
-        <button data-goto="lyrics">✎ متن و زمان</button>
-        <button data-goto="fx">♪ سبک نمایش</button>
-        <button data-goto="words">✥ جای کلمات</button>
+  <!-- ── آموزش ── -->
+  <section class="screen" data-screen="learn">
+    <div class="top">
+      <button id="learnBack" class="icon">→</button>
+      <div class="brand">آموزش</div>
+    </div>
+    <div class="scroll">
+      <div class="lesson">
+        <h3>شروع سریع</h3>
+        <p class="big">از کتابخانه یک پروژه بساز، با دکمهٔ ＋ لایه اضافه کن، روی تایم‌لاین بکش تا برش بخورد، و از تب خروجی ویدیو بگیر.</p>
+        <p>لایه‌ها: متن، شکل، تصویر، ویدیو، صدا، خط آزاد، دوربین و گروه. هر لایه زمان شروع و پایان، ترنسفورم و افکت دارد؛ با کی‌فریم می‌توانی آن‌ها را در زمان حرکت بدهی.</p>
       </div>
-      <div class="phead">سبک نمایش شعر<div class="spacer"></div>
-        <span class="pill" id="fxFor">—</span></div>
-      <p class="note">برای <b>بخش انتخاب‌شده</b> در تایم‌لاین (یا بخش زیر نشانگر). «استایل ویدیو» پس‌زمینه را هم عوض می‌کند. افکت لایه‌ها در
-        <a href="#" data-goto="layers">◧ لایه‌ها</a>.</p>
-      <label class="frow ghosttog"><input id="fxGhost" type="checkbox" checked> نمایش کم‌رنگ کلمه‌ها قبل از خوانده شدن
-        <span class="dim">(خاموش = هر کلمه فقط وقتی خوانده شد دیده شود)</span></label>
-      <div class="fxbg" id="fxBg"></div>
-      <div class="fxtools">
-        <input id="fxSearch" type="search" class="txt" placeholder="🔍 جست‌وجوی سبک…" autocomplete="off">
-        <button id="fxRand" class="btn sm" title="یک استایل ویدیو و سبک متن تصادفی برای همین بخش">🎲 شانسی</button>
+    </div>
+  </section>
+
+  <!-- ── منوی ＋ ── -->
+  <div id="addsheet" class="addsheet hidden">
+    <div class="sbody">
+      <div class="quickbar">
+        <button class="qbtn" data-add="draw"><i>〰</i><b>خط آزاد</b></button>
+        <button class="qbtn" data-add="shape"><i>⬡</i><b>شکل</b></button>
+        <button class="qbtn fix" data-add="text"><i>T</i><b>متن</b></button>
+        <button class="qclose" id="addClose">✕</button>
       </div>
-      <div class="frow btns fxcats" id="fxCats"></div>
-      <div id="fxGrid" class="fxgrid"></div>
-      <details id="idFold" class="fold">
-        <summary>🎵 بین‌خوانی <span class="dim">(وقتی آواز نیست)</span><span class="pill sm" id="idCount">خاموش</span></summary>
-        <div id="idBox"></div>
-      </details>
-      <details id="mxFold" class="fold">
-        <summary>🎛 ساخت سبک دلخواه <span class="dim">(ترکیب ورود، حرکت، پس‌زمینه…)</span></summary>
-        <div id="mxBox" class="mxbox"></div>
-      </details>
-      <details id="cfFold" class="fold">
-        <summary>⌨ افکت با کد <span class="dim">(پیشرفته)</span></summary>
-        <div class="frow btns"><button id="cfAdd" class="btn sm ghost">+ افزودن کد</button></div>
-        <div id="cfList" class="list"></div>
-      </details>
-    </section>
-
-    <section class="pane" data-pane="words">
-      <div class="subnav">
-        <button data-goto="lyrics">✎ متن و زمان</button>
-        <button data-goto="fx">♪ سبک نمایش</button>
-        <button data-goto="words">✥ جای کلمات</button>
+      <div class="addmain">
+        <div class="addtabs">
+          <button class="addtab on" data-cat="shape"><i>◆</i><b>شکل</b></button>
+          <button class="addtab" data-cat="text"><i>T</i><b>متن</b></button>
+          <button class="addtab" data-cat="media"><i>▣</i><b>رسانه</b></button>
+          <button class="addtab" data-cat="audio"><i>♪</i><b>صدا</b></button>
+          <button class="addtab" data-cat="object"><i>◍</i><b>المان</b></button>
+          <button class="addtab" data-cat="template"><i>✦</i><b>قالب</b></button>
+        </div>
+        <input id="addSearch" class="txt" placeholder="جستجو…">
+        <div class="sscroll"><div class="sgrid" id="addGrid"></div></div>
       </div>
-      <div class="phead">جابه‌جایی کلمات<div class="spacer"></div>
-        <span class="pill" id="edCount">۰</span></div>
-      <p class="note" id="edHint">روی یک کلمه بکشید تا جابه‌جا شود.</p>
-      <div class="frow btns">
-        <button class="btn sm ghost nudge" data-n="-1,0">←</button>
-        <button class="btn sm ghost nudge" data-n="1,0">→</button>
-        <button class="btn sm ghost nudge" data-n="0,-1">↑</button>
-        <button class="btn sm ghost nudge" data-n="0,1">↓</button>
-        <button class="btn sm" id="edBigger">بزرگ‌تر</button>
-        <button class="btn sm" id="edSmaller">کوچک‌تر</button>
-      </div>
-      <div class="frow btns">
-        <button class="btn sm ghost" id="edReset">بازگردانی این کلمه</button>
-        <button class="btn sm ghost" id="edResetAll">بازگردانی همه</button>
-      </div>
-    </section>
-
-    <section class="pane" data-pane="look">
-      <div class="phead">کل ویدیو</div>
-      <p class="note">این‌ها روی کل ویدیو اثر دارند. برای افکت فقط روی یک بخش یا یک خط، روی آن در تایم‌لاین بزنید؛ برای یک لایهٔ خاص به «◧ لایه‌ها» بروید.</p>
-      <div class="form">
-        <div class="frow"><label>رنگ تأکید</label>
-          <input id="lkAccent" type="color" value="#E4142A">
-          <button id="lkAccentAll" class="btn sm ghost">روی همهٔ بخش‌ها</button></div>
-        <div class="frow slider"><label>دانه</label>
-          <input id="lkGrain" type="range" min="0" max="60" value="24" class="rng">
-          <span class="pill" id="lkGrainV">۰٫۰۲۴</span></div>
-        <div class="frow slider"><label>درخشش</label>
-          <input id="lkBloom" type="range" min="0" max="120" value="55" class="rng">
-          <span class="pill" id="lkBloomV">۰٫۵۵</span></div>
-        <div class="frow slider"><label>انحراف رنگی</label>
-          <input id="lkChroma" type="range" min="0" max="40" value="10" class="rng">
-          <span class="pill" id="lkChromaV">۱٫۰</span></div>
-        <div class="frow"><label><input id="lkGhost" type="checkbox" checked> نمایش کم‌رنگ کلمه‌های نخوانده</label></div>
-        <div class="frow"><label><input id="lkFurn" type="checkbox" checked> اثاثیهٔ قاب</label>
-          <div class="spacer"></div>
-          <button id="lkReset" class="btn sm ghost">پیش‌فرض</button></div>
-      </div>
-      <div class="shead sm">فونت شعر</div>
-      <div id="lkFont"></div>
-      <div id="lkFx"></div>
-    </section>
-
-    <section class="pane" data-pane="code">
-      <div class="phead">ویرایش کد<div class="spacer"></div>
-        <select id="cdWhich"></select>
-        <select id="cdSnip"><option value="">نمونه‌ها…</option></select></div>
-      <div class="frow btns">
-        <input id="cdName" type="text" class="txt" placeholder="نام افکت">
-        <button id="cdPaste" class="btn sm ghost">جای‌گذاری</button>
-        <button id="cdCopy" class="btn sm ghost">کپی</button>
-        <button id="cdReset" class="btn sm ghost">پیش‌فرض</button>
-        <button id="cdDel" class="btn sm ghost">حذف</button>
-      </div>
-      <textarea id="cdText" class="code" spellcheck="false"></textarea>
-      <div id="cdMsg" class="msg"></div>
-    </section>
-
-    <section class="pane" data-pane="export">
-      <div class="phead">خروجی ویدیو</div>
-      <div class="form">
-        <div class="frow"><label>از</label><input id="exFrom" type="number" value="0" min="0" step="1">
-          <label>تا</label><input id="exTo" type="number" value="10" min="1" step="1">
-          <span class="dim">ثانیه</span></div>
-        <div class="frow btns">
-          <button class="btn sm ghost" data-range="0,10">۱۰ ثانیه</button>
-          <button class="btn sm ghost" data-range="0,30">۳۰ ثانیه</button>
-          <button class="btn sm ghost" id="exAll">کل پروژه</button></div>
-        <div class="frow"><label>کیفیت</label><select id="exRes"></select>
-          <label>فریم</label><select id="exFps">
-            <option value="60" selected>۶۰</option><option value="30">۳۰</option>
-            <option value="24">۲۴</option></select></div>
-        <div class="frow slider"><label>بیت‌ریت</label>
-          <input id="exBr" type="range" min="1" max="60" step="1" value="12" class="rng">
-          <span class="pill" id="exBrV">۱۲</span>
-          <button class="btn sm ghost" id="exBrAuto">خودکار</button></div>
-        <div id="exEst" class="msg"></div>
-        <label class="frow"><input id="exOptimized" type="checkbox"> خروجی و ذخیره‌سازی بهینه — آزمایشی</label>
-        <p class="note">خاموش: روش اصلی. روشن: ترجیح انکودر سخت‌افزاری و خواندن تکه‌ای فایل هنگام ذخیره در اندروید؛ وضوح، نرخ فریم و کیفیت رندر تغییر نمی‌کند. اگر سخت‌افزار پشتیبانی نشود، با ثبت دلیل به روش سازگار برمی‌گردد.</p>
-        <p class="note">در هر دو حالت، زمان مراحل و سنجه‌های در دسترس گوشی خودکار و فقط محلی ثبت می‌شود؛ ۲۰ گزارش آخر نگه داشته می‌شود. گزارش شامل کد، شعر یا فایل رسانه نیست. دمای باتری با دمای CPU فرق دارد و سرعت بیشتر لزوماً فشار کمتر نیست.</p>
-        <button id="exLogs" class="btn sm ghost">ذخیره / ارسال گزارش‌های خروجی</button>
-        <div id="exLogMsg" class="msg" aria-live="polite"></div>
-        <div class="frow btns">
-          <button id="exGo" class="btn primary">شروع خروجی</button>
-          <button id="exCancel" class="btn sm hidden">لغو</button>
-          <button id="exShare" class="btn sm hidden">اشتراک‌گذاری</button></div>
-        <div id="exBar" class="bar2 hidden"><i></i></div>
-        <div id="exMsg" class="msg"></div>
-      </div>
-      <!-- فشرده‌سازی و تبدیل با FFmpeg (src/ui/ffmpegpanel.js) -->
-      <div id="ffRoot" class="ffm"></div>
-    </section>
-  </div>
-
-  </div>
-
-  <nav class="nav" id="nav">
-    <button data-go="lyrics" class="on" title="نوشتن و هم‌زمان کردن شعر"><i>✎</i><b>شعر</b></button>
-    <button data-go="layers" title="متن، عکس، شکل و افکت‌های شما"><i>◧</i><b>لایه‌ها</b></button>
-    <button data-go="look" title="رنگ، فونت شعر و افکت روی کل ویدیو"><i>◐</i><b>کل ویدیو</b></button>
-    <button data-go="export" title="ساخت فایل ویدیو"><i>↓</i><b>خروجی</b></button>
-  </nav>
-</section>
-
-<!-- ══════════ صفحهٔ ۳: آموزش ══════════ -->
-<section class="screen" data-screen="learn">
-  <header class="top">
-    <button id="lnBack" class="icon">→</button>
-    <div class="etitle" id="lnHead">آموزش</div>
-  </header>
-  <div class="scroll">
-    <div id="lnList" class="lessons"></div>
-    <article id="lnBody" class="lesson hidden"></article>
-  </div>
-</section>
-
-<!-- ══════════ شیت‌ها ══════════ -->
-<div id="sheet" class="sheet hidden">
-  <div class="sheetbox">
-    <div class="shead">پروژهٔ جدید<div class="spacer"></div><button id="sheetX" class="icon">×</button></div>
-    <div class="form">
-      <div class="frow"><label>نام</label><input id="nwName" type="text" class="txt" placeholder="مثلاً: نقاب"></div>
-      <div class="frow"><label>هنرمند</label><input id="nwArtist" type="text" class="txt" placeholder="نام شما"></div>
-      <div class="frow"><label>تلگرام</label><input id="nwTg" type="text" class="txt ltr" placeholder="Telegram: @channel"></div>
-      <div class="shead sm">نسبت تصویر</div>
-      <div id="nwAspect" class="aspects"></div>
-      <button id="nwGo" class="btn primary wide big">بساز و باز کن</button>
     </div>
   </div>
 </div>
-
-<div id="imSheet" class="sheet hidden">
-  <div class="sheetbox">
-    <div class="shead">وارد کردن پروژه یا کد<div class="spacer"></div><button id="imX" class="icon">×</button></div>
-    <div class="form">
-      <p class="note">یکی از این‌ها را بدهید: فایل کامل پروژه (.json)، کد پروژه که کپی کرده‌اید،
-        فهرست لایه‌ها (JSON)، شعر زمان‌دار (LRC)، کد جاوااسکریپت یک لایهٔ کدی،
-        یا کد ویدیو (بوم JS/HTML، پایتون MoviePy/Manim) که به پروژهٔ قابل‌ویرایش تبدیل می‌شود.</p>
-      <div class="frow btns">
-        <button id="imFileBtn" class="btn sm">📂 انتخاب فایل</button>
-        <input id="imFile" type="file" accept=".json,.txt,.lrc,.js,.mjs,.html,.htm,.py,application/json,text/plain" class="hidden">
-        <button id="imPaste" class="btn sm ghost">📋 چسباندن</button>
-      </div>
-      <textarea id="imText" class="code" spellcheck="false" dir="ltr" placeholder="کد یا متن را اینجا بچسبانید…"></textarea>
-      <button id="imGo" class="btn primary wide big">بساز و باز کن</button>
-      <div id="imMsg" class="msg"></div>
-    </div>
-  </div>
-</div>
-
-<div id="pjSheet" class="sheet hidden">
-  <div class="sheetbox">
-    <div class="shead">تنظیمات پروژه<div class="spacer"></div><button id="pjX" class="icon">×</button></div>
-    <div class="form">
-      <div class="shead sm">آهنگ و شعر</div>
-      <div class="frow"><label>فایل صوتی</label><input id="inAudio" type="file" accept="audio/*"></div>
-      <div class="frow"><label>شعر</label><input id="inLrc" type="file" accept=".lrc,.txt,text/plain"></div>
-      <div id="songBar" class="bar2 hidden"><i></i></div>
-      <div id="songMsg" class="msg"></div>
-      <div class="frow btns hidden" id="pjAudioRow"><span class="dim" id="pjAudioName"></span><div class="spacer"></div>
-        <button id="pjNoAudio" class="btn sm ghost" title="آهنگ از پروژه برداشته می‌شود؛ لایه‌ها و طول ویدیو می‌مانند">🔇 حذف آهنگ</button></div>
-      <div class="shead sm">مشخصات</div>
-      <div class="frow"><label>عنوان</label><input id="pjTitle" type="text" class="txt"></div>
-      <div class="frow"><label>هنرمند</label><input id="pjArtist" type="text" class="txt"></div>
-      <div class="frow"><label>تلگرام</label><input id="pjTg" type="text" class="txt ltr"></div>
-      <div class="frow"><label>نسبت تصویر</label><select id="pjAspect"></select></div>
-      <div class="frow" id="pjLenRow"><label>طول (بی‌صدا)</label>
-        <input id="pjLen" type="number" min="1" max="600" step="1" value="15"><span class="dim">ثانیه</span></div>
-      <button id="pjSave" class="btn primary wide">ذخیره</button>
-      <div class="shead sm">پیش‌نمایش — فقط روی این دستگاه</div>
-      <div class="frow"><label for="previewQuality">وضوح پیش‌نمایش</label><select id="previewQuality" aria-describedby="previewQualityNote">
-        <option value="original">اصلی — بدون کاهش وضوح</option>
-        <option value="light">سبک — حداکثر ضلع بلند ۹۶۰ پیکسل</option>
-        <option value="tiny">خیلی سبک — حداکثر ضلع بلند ۴۸۰ پیکسل</option>
-      </select></div>
-      <p id="previewQualityNote" class="note">انتخاب فوراً اعمال و روی این دستگاه ذخیره می‌شود؛ نیازی به زدن «ذخیره» نیست. این تنظیم فقط وضوح پیش‌نمایش را تغییر می‌دهد؛ وضوح و کیفیت خروجی نهایی همان تنظیمات خروجی است. کاهش هزینهٔ رندر داخلی پایتون برای کدهای مقیاس‌پذیر پشتیبانی‌شده اعمال می‌شود؛ کدهای دیگر ممکن است همچنان سنگین باشند.</p>
-      <div class="shead sm">فایل پروژه</div>
-      <p class="note">کل پروژه (شعر، زمان‌ها، لایه‌ها، افکت‌ها و فایل‌ها) در یک فایل؛ بعداً از صفحهٔ اول «وارد کردن» بزنید.</p>
-      <div class="frow btns">
-        <button id="pjExport" class="btn sm">📤 ذخیرهٔ فایل کامل پروژه</button>
-        <button id="pjCopy" class="btn sm ghost">📋 کپی کد پروژه</button>
-      </div>
-      <div id="pjMsg" class="msg"></div>
-    </div>
-  </div>
-</div>
-
-</div>
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="/src/main.js"></script>
 </body>
 </html>
-

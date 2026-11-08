@@ -1,0 +1,510 @@
+{
+  "synthetic": true,
+  "runs": [
+    {
+      "mode": "original",
+      "renderProfile": {
+        "version": 1,
+        "enabled": true,
+        "clock": "performance.now",
+        "renderCalls": 2,
+        "redrawCalls": 1,
+        "optimizedPythonCalls": 0,
+        "slowestFrames": [],
+        "instrumentationOps": 160,
+        "droppedSpans": 0,
+        "incompleteSpans": 0,
+        "buckets": [
+          {
+            "stage": "frame.render",
+            "layerIndex": null,
+            "type": null,
+            "calls": 2,
+            "inclusiveMs": 68,
+            "selfMs": 0,
+            "maxMs": 34,
+            "minMs": 34,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.total",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.evaluate",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.content",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.compile",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.execute",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 6,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.total",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 62,
+            "selfMs": 0,
+            "maxMs": 31,
+            "minMs": 31,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.evaluate",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.buffer",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.content",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.compile",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.execute",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 6,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.filters",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 4,
+            "selfMs": 4,
+            "maxMs": 2,
+            "minMs": 2,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.buffer",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 48,
+            "selfMs": 0,
+            "maxMs": 24,
+            "minMs": 24,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.content",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 16,
+            "inclusiveMs": 48,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.compile",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 16,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.execute",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 16,
+            "inclusiveMs": 48,
+            "selfMs": 48,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.filters",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 4,
+            "selfMs": 4,
+            "maxMs": 2,
+            "minMs": 2,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.composite",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          }
+        ],
+        "semantics": "Synchronous wall time. inclusiveMs includes children; selfMs excludes nested profiled spans. Do not sum inclusive rows. Canvas GPU execution may be deferred. python.frameAndPack includes Python execution and frame packing/bridge, not Python function-only time."
+      }
+    },
+    {
+      "mode": "optimized",
+      "renderProfile": {
+        "version": 1,
+        "enabled": true,
+        "clock": "performance.now",
+        "renderCalls": 2,
+        "redrawCalls": 1,
+        "optimizedPythonCalls": 0,
+        "slowestFrames": [],
+        "instrumentationOps": 160,
+        "droppedSpans": 0,
+        "incompleteSpans": 0,
+        "buckets": [
+          {
+            "stage": "frame.render",
+            "layerIndex": null,
+            "type": null,
+            "calls": 2,
+            "inclusiveMs": 68,
+            "selfMs": 0,
+            "maxMs": 34,
+            "minMs": 34,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.total",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.evaluate",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.content",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.compile",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.execute",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 6,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.total",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 62,
+            "selfMs": 0,
+            "maxMs": 31,
+            "minMs": 31,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.evaluate",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.buffer",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.content",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.compile",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.execute",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 6,
+            "selfMs": 6,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.filters",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 4,
+            "selfMs": 4,
+            "maxMs": 2,
+            "minMs": 2,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.buffer",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 48,
+            "selfMs": 0,
+            "maxMs": 24,
+            "minMs": 24,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.content",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 16,
+            "inclusiveMs": 48,
+            "selfMs": 0,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.compile",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 16,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          },
+          {
+            "stage": "code.execute",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 16,
+            "inclusiveMs": 48,
+            "selfMs": 48,
+            "maxMs": 3,
+            "minMs": 3,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.filters",
+            "layerIndex": 1,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 4,
+            "selfMs": 4,
+            "maxMs": 2,
+            "minMs": 2,
+            "failedCalls": 0
+          },
+          {
+            "stage": "layer.composite",
+            "layerIndex": 2,
+            "type": "code",
+            "calls": 2,
+            "inclusiveMs": 0,
+            "selfMs": 0,
+            "maxMs": 0,
+            "minMs": 0,
+            "failedCalls": 0
+          }
+        ],
+        "semantics": "Synchronous wall time. inclusiveMs includes children; selfMs excludes nested profiled spans. Do not sum inclusive rows. Canvas GPU execution may be deferred. python.frameAndPack includes Python execution and frame packing/bridge, not Python function-only time."
+      }
+    },
+    {
+      "pythonBridgeFixture": true,
+      "renderProfile": {
+        "version": 1,
+        "enabled": true,
+        "clock": "performance.now",
+        "renderCalls": 0,
+        "redrawCalls": 0,
+        "optimizedPythonCalls": 1,
+        "slowestFrames": [],
+        "instrumentationOps": 6,
+        "droppedSpans": 0,
+        "incompleteSpans": 0,
+        "buckets": [
+          {
+            "stage": "python.frameAndPack",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 1,
+            "inclusiveMs": 0.024315999999998894,
+            "selfMs": 0.024315999999998894,
+            "maxMs": 0.024315999999998894,
+            "minMs": 0.024315999999998894,
+            "failedCalls": 0
+          },
+          {
+            "stage": "python.pixelUpload",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 1,
+            "inclusiveMs": 0.05357999999999663,
+            "selfMs": 0.05357999999999663,
+            "maxMs": 0.05357999999999663,
+            "minMs": 0.05357999999999663,
+            "failedCalls": 0
+          },
+          {
+            "stage": "python.composite",
+            "layerIndex": 0,
+            "type": "code",
+            "calls": 1,
+            "inclusiveMs": 0.001391999999995619,
+            "selfMs": 0.001391999999995619,
+            "maxMs": 0.001391999999995619,
+            "minMs": 0.001391999999995619,
+            "failedCalls": 0
+          }
+        ],
+        "semantics": "Synchronous wall time. inclusiveMs includes children; selfMs excludes nested profiled spans. Do not sum inclusive rows. Canvas GPU execution may be deferred. python.frameAndPack includes Python execution and frame packing/bridge, not Python function-only time."
+      }
+    }
+  ]
+}
