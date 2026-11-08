@@ -19,3 +19,6 @@ android/app/src/main/assets/capacitor.config.json
 android/app/src/main/assets/capacitor.plugins.json
 android/capacitor-cordova-android-plugins/build/
 .gradle/
+
+# native app: local SDK path (never commit)
+android-native/local.properties

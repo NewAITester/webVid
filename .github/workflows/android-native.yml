@@ -1,0 +1,56 @@
+name: LyricStudio Native (Android)
+
+# برنامهٔ نیتیو Kotlin + Compose — کپی Alight Motion.
+# بیلد لوکال در VM ممکن نیست (شبکهٔ جاوا/گردل در VM مسدود است)، پس APK اینجا ساخته می‌شود.
+on:
+  push:
+    branches: [feature/android-native]
+    paths:
+      - 'android-native/**'
+      - '.github/workflows/android-native.yml'
+  pull_request:
+    branches: [feature/android-native]
+    paths:
+      - 'android-native/**'
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: جاوا ۱۷
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: اندروید SDK
+        uses: android-actions/setup-android@v3
+
+      - name: کش Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-native-${{ runner.os }}-${{ hashFiles('android-native/**/*.gradle*', 'android-native/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-native-${{ runner.os }}-
+
+      - name: ساخت APK دیباگ
+        working-directory: android-native
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: گزارش APK
+        run: |
+          APK=$(find android-native/app/build/outputs/apk/debug -name '*.apk' | head -1)
+          echo "### APK نیتیو ساخته شد" >> $GITHUB_STEP_SUMMARY
+          echo "فایل: \`$APK\` — حجم: **$(du -h "$APK" | cut -f1)**" >> $GITHUB_STEP_SUMMARY
+
+      - name: آپلود APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyricstudio-native-apk
+          path: android-native/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
