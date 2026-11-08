@@ -50,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zurvanecho.lyricstudio.motion.model.Layer
@@ -252,8 +251,7 @@ private fun Timeline(
     // ۱۰۰dp به ازای هر ثانیه — همان timeline_base_dp_per_sec آلایت
     val pxPerSec = 100.dp
     val scroll = rememberScrollState()
-    val density = LocalDensity.current
-    val trackWidth = with(density) { (project.duration * 100).dp.toDp() }
+    val trackWidth = (project.duration * 100).dp
     val rows = project.layers.reversed()
     Column(
         modifier = modifier.background(Alight.Surface),
