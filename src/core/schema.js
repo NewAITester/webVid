@@ -369,6 +369,7 @@ export function newLayer(type, extra = {}) {
   if (type === 'draw') base.strokes = [];
   if (type === 'group') base.children = [];
   if (type === 'camera') base.camera = { zoom: 1 };
+  if (type === 'audio') base.audio = { volume: 1, fadeIn: 0, fadeOut: 0 };
   return base;
 }
 

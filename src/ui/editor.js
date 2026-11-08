@@ -1,10 +1,13 @@
 /** پوستهٔ ویرایشگر: نوار بالا، صحنه، پخش، تایم‌لاین، شیت، منوی ＋، نوارهای انتخاب. */
 import { newLayer, EFFECTS, EFFECT_PRESETS, effectById } from '../core/schema.js';
+import { layerTransform, cameraZoomAt } from '../core/evaluate.js';
 import { Timeline } from './timeline.js';
 import { renderInspector } from './panels.js';
 import { renderFrame } from '../render/renderer.js';
 import { WebGLRenderer } from '../render/webgl.js';
 import { MediaPool } from '../render/media.js';
+import { AudioPlayer } from '../render/audio.js';
+import { parseLrc, lrcToLayers } from '../importers/lrc.js';
 
 const $ = s => document.querySelector(s);
 
@@ -13,8 +16,11 @@ export class Editor {
     this.store = store; this.onExit = onExit;
     this.media = new MediaPool();
     this.gl = new WebGLRenderer(); // اگر WebGL نباشد supported=false و Canvas جایگزین می‌شود
+    this.audio = new AudioPlayer();
     this.tl = new Timeline($('#tl'), store);
     this.raf = null; this.lastT = 0;
+    this._drawMode = false; this._drawColor = '#FAFAFA'; this._drawWidth = 5; this._liveStroke = null;
+    this._camOff = false;
     this._wire();
     store.subscribe(() => this.sync());
   }
@@ -23,7 +29,7 @@ export class Editor {
   get canvas() { return $('#stage'); }
 
   _wire() {
-    $('#backBtn').onclick = () => { this.stop(); this.onExit(); };
+    $('#backBtn').onclick = () => { this.stop(); this.audio.stop(); this.onExit(); };
     $('#topExport').onclick = () => this.openPane('export');
     $('#etitle').onchange = e => this.store.renameProject(this.project.id, e.target.value);
     $('#play').onclick = () => this.toggle();
@@ -41,6 +47,23 @@ export class Editor {
       $('#railSolo').classList.toggle('on', this.store.soloId === l.id);
       this.draw();
     };
+    $('#railCam').onclick = () => {
+      this._camOff = !this._camOff;
+      $('#railCam').classList.toggle('on', !this._camOff);
+      this.draw();
+    };
+    $('#muteBtn').onclick = () => {
+      this.audio.setMuted(!this.audio.muted);
+      $('#muteBtn').textContent = this.audio.muted ? '🔇' : '🔊';
+      $('#muteBtn').classList.toggle('on', this.audio.muted);
+      this.audio.sync(this.project, this.store.time, this.store.playing);
+    };
+    // رسم آزاد روی صحنه
+    const stage = $('#stage');
+    stage.addEventListener('pointerdown', e => this._drawDown(e));
+    stage.addEventListener('pointermove', e => this._drawMove(e));
+    stage.addEventListener('pointerup', e => this._drawUp(e));
+    stage.addEventListener('pointercancel', () => { this._liveStroke = null; this.draw(); });
     $('#zIn').onclick = () => this._zoom(1.2);
     $('#zOut').onclick = () => this._zoom(1 / 1.2);
     $('#zFit').onclick = () => { this._zoomV = 1; this.sizeStage(); };
@@ -123,7 +146,7 @@ export class Editor {
       $('#selUngroup').classList.toggle('hidden', l.type !== 'group');
       $('#selGroup').classList.toggle('hidden', l.type === 'group');
     }
-    if (this.store.pane === 'inspector') renderInspector(this.store);
+    if (this.store.pane === 'inspector') renderInspector(this.store, this._inspectorHooks());
     if (this.store.pane === 'layers') this._renderLayers();
     if (this.store.pane === 'effects') this._renderFxCatalog();
     this.tl.draw();
@@ -226,8 +249,111 @@ export class Editor {
     if (this.store.soloId) {
       proj = { ...p, layers: p.layers.filter(l => l.id === this.store.soloId || l.type === 'camera') };
     }
+    if (this._camOff) proj = { ...proj, layers: proj.layers.filter(l => l.type !== 'camera') };
     renderFrame(ctx, proj, this.store.time, this.media, this.gl);
+    // خطِ در حال کشیدن (پیش‌نمایش زنده)
+    if (this._liveStroke?.points.length) {
+      const l = this.store.selection;
+      ctx.save();
+      this._applyCamTransform(ctx);
+      if (l) {
+        const tr = layerTransform(l, this.store.time);
+        ctx.translate(tr.x, tr.y); ctx.rotate((tr.rotation * Math.PI) / 180); ctx.scale(tr.scaleX, tr.scaleY);
+      }
+      ctx.strokeStyle = this._liveStroke.color; ctx.lineWidth = this._liveStroke.width;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      this._liveStroke.points.forEach((pt, i) => i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y));
+      ctx.stroke();
+      ctx.restore();
+    }
     if (this.store.pane === 'export') this.syncExPrev();
+  }
+
+  /** ترنسفورم دوربین فعال روی ctx (مثل renderFrame) — برای پیش‌نمایش خط زنده. */
+  _applyCamTransform(ctx) {
+    const p = this.project; if (!p || this._camOff) return;
+    const cam = (p.layers || []).find(l => l.type === 'camera' && this.store.time >= l.start && this.store.time <= l.end);
+    if (!cam) return;
+    const tr = layerTransform(cam, this.store.time);
+    const zoom = cameraZoomAt(cam, this.store.time);
+    ctx.translate(p.width / 2, p.height / 2);
+    ctx.rotate((tr.rotation * Math.PI) / 180);
+    ctx.scale(tr.scaleX * zoom, tr.scaleY * zoom);
+    ctx.translate(-p.width / 2 + tr.x, -p.height / 2 + tr.y);
+  }
+
+  /** نقطهٔ اشاره روی صحنه → مختصات پروژه (با وارون دوربین). */
+  _stagePoint(e) {
+    const p = this.project; if (!p) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    let x = (e.clientX - rect.left) / rect.width * p.width;
+    let y = (e.clientY - rect.top) / rect.height * p.height;
+    const cam = (p.layers || []).find(l => l.type === 'camera' && this.store.time >= l.start && this.store.time <= l.end);
+    if (cam && !this._camOff) {
+      const tr = layerTransform(cam, this.store.time);
+      const zoom = cameraZoomAt(cam, this.store.time);
+      const sx = tr.scaleX * zoom, sy = tr.scaleY * zoom;
+      const rot = (tr.rotation * Math.PI) / 180;
+      let dx = x - p.width / 2, dy = y - p.height / 2;
+      const cos = Math.cos(-rot), sin = Math.sin(-rot);
+      const rx = dx * cos - dy * sin, ry = dx * sin + dy * cos;
+      dx = rx / sx; dy = ry / sy;
+      x = dx + p.width / 2 - tr.x; y = dy + p.height / 2 - tr.y;
+    }
+    return { x, y };
+  }
+
+  _drawDown(e) {
+    const l = this.store.selection;
+    if (!this._drawMode || !l || l.type !== 'draw') return;
+    const pt = this._stagePoint(e);
+    if (!pt) return;
+    try { this.canvas.setPointerCapture(e.pointerId); } catch { /* نه */ }
+    this._liveStroke = {
+      color: this._drawColor, width: this._drawWidth,
+      points: [{ x: pt.x - l.transform.x, y: pt.y - l.transform.y }],
+    };
+    e.preventDefault();
+  }
+  _drawMove(e) {
+    if (!this._liveStroke) return;
+    const l = this.store.selection; if (!l) return;
+    const pt = this._stagePoint(e); if (!pt) return;
+    const p = { x: pt.x - l.transform.x, y: pt.y - l.transform.y };
+    const last = this._liveStroke.points[this._liveStroke.points.length - 1];
+    if (Math.hypot(p.x - last.x, p.y - last.y) < 4) return; // نازک‌کردن نقاط
+    this._liveStroke.points.push(p);
+    this.draw();
+  }
+  _drawUp() {
+    if (!this._liveStroke) return;
+    const l = this.store.selection;
+    const st = this._liveStroke; this._liveStroke = null;
+    if (!l || st.points.length < 2) { this.draw(); return; }
+    this.store.updateLayer(l.id, { strokes: [...(l.strokes || []), st] });
+  }
+
+  _inspectorHooks() {
+    return {
+      draw: {
+        mode: this._drawMode,
+        setMode: v => { this._drawMode = v; this.sync(); },
+        color: this._drawColor,
+        setColor: v => { this._drawColor = v; },
+        width: this._drawWidth,
+        setWidth: v => { this._drawWidth = v; },
+        undoLastStroke: () => {
+          const l = this.store.selection; if (!l || !(l.strokes || []).length) return;
+          this.store.updateLayer(l.id, { strokes: l.strokes.slice(0, -1) });
+        },
+        clearStrokes: () => {
+          const l = this.store.selection; if (!l) return;
+          this.store.updateLayer(l.id, { strokes: [] });
+        },
+      },
+    };
   }
 
   /** رندر پروژه در زمان t روی بوم دلخواه (برای خروجی؛ تک‌نمایش نادیده گرفته می‌شود). */
@@ -263,12 +389,14 @@ export class Editor {
 
   seek(t) {
     this.store.setTime(t);
+    this.audio.sync(this.project, this.store.time, this.store.playing);
     this.draw(); this.tl.draw();
   }
   toggle() {
     if (this.store.playing) this.stop();
     else {
       this.store.playing = true;
+      this.audio.sync(this.project, this.store.time, true);
       this.lastT = performance.now();
       const loop = now => {
         if (!this.store.playing) return;
@@ -277,6 +405,7 @@ export class Editor {
         let t = this.store.time + dt;
         if (t >= this.project.duration) { t = this.project.duration; this.stop(); }
         this.store.time = t;
+        this.audio.tick(this.project, t);
         $('#tc').textContent = fmtTime(t);
         $('#scrub').value = t;
         this.tl.draw(); this.draw();
@@ -286,7 +415,7 @@ export class Editor {
     }
     this.sync();
   }
-  stop() { this.store.playing = false; if (this.raf) cancelAnimationFrame(this.raf); this.sync(); }
+  stop() { this.store.playing = false; if (this.raf) cancelAnimationFrame(this.raf); this.audio.sync(this.project, this.store.time, false); this.sync(); }
 
   openPane(name) {
     this.store.pane = name;
@@ -317,11 +446,11 @@ export class Editor {
     grid.innerHTML = '';
     const tiles = [];
     if (cat === 'shape') for (const k of ['ellipse', 'rect', 'triangle', 'star', 'heart', 'ring', 'line', 'diamond']) tiles.push({ kind: 'shape', shape: k, label: k });
-    if (cat === 'text') tiles.push({ kind: 'text', label: 'متن تازه' });
+    if (cat === 'text') tiles.push({ kind: 'text', label: 'متن تازه' }, { kind: 'lrc', label: 'ایمپورت شعر (.lrc)' });
     if (cat === 'media') tiles.push({ kind: 'image', label: 'تصویر (از فایل)' }, { kind: 'video', label: 'ویدیو (از فایل)' });
     if (cat === 'audio') tiles.push({ kind: 'audio', label: 'صدا (از فایل)' });
-    if (cat === 'object') tiles.push({ kind: 'camera', label: 'دوربین' }, { kind: 'null', label: 'لایهٔ خالی' }, { kind: 'group', label: 'گروه خالی' });
-    if (cat === 'template') tiles.push({ kind: 'template', label: 'قالب نمایش' });
+    if (cat === 'object') tiles.push({ kind: 'camera', label: 'دوربین' }, { kind: 'draw', label: 'خط آزاد' }, { kind: 'null', label: 'لایهٔ خالی' }, { kind: 'group', label: 'گروه خالی' });
+    if (cat === 'template') tiles.push({ kind: 'template', label: 'قالب نمایش' }, { kind: 'lrcDemo', label: 'شعر نقاب + آهنگ' });
     for (const t of tiles) {
       if (q && !t.label.includes(q)) continue;
       const b = document.createElement('button');
@@ -334,13 +463,47 @@ export class Editor {
   addLayer(kind, shapeKind) {
     const p = this.project; if (!p) return;
     if (kind === 'template') { this._addDemo(); this.closeAdd(); return; }
+    if (kind === 'lrc') { this._pickLrcFile(); this.closeAdd(); return; }
+    if (kind === 'lrcDemo') { this._importLrcDemo(); this.closeAdd(); return; }
     if (kind === 'image' || kind === 'video' || kind === 'audio') { this._pickFile(kind); this.closeAdd(); return; }
     const l = newLayer(kind, { start: this.store.time, end: Math.min(p.duration, this.store.time + 5) });
     l.transform.x = p.width / 2; l.transform.y = p.height / 2;
     if (shapeKind) l.shape.kind = shapeKind;
     this.store.addLayer(l);
+    if (kind === 'draw') this._drawMode = true;
     this.closeAdd();
     this.openPane('inspector');
+  }
+  _importLrcText(text) {
+    const { lines } = parseLrc(text);
+    if (!lines.length) return 0;
+    for (const l of lrcToLayers(lines, { x: this.project.width / 2, y: this.project.height / 2 })) {
+      this.store.addLayer(l);
+    }
+    return lines.length;
+  }
+  _pickLrcFile() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.lrc,text/plain';
+    inp.onchange = async () => {
+      const f = inp.files?.[0]; if (!f) return;
+      const n = this._importLrcText(await f.text());
+      this.openPane('layers');
+      if (!n) alert('در این فایل خط شعری با زمان پیدا نشد.');
+    };
+    inp.click();
+  }
+  async _importLrcDemo() {
+    try {
+      const res = await fetch('data/lyrics.lrc');
+      const n = this._importLrcText(await res.text());
+      const audio = newLayer('audio', { name: 'نقاب', start: 0, end: this.project.duration, src: 'data/Neghab.mp3' });
+      this.store.addLayer(audio);
+      this.openPane('layers');
+      if (!n) alert('فایل شعر نمونه خوانده نشد.');
+    } catch {
+      alert('فایل شعر نمونه در دسترس نیست.');
+    }
   }
   _addDemo() {
     const p = this.project;

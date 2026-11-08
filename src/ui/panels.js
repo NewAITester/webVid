@@ -1,6 +1,6 @@
 /** بازرس لایه: ترنسفورم، متن/شکل، افکت‌ها. */
 import { EFFECTS, effectById, SHAPE_KINDS } from '../core/schema.js';
-import { layerTransform, effectParamsAt, isFxOn } from '../core/evaluate.js';
+import { layerTransform, effectParamsAt, isFxOn, cameraZoomAt } from '../core/evaluate.js';
 
 const $ = s => document.querySelector(s);
 
@@ -13,7 +13,7 @@ function slider(label, min, max, step, value, oninput) {
   return wrap;
 }
 
-export function renderInspector(store) {
+export function renderInspector(store, hooks = {}) {
   const root = $('#inspector');
   const l = store.selection;
   root.innerHTML = '';
@@ -64,6 +64,89 @@ export function renderInspector(store) {
     col.innerHTML = `<label>رنگ</label><input type="color" value="${s.fill}">`;
     col.querySelector('input').oninput = e => store.patchLayer(l.id, { shape: { ...s, fill: e.target.value } });
     root.appendChild(col);
+  }
+
+  if (l.type === 'camera') {
+    // بزرگنمایی دوربین با کی‌فریم (مثل پارامترهای افکت)
+    const tLocal = Math.max(0, store.time - l.start);
+    const kfs = l.keyframes?.zoom || [];
+    const zoom = cameraZoomAt(l, store.time);
+    const wrap = document.createElement('div');
+    wrap.className = 'ctl';
+    wrap.appendChild(slider(`بزرگنمایی${kfs.length ? ` ◆${kfs.length}` : ''}`, 0.5, 3, 0.01, +zoom.toFixed(2), v => {
+      if (kfs.length) {
+        const list2 = [...kfs];
+        let best = -1, bd = 1e9;
+        list2.forEach((k, j) => { const d = Math.abs(k.t - tLocal); if (d < bd) { bd = d; best = j; } });
+        if (best >= 0 && bd <= 0.3) list2[best] = { ...list2[best], v };
+        else list2.push({ t: +tLocal.toFixed(2), v });
+        list2.sort((a, b) => a.t - b.t);
+        store.updateLayer(l.id, { keyframes: { ...(l.keyframes || {}), zoom: list2 } });
+      } else {
+        store.updateLayer(l.id, { camera: { ...(l.camera || {}), zoom: v } });
+      }
+    }));
+    const kfBtn = document.createElement('button');
+    kfBtn.className = 'ib'; kfBtn.title = 'افزودن کی‌فریم در زمان فعلی'; kfBtn.textContent = '◆';
+    kfBtn.onclick = () => {
+      const list2 = [...kfs];
+      const near = list2.findIndex(k => Math.abs(k.t - tLocal) <= 0.3);
+      if (near >= 0) list2[near] = { ...list2[near], v: zoom };
+      else list2.push({ t: +tLocal.toFixed(2), v: zoom });
+      list2.sort((a, b) => a.t - b.t);
+      store.updateLayer(l.id, { keyframes: { ...(l.keyframes || {}), zoom: list2 } });
+    };
+    wrap.appendChild(kfBtn);
+    if (kfs.length) {
+      const clr = document.createElement('button');
+      clr.className = 'ib'; clr.title = 'پاک کردن کی‌فریم‌ها'; clr.textContent = '✕';
+      clr.onclick = () => {
+        const nk = { ...(l.keyframes || {}) }; delete nk.zoom;
+        store.updateLayer(l.id, { keyframes: nk });
+      };
+      wrap.appendChild(clr);
+    }
+    root.appendChild(wrap);
+    const hint = document.createElement('div');
+    hint.className = 'msg';
+    hint.textContent = 'جابه‌جایی و چرخش دوربین از اسلایدرهای X و Y و چرخش بالا می‌آید.';
+    root.appendChild(hint);
+  }
+  if (l.type === 'audio') {
+    const a = l.audio || { volume: 1, fadeIn: 0, fadeOut: 0 };
+    const patchA = p => store.patchLayer(l.id, { audio: { ...a, ...p } });
+    root.appendChild(slider('بلندی', 0, 1, 0.01, a.volume ?? 1, v => patchA({ volume: v })));
+    root.appendChild(slider('محو ورود (ثانیه)', 0, 3, 0.1, a.fadeIn || 0, v => patchA({ fadeIn: v })));
+    root.appendChild(slider('محو خروج (ثانیه)', 0, 3, 0.1, a.fadeOut || 0, v => patchA({ fadeOut: v })));
+  }
+  if (l.type === 'draw' && hooks.draw) {
+    const d = hooks.draw;
+    const col = document.createElement('div');
+    col.className = 'ctl';
+    col.innerHTML = `<label>رنگ قلم</label><input type="color" value="${d.color}">`;
+    col.querySelector('input').oninput = e => d.setColor(e.target.value);
+    root.appendChild(col);
+    root.appendChild(slider('ضخامت قلم', 1, 30, 1, d.width, v => d.setWidth(v)));
+    const row = document.createElement('div');
+    row.className = 'frow btns';
+    const tog = document.createElement('button');
+    tog.className = 'btn sm' + (d.mode ? ' primary' : '');
+    tog.textContent = d.mode ? '✏️ رسم: روشن' : '✏️ رسم: خاموش';
+    tog.onclick = () => d.setMode(!d.mode);
+    row.appendChild(tog);
+    const undo = document.createElement('button');
+    undo.className = 'btn sm ghost'; undo.textContent = '↩ حذف آخرین خط';
+    undo.onclick = () => d.undoLastStroke();
+    row.appendChild(undo);
+    const clear = document.createElement('button');
+    clear.className = 'btn sm ghost'; clear.textContent = 'پاک کردن همه';
+    clear.onclick = () => d.clearStrokes();
+    row.appendChild(clear);
+    root.appendChild(row);
+    const hint = document.createElement('div');
+    hint.className = 'msg';
+    hint.textContent = (l.strokes || []).length ? `${(l.strokes || []).length} خط کشیده شده.` : 'با روشن کردن رسم، روی صحنه بکش.';
+    root.appendChild(hint);
   }
 
   // افکت‌ها

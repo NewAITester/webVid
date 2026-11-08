@@ -35,6 +35,12 @@ export function effectParamsAt(fx, tLocal) {
 /** آیا افکت فعال است؟ (پیش‌فرض فعال؛ enabled:false یعنی خاموش) */
 export const isFxOn = fx => fx.enabled !== false;
 
+/** بزرگنمایی دوربین در زمان t — کی‌فریم‌های zoom (نسبت به شروع لایه) وگرنه مقدار ثابت. */
+export function cameraZoomAt(layer, t) {
+  const kfs = layer.keyframes?.zoom;
+  return kfs ? valueAt(kfs, t - layer.start, layer.camera?.zoom ?? 1) : (layer.camera?.zoom ?? 1);
+}
+
 /** ترنسفورم نهایی لایه در زمان t (با کی‌فریم‌ها و افکت‌های anim). */
 export function layerTransform(layer, t) {
   const tr = { ...layer.transform };

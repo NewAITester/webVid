@@ -1,6 +1,6 @@
 /** رندر Canvas 2D: renderFrame(ctx, project, t, media) — تابع خالصِ رسم.
  *  ترتیب: پایین آرایه عقب، بالا جلو. بدون Math.random (هش قطعی). */
-import { layerTransform, layerOpacity, visibleLayers, filterString, canvasEffects, effectParamsAt, isFxOn } from '../core/evaluate.js';
+import { layerTransform, layerOpacity, visibleLayers, filterString, canvasEffects, effectParamsAt, isFxOn, cameraZoomAt } from '../core/evaluate.js';
 import { webglParamsFor } from './webgl.js';
 import { CANVAS_FX, applyCanvasFxList } from './canvasfx.js';
 import { EASINGS } from '../core/easing.js';
@@ -300,9 +300,10 @@ export function renderFrame(ctx, project, t, media, gl) {
   ctx.save();
   if (cam) {
     const tr = layerTransform(cam, t);
+    const zoom = cameraZoomAt(cam, t);
     ctx.translate(W / 2, H / 2);
     ctx.rotate((tr.rotation * Math.PI) / 180);
-    ctx.scale(tr.scaleX * (cam.camera?.zoom || 1), tr.scaleY * (cam.camera?.zoom || 1));
+    ctx.scale(tr.scaleX * zoom, tr.scaleY * zoom);
     ctx.translate(-W / 2 + tr.x, -H / 2 + tr.y);
   }
   for (let idx = 0; idx < layers.length; idx++) {
