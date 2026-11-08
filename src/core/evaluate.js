@@ -1,5 +1,6 @@
 /** ارزیابی خالص لایه در زمان t: ترنسفورم + شفافیت + افکت‌های انیمیشنی. */
 import { ease } from './easing.js';
+import { effectById } from './schema.js';
 
 const PROPS = ['x', 'y', 'scaleX', 'scaleY', 'rotation', 'opacity'];
 
@@ -108,10 +109,5 @@ export function filterString(layer, t = 0) {
 
 /** افکت‌های kind=canvas لایه (فعال‌ها). */
 export function canvasEffects(layer) {
-  return (layer.effects || []).filter(isFxOn).filter(fx => {
-    const def = { temperature: 1, tint: 1, threshold: 1, posterize: 1, motionBlur: 1, radialBlur: 1, sharpen: 1,
-      pixelate: 1, bulge: 1, twirl: 1, pinch: 1, ripple: 1, wave: 1, vortex: 1, glow: 1, outline: 1,
-      dropShadow: 1, vignette: 1, noise: 1, scanlines: 1, perspective: 1, tile: 1, kaleidoscope: 1, chroma: 1, textGlow: 1, chromaShift: 1 };
-    return def[fx.id];
-  });
+  return (layer.effects || []).filter(isFxOn).filter(fx => effectById(fx.id)?.kind === 'canvas');
 }

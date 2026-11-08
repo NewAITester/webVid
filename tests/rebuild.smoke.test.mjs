@@ -12,7 +12,7 @@ const ok = (c, m) => { console.log((c ? '  ✅' : '  ❌') + ' ' + m); if (!c) f
 
 console.log('── اسکیما ──');
 ok(LAYER_TYPES.length === 9, '۹ نوع لایه');
-ok(SHAPE_KINDS.length === 12, '۱۲ شکل پایه');
+ok(SHAPE_KINDS.length === 21, '۲۱ شکل (۲۰ Alight + لوزی)');
 ok(EFFECTS.length >= 40, `رجیستری افکت ${EFFECTS.length} مورد دارد`);
 ok(EFFECT_CATS.length >= 8, `دسته‌های افکت: ${EFFECT_CATS.join(', ')}`);
 ok(effectById('brightness')?.kind === 'filter', 'افکت روشنایی از نوع filter است');

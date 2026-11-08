@@ -2,9 +2,10 @@
  *  ترتیب: پایین آرایه عقب، بالا جلو. بدون Math.random (هش قطعی). */
 import { layerTransform, layerOpacity, visibleLayers, filterString, canvasEffects, effectParamsAt, isFxOn } from '../core/evaluate.js';
 import { webglParamsFor } from './webgl.js';
+import { CANVAS_FX, applyCanvasFxList } from './canvasfx.js';
 import { EASINGS } from '../core/easing.js';
 
-function shapePath(ctx, kind, w, h) {
+export function shapePath(ctx, kind, w, h) {
   const x = -w / 2, y = -h / 2;
   ctx.beginPath();
   if (kind === 'ellipse') { ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2); return; }
@@ -20,6 +21,69 @@ function shapePath(ctx, kind, w, h) {
     ctx.moveTo(0, s * 0.55);
     ctx.bezierCurveTo(-s * 1.1, -s * 0.25, -s * 0.45, -s * 0.95, 0, -s * 0.3);
     ctx.bezierCurveTo(s * 0.45, -s * 0.95, s * 1.1, -s * 0.25, 0, s * 0.55);
+    ctx.closePath(); return;
+  }
+  const hw = w / 2, hh = h / 2;
+  if (kind === 'arrow') {
+    const sh = hh * 0.38, head = Math.min(hw, hh * 1.1);
+    const p = [[-hw, -sh], [hw - head, -sh], [hw - head, -hh], [hw, 0], [hw - head, hh], [hw - head, sh], [-hw, sh]];
+    p.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+    ctx.closePath(); return;
+  }
+  if (kind === 'plus' || kind === 'cross') {
+    const tw = Math.min(w, h) * (kind === 'plus' ? 0.42 : 0.3) / 2;
+    const p = [[-tw, -hh], [tw, -hh], [tw, -tw], [hw, -tw], [hw, tw], [tw, tw], [tw, hh],
+               [-tw, hh], [-tw, tw], [-hw, tw], [-hw, -tw], [-tw, -tw]];
+    p.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+    ctx.closePath(); return;
+  }
+  if (kind === 'stamp') {
+    const n = 24, rOut = Math.min(hw, hh), rIn = rOut * 0.88;
+    for (let i = 0; i <= n * 2; i++) {
+      const a = (i / (n * 2)) * Math.PI * 2 - Math.PI / 2;
+      const r = i % 2 ? rIn : rOut;
+      const px = Math.cos(a) * r, py = Math.sin(a) * r;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath(); return;
+  }
+  if (kind === 'roundrect') {
+    const r = Math.min(w, h) * 0.2;
+    if (ctx.roundRect) ctx.roundRect(-hw, -hh, w, h, r); else ctx.rect(-hw, -hh, w, h);
+    return;
+  }
+  if (kind === 'quad') {
+    const tw = hw * 0.6;
+    const p = [[-tw, -hh], [tw, -hh], [hw, hh], [-hw, hh]];
+    p.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+    ctx.closePath(); return;
+  }
+  if (kind === 'pie') {
+    ctx.moveTo(0, 0);
+    ctx.ellipse(0, 0, hw, hh, 0, -Math.PI / 2, Math.PI, false);
+    ctx.closePath(); return;
+  }
+  if (kind === 'arc') {
+    // کمان باز — در این رندر با پُر شدن، گُوه می‌شود (تقریب)
+    ctx.ellipse(0, 0, hw, hh, 0, -Math.PI / 2, Math.PI, false);
+    ctx.closePath(); return;
+  }
+  if (kind === 'moon') {
+    ctx.ellipse(0, 0, hw, hh, 0, 0, Math.PI * 2, false);
+    ctx.ellipse(hw * 0.35, -hh * 0.1, hw * 0.85, hh * 0.85, 0, 0, Math.PI * 2, true);
+    ctx.closePath(); return;
+  }
+  if (kind === 'teardrop') {
+    ctx.moveTo(0, -hh);
+    ctx.bezierCurveTo(hw * 0.9, -hh * 0.1, hw, hh * 0.5, 0, hh);
+    ctx.bezierCurveTo(-hw, hh * 0.5, -hw * 0.9, -hh * 0.1, 0, -hh);
+    ctx.closePath(); return;
+  }
+  if (kind === 'callout') {
+    const by = hh * 0.65;
+    const p = [[-hw, -hh], [hw, -hh], [hw, by], [hw * 0.25, by],
+               [-hw * 0.05, hh], [-hw * 0.35, by], [-hw, by]];
+    p.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
     ctx.closePath(); return;
   }
   const n = kind === 'star' ? 5 : kind === 'flower' ? 8 : kind === 'polygon' ? 6 : 3;
@@ -87,7 +151,7 @@ function drawDraw(ctx, layer) {
 }
 
 /** افکت‌های canvas روی یک بومِ موقت (ورودی: بومِ لایه + اندازه). */
-function applyCanvasFx(src, layer, t, W, H) {
+function applyCanvasFx(src, layer, t, W, H, gl) {
   const fxs = canvasEffects(layer);
   if (!fxs.length) return src;
   const out = document.createElement('canvas'); out.width = W; out.height = H;
@@ -155,6 +219,9 @@ function applyCanvasFx(src, layer, t, W, H) {
       c.globalAlpha = 0.85;
       c.drawImage(tmp, 0, 0);
       c.globalAlpha = 1;
+    } else if (CANVAS_FX[fx.id]) {
+      // افکت‌های پورت‌شده از برنامهٔ قبلی (فاز R6) — ترتیب لایه حفظ می‌شود
+      applyCanvasFxList(out, [{ id: fx.id, p }], t - layer.start, gl);
     }
   }
   return out;
@@ -207,7 +274,7 @@ function renderLayerCanvas(layer, t, project, media, W, H, gl) {
   drawLayerContent(c2, layer, t, project, media);
   c2.filter = 'none';
   c2.restore();
-  const done = applyCanvasFx(cv, layer, t, W, H);
+  const done = applyCanvasFx(cv, layer, t, W, H, gl);
   if (glParams) {
     const glOut = gl.adjust(done, glParams);
     if (glOut) return glOut;
