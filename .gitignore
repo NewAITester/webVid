@@ -10,6 +10,8 @@ public/pyodide/
 public/webfonts/
 # هستهٔ FFmpeg فقط دستی کپی می‌شود (scripts/copy-ffmpeg.mjs) و هرگز در بیلد خودکار نیست
 public/ffmpeg/
+# هستهٔ Rust/WASM: هنگام بیلد ساخته می‌شود (scripts/build-wasm.mjs)
+public/wasm/
 
 # اندروید: پروژه کامیت می‌شود، خروجی بیلد نه
 android/.gradle/
@@ -23,3 +25,6 @@ android/capacitor-cordova-android-plugins/build/
 .gradle/
 
 artifacts/
+
+# خروجی بیلد Rust
+rust/*/target/

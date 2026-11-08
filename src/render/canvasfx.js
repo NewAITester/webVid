@@ -5,7 +5,12 @@
  * هر افکت یک تابع است که بوم مقصد (d) را از روی بوم مبدأ (cur) می‌سازد.
  * افکت‌هایی که اینجا نیستند فقط در رجیستری‌اند و در رندر نادیده گرفته می‌شوند.
  * قرارداد: v = پارامترهای حل‌شدهٔ افکت، id = شناسهٔ افکت، X = ابزارها.
+ * مسیر سریع: ۲۲ افکت تک‌پیکسلی (جدول RUST_FX در rustfx.js) اول در
+ * Rust/WASM اجرا می‌شوند؛ اگر WASM آماده نباشد، همان پیاده‌سازی JS
+ * زیر اجرا می‌شود.
  */
+
+import { runRustFxOnCanvas } from './rustfx.js';
 
 const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
 
@@ -2842,6 +2847,8 @@ export function applyCanvasFxList(canvas, fxList, t, gl) {
       return c;
     };
     const X = { W, H, time, px, box, pixelOp, warp, smear, rgbSplit, tinted, scratch: (n) => scratch(n, W, H), glAdjust, noiseTile, noise, parseColor, rgbaStr, clamp };
+    // مسیر سریع Rust/WASM (۲۲ افکت تک‌پیکسلی)؛ false یعنی fallback به JS.
+    if (runRustFxOnCanvas(id, ctx, cur, W, H, p, time)) continue;
     try { fn(ctx, cur, p, id, X); } catch { /* افکت خراب، لایه بدون آن می‌ماند */ }
   }
   return canvas;

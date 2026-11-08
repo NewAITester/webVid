@@ -32,6 +32,12 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: نصب Rust (هستهٔ WASM)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+
       - name: جاوا ۱۷
         uses: actions/setup-java@v4
         with:
@@ -60,6 +66,7 @@ jobs:
           node tests/effects.test.mjs
           node tests/r7.test.mjs
           node tests/ffmpeg.test.mjs
+          node tests/rust.test.mjs
 
       - name: نصب مرورگر آزمون خروجی
         run: npx playwright install --with-deps chromium

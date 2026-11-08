@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/prepare-tools.mjs && node scripts/copy-fonts.mjs",
+    "prebuild": "node scripts/prepare-tools.mjs && node scripts/copy-fonts.mjs && node scripts/build-wasm.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/rebuild.smoke.test.mjs && node tests/webgl.test.mjs && node tests/export.test.mjs && node tests/effects.test.mjs && node tests/r7.test.mjs && node tests/ffmpeg.test.mjs",
-    "test:export-browser": "node tests/export.browser.mjs"
+    "test": "node tests/rebuild.smoke.test.mjs && node tests/webgl.test.mjs && node tests/export.test.mjs && node tests/effects.test.mjs && node tests/r7.test.mjs && node tests/ffmpeg.test.mjs && node tests/rust.test.mjs",
+    "test:export-browser": "node tests/export.browser.mjs",
+    "build:wasm": "node scripts/build-wasm.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.2",
