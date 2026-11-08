@@ -8,6 +8,8 @@ tests/*.png
 public/pyodide/
 # فونت‌های همراه برنامه: هنگام بیلد گرفته می‌شوند (scripts/copy-fonts.mjs)
 public/webfonts/
+# هستهٔ FFmpeg فقط دستی کپی می‌شود (scripts/copy-ffmpeg.mjs) و هرگز در بیلد خودکار نیست
+public/ffmpeg/
 
 # اندروید: پروژه کامیت می‌شود، خروجی بیلد نه
 android/.gradle/

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/prepare-tools.mjs && node scripts/copy-fonts.mjs && node scripts/copy-ffmpeg.mjs",
+    "prebuild": "node scripts/prepare-tools.mjs && node scripts/copy-fonts.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test": "node tests/rebuild.smoke.test.mjs && node tests/webgl.test.mjs && node tests/export.test.mjs && node tests/effects.test.mjs && node tests/r7.test.mjs && node tests/ffmpeg.test.mjs",

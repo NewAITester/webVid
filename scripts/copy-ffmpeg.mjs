@@ -1,8 +1,10 @@
 /**
  * هستهٔ FFmpeg (ffmpeg-core.js و ffmpeg-core.wasm) را از node_modules
  * به public/ffmpeg کپی می‌کند تا داخل APK باشد و بدون اینترنت کار کند.
- * قبل از هر بیلد خودکار اجرا می‌شود (npm run build → prebuild).
- * اگر بسته نصب نشده باشد فقط هشدار می‌دهد؛ برنامه آن وقت از CDN بار می‌کند.
+ * فقط دستی اجرا می‌شود (node scripts/copy-ffmpeg.mjs) — در بیلد خودکار
+ * نیست، چون ورک‌فلو صراحتاً می‌خواهد باینری FFmpeg داخل APK نرود
+ * (android.yml: test ! -d .../ffmpeg) و برنامه هنگام نیاز از CDN بارش کند.
+ * اگر بسته نصب نشده باشد فقط هشدار می‌دهد.
  */
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
