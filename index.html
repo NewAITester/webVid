@@ -105,16 +105,36 @@
         <div class="pane" data-pane="inspector"><div id="inspector"></div></div>
         <div class="pane" data-pane="effects"><div id="fxList" class="llist"></div></div>
         <div class="pane" data-pane="export">
+          <canvas id="exPrev" class="exprev"></canvas>
+          <div class="extransport">
+            <button id="exPrevTo" class="icon sm" title="ابتدا">⏮</button>
+            <button id="exPrevPlay" class="icon sm" title="پخش">▶</button>
+            <button id="exPrevEnd" class="icon sm" title="انتها">⏭</button>
+            <input id="exSeek" class="scrub" type="range" min="0" max="10" step="0.01" value="0">
+            <span id="exSeekT" class="pill">00:00</span>
+          </div>
           <div class="form">
             <div class="frow"><label>از</label><input id="exFrom" type="number" value="0" min="0" step="1">
               <label>تا</label><input id="exTo" type="number" value="10" min="1" step="1"><span class="dim">ثانیه</span></div>
+            <div class="frow"><label>کیفیت</label>
+              <select id="exRes"><option value="480">۴۸۰p</option><option value="720" selected>۷۲۰p</option><option value="1080">۱۰۸۰p</option></select>
+              <label>فریم</label>
+              <select id="exFps"><option value="24">۲۴</option><option value="30" selected>۳۰</option><option value="60">۶۰</option></select>
+              <label>بیت‌ریت</label>
+              <select id="exBr"><option value="8">۸ مگابیت</option><option value="12" selected>۱۲ مگابیت</option><option value="20">۲۰ مگابیت</option></select>
+            </div>
             <div id="exEst" class="msg"></div>
             <div class="frow btns">
               <button id="exGo" class="btn primary">شروع خروجی</button>
+              <button id="exCancel" class="btn sm ghost hidden">لغو</button>
               <button id="exSnap" class="btn sm ghost">📷 عکس فریم</button>
             </div>
             <div id="exBar" class="bar2 hidden"><i></i></div>
             <div id="exMsg" class="msg"></div>
+            <div class="frow btns hidden" id="exDoneRow">
+              <a id="exDownload" class="btn primary" download>دانلود MP4</a>
+              <button id="exShare" class="btn sm">اشتراک‌گذاری</button>
+            </div>
           </div>
         </div>
       </div>

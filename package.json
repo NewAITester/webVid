@@ -8,7 +8,8 @@
     "prebuild": "node scripts/prepare-tools.mjs && node scripts/copy-fonts.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/rebuild.smoke.test.mjs && node tests/webgl.test.mjs"
+    "test": "node tests/rebuild.smoke.test.mjs && node tests/webgl.test.mjs && node tests/export.test.mjs",
+    "test:export-browser": "node tests/export.browser.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.2",

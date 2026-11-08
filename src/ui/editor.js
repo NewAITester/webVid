@@ -59,6 +59,10 @@ export class Editor {
     $('#sbAlignB').onclick = () => this._alignSel('b');
     $('#paneClose').onclick = () => this.closePane();
     $('#addLayerBtn').onclick = () => this.openAdd();
+    $('#exPrevPlay').onclick = () => this.toggle();
+    $('#exPrevTo').onclick = () => this.seek(0);
+    $('#exPrevEnd').onclick = () => this.seek(this.project.duration);
+    $('#exSeek').oninput = e => this.seek(parseFloat(e.target.value));
     document.querySelectorAll('.ptab').forEach(b => {
       b.onclick = () => this.openPane(b.dataset.pane);
     });
@@ -223,6 +227,38 @@ export class Editor {
       proj = { ...p, layers: p.layers.filter(l => l.id === this.store.soloId || l.type === 'camera') };
     }
     renderFrame(ctx, proj, this.store.time, this.media, this.gl);
+    if (this.store.pane === 'export') this.syncExPrev();
+  }
+
+  /** رندر پروژه در زمان t روی بوم دلخواه (برای خروجی؛ تک‌نمایش نادیده گرفته می‌شود). */
+  renderTo(canvas, t) {
+    const p = this.project; if (!p) return;
+    if (canvas.width === p.width && canvas.height === p.height) {
+      renderFrame(canvas.getContext('2d'), p, t, this.media, this.gl);
+      return;
+    }
+    if (!this._exCanvas) this._exCanvas = document.createElement('canvas');
+    const tmp = this._exCanvas;
+    tmp.width = p.width; tmp.height = p.height;
+    renderFrame(tmp.getContext('2d'), p, t, this.media, this.gl);
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+  }
+
+  /** پیش‌نمایش خروجی: کپی فریم صحنه + موقعیت اسکراب. */
+  syncExPrev() {
+    const cv = $('#exPrev'); if (!cv) return;
+    const stage = this.canvas;
+    const w = 360, h = Math.round(360 * stage.height / Math.max(1, stage.width));
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    cv.getContext('2d').drawImage(stage, 0, 0, w, h);
+    const sk = $('#exSeek');
+    if (sk) { sk.max = this.project.duration; sk.value = this.store.time; }
+    const st = $('#exSeekT');
+    if (st) st.textContent = fmtTime(this.store.time);
+    const pp = $('#exPrevPlay');
+    if (pp) pp.textContent = this.store.playing ? '❚❚' : '▶';
   }
 
   seek(t) {

@@ -35,6 +35,23 @@ jobs:
         run: |
           node tests/rebuild.smoke.test.mjs
           node tests/webgl.test.mjs
+          node tests/export.test.mjs
+
+      - name: نصب مرورگر آزمون خروجی
+        run: npx playwright install --with-deps chromium
+
+      - name: تست ویدیوی واقعی
+        run: npm run test:export-browser
+
+      - name: ذخیرهٔ ویدیوی آزمون خروجی
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-test-web
+          path: artifacts/export-tests/
+          if-no-files-found: warn
+          retention-days: 3
+          continue-on-error: true
 
       - name: بیلد
         env:
