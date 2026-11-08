@@ -3,6 +3,10 @@
  * اپ واقعی را بیلد و سرو می‌کند، پروژهٔ نمایشی را باز می‌کند، ۱ ثانیه
  * را با WebCodecs خروجی می‌گیرد و فایل MP4 را بررسی می‌کند.
  *   npm run test:export-browser
+ * نیاز به نصب یک‌بارهٔ مرورگر دارد: npx playwright install chromium
+ * (در CI نصب می‌شود؛ در VM محلی دانلود مرورگر به محدودیت شبکه می‌خورد).
+ * سرور پیش‌نمایش مستقیم از باینری vite اجرا می‌شود تا SIGTERM در finally
+ * واقعاً آن را بکشد (npx فرزند را یتیم می‌کرد و پورت ۴۱۷۳ باز می‌ماند).
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -33,7 +37,7 @@ console.log('── بیلد وب ──');
 await run('npx', ['vite', 'build']);
 
 console.log('── سرو پیش‌نمایش ──');
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { cwd: root, stdio: 'inherit' });
+const server = spawn('node', ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], { cwd: root, stdio: 'inherit' });
 let browser;
 try {
   await waitForServer(`http://127.0.0.1:${PORT}/`);
