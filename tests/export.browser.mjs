@@ -53,7 +53,9 @@ try {
   await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'editor');
 
   console.log('── پنل خروجی ──');
-  await page.locator('#paneTabs button[data-pane="export"]').click();
+  // دکمهٔ تب خروجی در نوار پایین (.nav) است؛ #paneTabs در نشانه‌گذاری وجود ندارد
+  // و دکمه‌های داخل .ptabs وقتی شیت بسته است دیده نمی‌شوند (height:0).
+  await page.locator('.nav .ptab[data-pane="export"]').click();
   await page.fill('#exFrom', '0');
   await page.fill('#exTo', '1');
   await page.selectOption('#exFps', '24');
