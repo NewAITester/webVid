@@ -26,9 +26,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: اندروید SDK
-        uses: android-actions/setup-android@v3
-
+      # بدون setup-android: رانر اوبونتو SDK اندروید را از پیش نصب دارد و
+      # اکشن setup-android در ران ۱ پس از ۱۶ ثانیه مرد (خطا در لاگ است، ولی
+      # SDK پیش‌نصب‌شده همان چیزی است که لازم داریم).
       - name: کش Gradle
         uses: actions/cache@v4
         with:
@@ -37,6 +37,11 @@ jobs:
             ~/.gradle/wrapper
           key: gradle-native-${{ runner.os }}-${{ hashFiles('android-native/**/*.gradle*', 'android-native/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-native-${{ runner.os }}-
+
+      - name: آماده‌سازی Gradle (دانلود با تلاش دوباره + کش)
+        # دانلود مستقیم توزیع Gradle گاهی از گیت‌هاب ۵۰۴ می‌گیرد؛ این اکشن
+        # رسمی تلاش دوباره و کش دارد و نسخه را از wrapper می‌خواند.
+        uses: gradle/actions/setup-gradle@v3
 
       - name: ساخت APK دیباگ
         working-directory: android-native

@@ -109,6 +109,11 @@ jobs:
           test -f android/app/src/main/assets/public/webfonts/fonts.json
           ls android/app/src/main/assets/public/webfonts/*.ttf | wc -l
 
+      - name: آماده‌سازی Gradle (دانلود با تلاش دوباره + کش)
+        # دانلود مستقیم توزیع Gradle گاهی از گیت‌هاب ۵۰۴ می‌گیرد؛ این اکشن
+        # رسمی تلاش دوباره و کش دارد و نسخه را از wrapper می‌خواند.
+        uses: gradle/actions/setup-gradle@v3
+
       - name: ساخت APK
         working-directory: android
         run: |
