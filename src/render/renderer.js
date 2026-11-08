@@ -1,6 +1,7 @@
 /** رندر Canvas 2D: renderFrame(ctx, project, t, media) — تابع خالصِ رسم.
  *  ترتیب: پایین آرایه عقب، بالا جلو. بدون Math.random (هش قطعی). */
 import { layerTransform, layerOpacity, visibleLayers, filterString, canvasEffects, effectParamsAt, isFxOn } from '../core/evaluate.js';
+import { webglParamsFor } from './webgl.js';
 import { EASINGS } from '../core/easing.js';
 
 function shapePath(ctx, kind, w, h) {
@@ -188,27 +189,40 @@ function drawLayerContent(ctx, layer, t, project, media) {
   }
 }
 
-/** رسم یک لایه روی بومِ تازه (با ترنسفورم، شفافیت، فیلتر و افکت‌های canvas) — بدون ماسک. */
-function renderLayerCanvas(layer, t, project, media, W, H) {
+/** رسم یک لایه روی بومِ تازه (ترنسفورم، شفافیت، افکت‌های canvas و در صورت امکان WebGL) — بدون ماسک. */
+function renderLayerCanvas(layer, t, project, media, W, H, gl) {
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const c2 = cv.getContext('2d');
   const tr = layerTransform(layer, t);
   const op = layerOpacity(layer, t);
+  const glParams = gl?.supported ? webglParamsFor(layer, t) : null;
   c2.save();
   c2.translate(tr.x, tr.y);
   c2.rotate((tr.rotation * Math.PI) / 180);
   c2.scale(tr.scaleX, tr.scaleY);
   c2.globalAlpha = op;
-  c2.filter = filterString(layer, t);
+  // با WebGL، درجه‌بندی رنگ در شیدر انجام می‌شود؛ وگرنه با ctx.filter
+  c2.filter = glParams ? 'none' : filterString(layer, t);
   drawLayerContent(c2, layer, t, project, media);
   c2.filter = 'none';
   c2.restore();
-  return applyCanvasFx(cv, layer, t, W, H);
+  const done = applyCanvasFx(cv, layer, t, W, H);
+  if (glParams) {
+    const glOut = gl.adjust(done, glParams);
+    if (glOut) return glOut;
+    // WebGL وسط کار شکست خورد: درجه‌بندی با ctx.filter روی بوم دوبعدی
+    const fb = document.createElement('canvas'); fb.width = W; fb.height = H;
+    const fc = fb.getContext('2d');
+    fc.filter = filterString(layer, t);
+    fc.drawImage(done, 0, 0);
+    return fb;
+  }
+  return done;
 }
 
-/** رسم یک فریم کامل روی ctx (اندازهٔ ctx = اندازهٔ پروژه). */
-export function renderFrame(ctx, project, t, media) {
+/** رسم یک فریم کامل روی ctx (اندازهٔ ctx = اندازهٔ پروژه). gl اختیاری است. */
+export function renderFrame(ctx, project, t, media, gl) {
   const W = project.width, H = project.height;
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = project.bg || '#0C0D13';
@@ -235,8 +249,8 @@ export function renderFrame(ctx, project, t, media) {
       if (!below || below.type === 'camera' || below.type === 'audio' || below.type === 'null') {
         if (layer.clip === 'below') continue; // ماسک خالی = هیچ‌چیز دیده نمی‌شود
       } else {
-        const mine = renderLayerCanvas(layer, t, project, media, W, H);
-        const mask = renderLayerCanvas(below, t, project, media, W, H);
+        const mine = renderLayerCanvas(layer, t, project, media, W, H, gl);
+        const mask = renderLayerCanvas(below, t, project, media, W, H, gl);
         const mc = mine.getContext('2d');
         mc.globalCompositeOperation = layer.clip === 'below' ? 'destination-in' : 'destination-out';
         mc.drawImage(mask, 0, 0);
@@ -246,7 +260,12 @@ export function renderFrame(ctx, project, t, media) {
       }
     }
     if (canvasEffects(layer).length > 0) {
-      ctx.drawImage(renderLayerCanvas(layer, t, project, media, W, H), 0, 0);
+      ctx.drawImage(renderLayerCanvas(layer, t, project, media, W, H, gl), 0, 0);
+      continue;
+    }
+    // درجه‌بندی رنگ با WebGL (سریع‌تر و یکنواخت‌تر از ctx.filter)
+    if (gl?.supported && webglParamsFor(layer, t)) {
+      ctx.drawImage(renderLayerCanvas(layer, t, project, media, W, H, gl), 0, 0);
       continue;
     }
     const tr = layerTransform(layer, t);

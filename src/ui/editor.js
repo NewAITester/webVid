@@ -3,6 +3,7 @@ import { newLayer, EFFECTS, EFFECT_PRESETS, effectById } from '../core/schema.js
 import { Timeline } from './timeline.js';
 import { renderInspector } from './panels.js';
 import { renderFrame } from '../render/renderer.js';
+import { WebGLRenderer } from '../render/webgl.js';
 import { MediaPool } from '../render/media.js';
 
 const $ = s => document.querySelector(s);
@@ -11,6 +12,7 @@ export class Editor {
   constructor(store, onExit) {
     this.store = store; this.onExit = onExit;
     this.media = new MediaPool();
+    this.gl = new WebGLRenderer(); // اگر WebGL نباشد supported=false و Canvas جایگزین می‌شود
     this.tl = new Timeline($('#tl'), store);
     this.raf = null; this.lastT = 0;
     this._wire();
@@ -220,7 +222,7 @@ export class Editor {
     if (this.store.soloId) {
       proj = { ...p, layers: p.layers.filter(l => l.id === this.store.soloId || l.type === 'camera') };
     }
-    renderFrame(ctx, proj, this.store.time, this.media);
+    renderFrame(ctx, proj, this.store.time, this.media, this.gl);
   }
 
   seek(t) {

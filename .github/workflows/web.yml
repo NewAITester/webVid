@@ -32,7 +32,9 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: تست موتور
-        run: node tests/rebuild.smoke.test.mjs
+        run: |
+          node tests/rebuild.smoke.test.mjs
+          node tests/webgl.test.mjs
 
       - name: بیلد
         env:
