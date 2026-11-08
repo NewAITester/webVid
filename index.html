@@ -138,6 +138,36 @@
               <button id="exShare" class="btn sm">اشتراک‌گذاری</button>
             </div>
           </div>
+          <div class="form" id="ffSection">
+            <div class="fxcat">تبدیل با FFmpeg</div>
+            <p class="note">ویدیوی خروجی را کم‌حجم کن، قالبش را عوض کن، گیف یا MP3 بگیر. پردازش روی خود گوشی انجام می‌شود؛ هستهٔ FFmpeg فقط وقتی لازم شد بار می‌شود.</p>
+            <div class="frow btns">
+              <button class="chip on" id="ffSrcLast">آخرین خروجی</button>
+              <button class="chip" id="ffSrcFile">انتخاب فایل…</button>
+              <span class="pill" id="ffInputInfo">ورودی ندارد — اول خروجی بگیرید</span>
+            </div>
+            <div class="chips" id="ffRecipes"></div>
+            <div class="frow"><span class="fcell"><label>قالب</label><select id="ffContainer"></select></span>
+              <span class="fcell" id="ffVcodecCell"><label>ویدیو</label><select id="ffVcodec"></select></span>
+              <span class="fcell" id="ffAcodecCell"><label>صدا</label><select id="ffAcodec"></select></span></div>
+            <div class="frow"><label>کیفیت (CRF)</label><input id="ffCrf" type="range" min="18" max="32" step="1" value="23" dir="ltr"><span class="v" id="ffCrfV">۲۳</span>
+              <label>پیش‌تنظیم</label><select id="ffPreset"></select></div>
+            <div class="frow"><label>ارتفاع</label><select id="ffHeight"><option value="0">بدون تغییر</option><option value="480">۴۸۰</option><option value="720" selected>۷۲۰</option><option value="1080">۱۰۸۰</option><option value="1920">۱۹۲۰</option></select>
+              <label>فریم</label><select id="ffFps"><option value="0">بدون تغییر</option><option value="15">۱۵</option><option value="24">۲۴</option><option value="30" selected>۳۰</option><option value="60">۶۰</option></select>
+              <label>صدا (kbps)</label><select id="ffAbitrate"><option value="96">۹۶</option><option value="128" selected>۱۲۸</option><option value="192">۱۹۲</option></select></div>
+            <div class="frow" id="ffGifRow" style="display:none"><label>عرض گیف</label><input id="ffGifWidth" type="number" value="480" min="120" max="1080" step="10">
+              <label>فریم گیف</label><input id="ffGifFps" type="number" value="15" min="5" max="30" step="1"></div>
+            <div class="frow" id="ffSnapRow" style="display:none"><label>عکس در ثانیهٔ</label><input id="ffSnapAt" type="number" value="1" min="0" step="0.5"></div>
+            <textarea id="ffCmd" class="code sm" spellcheck="false" readonly rows="2"></textarea>
+            <div class="frow btns">
+              <button id="ffGo" class="btn primary">اجرای تبدیل</button>
+              <button id="ffCancel" class="btn sm ghost hidden">لغو</button>
+              <a id="ffDownload" class="btn primary hidden" download>دانلود نتیجه</a>
+            </div>
+            <div id="ffBar" class="bar2 hidden"><i></i></div>
+            <div id="ffMsg" class="msg"></div>
+            <details class="xhelp"><summary>گزارش FFmpeg</summary><pre id="ffLog" class="ffl"></pre></details>
+          </div>
         </div>
       </div>
     </div>

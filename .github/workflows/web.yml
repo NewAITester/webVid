@@ -38,6 +38,7 @@ jobs:
           node tests/export.test.mjs
           node tests/effects.test.mjs
           node tests/r7.test.mjs
+          node tests/ffmpeg.test.mjs
 
       - name: نصب مرورگر آزمون خروجی
         run: npx playwright install --with-deps chromium

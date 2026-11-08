@@ -69,6 +69,31 @@ export function layerTransform(layer, t) {
       const prog = (t - layer.start) / Math.max(0.01, (layer.end - layer.start));
       const k = 1 + (p.amount || 0.15) * Math.min(1, Math.max(0, prog));
       tr.scaleX *= k; tr.scaleY *= k;
+    } else if (fx.id === 'drift') {
+      const a = ((p.rot || 0) * Math.PI) / 180;
+      tr.x += Math.cos(a) * (p.speed || 10) * t;
+      tr.y += Math.sin(a) * (p.speed || 10) * t;
+    } else if (fx.id === 'wobble') {
+      const s = t * (p.freq || 1) * Math.PI * 2;
+      tr.x += Math.sin(s) * (p.amt || 8);
+      tr.y += Math.cos(s * 0.7) * (p.amt || 8) * 0.5;
+    } else if (fx.id === 'floaty') {
+      tr.y += Math.sin(t * (p.freq || 1) * Math.PI * 2) * (p.amt || 10);
+    } else if (fx.id === 'wiggle') {
+      const s = t * (p.freq || 1) * Math.PI * 2;
+      tr.rotation += Math.sin(s) * (p.rot || 5);
+      tr.x += Math.sin(s * 1.3) * (p.amt || 6);
+    } else if (fx.id === 'swing') {
+      tr.rotation += Math.sin(t * (p.freq || 1) * Math.PI * 2) * (p.ang || 10);
+    } else if (fx.id === 'orbit') {
+      const s = t * (p.freq || 1) * Math.PI * 2;
+      tr.x += Math.cos(s) * (p.r || 20);
+      tr.y += Math.sin(s) * (p.r || 20);
+    } else if (fx.id === 'zoomPulse') {
+      const k = 1 + Math.sin(t * (p.freq || 1) * Math.PI * 2) * (p.amt || 0.1);
+      tr.scaleX *= k; tr.scaleY *= k;
+    } else if (fx.id === 'mirror') {
+      if ((p.axis ?? 0) >= 0.5) tr.scaleY *= -1; else tr.scaleX *= -1;
     }
   }
   return tr;
@@ -82,6 +107,8 @@ export function layerOpacity(layer, t) {
     if (fx.id === 'fade') o *= (p.amount ?? 1);
     if (fx.id === 'blink') o *= (Math.sin(t * (p.speed || 4) * Math.PI * 2) > 0 ? 1 : 0.15);
     if (fx.id === 'flash') o *= 0.6 + 0.4 * Math.sin(t * (p.speed || 2) * Math.PI * 2);
+    if (fx.id === 'fadePulse') o *= 1 - (p.amt || 0.5) * (0.5 + 0.5 * Math.sin(t * (p.freq || 1) * Math.PI * 2));
+    if (fx.id === 'strobe') o *= (Math.sin(t * (p.rate || 4) * Math.PI * 2) > 0 ? 1 : 1 - (p.depth || 0.8));
   }
   return Math.min(1, Math.max(0, o));
 }
@@ -111,6 +138,14 @@ export function filterString(layer, t = 0) {
     if (fx.id === 'blur') parts.push(`blur(${p.amount || 0}px)`);
   }
   return parts.length ? parts.join(' ') : 'none';
+}
+
+/** پارامترهای افکت تکرارکنندهٔ فعال لایه (در زمان t) یا null. */
+export function repeatOf(layer, t) {
+  for (const fx of (layer.effects || []).filter(isFxOn)) {
+    if (fx.id === 'repeat') return effectParamsAt(fx, t - layer.start);
+  }
+  return null;
 }
 
 /** افکت‌های kind=canvas لایه (فعال‌ها). */

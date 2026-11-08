@@ -7,7 +7,7 @@
 import { EFFECTS, SHAPE_KINDS, effectById } from '../src/core/schema.js';
 import { CANVAS_FX, applyCanvasFxList, noise, parseColor } from '../src/render/canvasfx.js';
 import { shapePath } from '../src/render/renderer.js';
-import { canvasEffects, effectParamsAt } from '../src/core/evaluate.js';
+import { canvasEffects, effectParamsAt, layerTransform, layerOpacity, repeatOf } from '../src/core/evaluate.js';
 import { newLayer } from '../src/core/schema.js';
 
 let fail = 0;
@@ -48,8 +48,13 @@ console.log('── رجیستری ──');
   ok(canvasKind === 252, `افکت‌های canvas: ${canvasKind}`);
   const withImpl = EFFECTS.filter(e => CANVAS_FX[e.id]).length;
   ok(withImpl === 247, `افکت‌های با پیاده‌سازی canvas: ${withImpl}`);
-  const registryOnly = EFFECTS.filter(e => e.kind === 'filter' && !CANVAS_FX[e.id]).length;
-  console.log(`  (رجیستری‌صرف: ${registryOnly} افکت بدون پیاده‌سازی رندر — مثل برنامهٔ قبلی)`);
+  // افکت‌هایی که هیچ مسیر رندری ندارند: ۶ فیلتر رنگ از ctx.filter کار می‌کنند،
+  // ۹ افکت حرکتی در layerTransform/layerOpacity و تکرارکننده در رندر پیاده شده‌اند
+  const RENDERED_ELSEWHERE = new Set(['brightness', 'contrast', 'saturation', 'grayscale', 'sepia', 'invert', 'repeat',
+    'drift', 'wobble', 'floaty', 'fadePulse', 'wiggle', 'swing', 'orbit', 'zoomPulse', 'strobe']);
+  const noRender = EFFECTS.filter(e => e.kind === 'filter' && !CANVAS_FX[e.id] && !RENDERED_ELSEWHERE.has(e.id));
+  ok(noRender.length === 9, `بدون رندر: ${noRender.length} (هدف: ۹)`);
+  ok(noRender.map(e => e.id).sort().join(',') === 'crop,gradText,jitter,karaoke,letterBounce,rainbow,wordFlicker,wordPop,wordWave', 'بدون رندر فقط برش و افکت‌های کلمه‌ای‌اند');
   // هر پیاده‌سازی در رجیستری است
   ok(Object.keys(CANVAS_FX).every(id => effectById(id)), 'همهٔ پیاده‌سازی‌ها در رجیستری‌اند');
 }
@@ -109,6 +114,35 @@ console.log('── اتصال به لایه ──');
   ok(ce.length === 3 && ce.map(f => f.id).join(',') === 'glow,vignette,supernova', 'canvasEffects فقط افکت‌های canvas را می‌گیرد (glow,vignette,supernova)');
   const p = effectParamsAt(l.effects[3], 1);
   ok(p.amt === 50, 'پارامتر افکت پورت‌شده خوانده می‌شود');
+}
+
+console.log('── افکت‌های حرکتی و تکرارکننده (R8) ──');
+{
+  // هر افکت حرکتی باید ترنسفورم یا شفافیت را واقعاً تغییر دهد
+  const moving = (id, params) => {
+    const l = newLayer('shape', { start: 0, end: 10 });
+    l.effects = [{ id, params, enabled: true }];
+    const a = layerTransform(l, 0.5), b = layerTransform(l, 1.1);
+    const oa = layerOpacity(l, 0.5), ob = layerOpacity(l, 1.1);
+    return JSON.stringify(a) !== JSON.stringify(b) || oa !== ob;
+  };
+  for (const [id, p] of [
+    ['drift', { speed: 10, rot: 45 }], ['wobble', { amt: 8, freq: 1 }],
+    ['floaty', { amt: 10, freq: 1 }], ['wiggle', { amt: 6, freq: 1, rot: 5 }],
+    ['swing', { ang: 10, freq: 1 }], ['orbit', { r: 20, freq: 1 }],
+    ['zoomPulse', { amt: 0.1, freq: 1 }], ['fadePulse', { amt: 0.5, freq: 1 }],
+    ['strobe', { rate: 4, depth: 0.8 }],
+  ]) ok(moving(id, p), `افکت ${id} ترنسفورم/شفافیت را تغییر می‌دهد`);
+  const m = newLayer('shape', { start: 0, end: 10 });
+  m.effects = [{ id: 'mirror', params: { axis: 0 }, enabled: true }];
+  ok(layerTransform(m, 1).scaleX === -1, 'آینهٔ افقی scaleX را -۱ می‌کند');
+  m.effects = [{ id: 'mirror', params: { axis: 1 }, enabled: true }];
+  ok(layerTransform(m, 1).scaleY === -1, 'آینهٔ عمودی scaleY را -۱ می‌کند');
+  const r = newLayer('shape', { start: 0, end: 10 });
+  r.effects = [{ id: 'repeat', params: { count: 5, dx: 90, dy: 0, rot: 0, scale: 100, fade: 50 }, enabled: true }];
+  const rp = repeatOf(r, 1);
+  ok(rp && rp.count === 5 && rp.dx === 90, 'repeatOf پارامترهای تکرارکننده را برمی‌گرداند');
+  ok(repeatOf(newLayer('shape'), 1) === null, 'بدون تکرارکننده repeatOf برابر null است');
 }
 
 console.log('── شکل‌ها ──');

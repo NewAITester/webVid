@@ -1,6 +1,6 @@
 /** رندر Canvas 2D: renderFrame(ctx, project, t, media) — تابع خالصِ رسم.
  *  ترتیب: پایین آرایه عقب، بالا جلو. بدون Math.random (هش قطعی). */
-import { layerTransform, layerOpacity, visibleLayers, filterString, canvasEffects, effectParamsAt, isFxOn, cameraZoomAt } from '../core/evaluate.js';
+import { layerTransform, layerOpacity, visibleLayers, filterString, canvasEffects, effectParamsAt, isFxOn, cameraZoomAt, repeatOf } from '../core/evaluate.js';
 import { webglParamsFor } from './webgl.js';
 import { CANVAS_FX, applyCanvasFxList } from './canvasfx.js';
 import { EASINGS } from '../core/easing.js';
@@ -326,6 +326,24 @@ export function renderFrame(ctx, project, t, media, gl) {
         ctx.drawImage(mine, 0, 0);
         continue;
       }
+    }
+    // تکرارکننده: لایه چند بار با جابه‌جایی/چرخش/مقیاس/محو کشیده می‌شود
+    // (از عقب به جلو تا نسخهٔ اصلی روی همه باشد؛ مقیاس و محو درصدند)
+    const rep = repeatOf(layer, t);
+    if (rep && (rep.count || 2) > 1) {
+      const tmp = renderLayerCanvas(layer, t, project, media, W, H, gl);
+      const n = Math.min(12, Math.max(2, Math.round(rep.count || 2)));
+      for (let i = n - 1; i >= 0; i--) {
+        ctx.save();
+        ctx.translate((rep.dx || 0) * i, (rep.dy || 0) * i);
+        ctx.rotate((((rep.rot || 0) * i) * Math.PI) / 180);
+        const s = Math.pow((rep.scale ?? 100) / 100, i);
+        ctx.scale(s, s);
+        ctx.globalAlpha = 1 - ((rep.fade ?? 0) / 100) * (n > 1 ? i / (n - 1) : 0);
+        ctx.drawImage(tmp, 0, 0);
+        ctx.restore();
+      }
+      continue;
     }
     if (canvasEffects(layer).length > 0) {
       ctx.drawImage(renderLayerCanvas(layer, t, project, media, W, H, gl), 0, 0);
