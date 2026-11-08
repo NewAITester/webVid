@@ -13,6 +13,8 @@ export class Store {
     this.pane = null; // 'layers' | 'inspector' | 'effects' | 'export' | null
     this.soloId = null; // تک‌نمایش (فقط نشست، ذخیره نمی‌شود)
     this._clipboard = null;
+    this._fxClipboard = null;
+    this.recentFx = this._loadRecent();
     this._listeners = new Set();
     this._undo = [];
     this._redo = [];
@@ -94,6 +96,34 @@ export class Store {
   }
   _save() {
     try { localStorage.setItem(KEY, JSON.stringify(this.projects)); } catch { /* فضای کم */ }
+  }
+  _loadRecent() {
+    try {
+      const raw = localStorage.getItem('lyricstudio.recentFx.v1');
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch { return []; }
+  }
+  /** ثبت افکت در «اخیر» (حداکثر ۶ مورد). */
+  noteFx(id) {
+    this.recentFx = [id, ...this.recentFx.filter(x => x !== id)].slice(0, 6);
+    try { localStorage.setItem('lyricstudio.recentFx.v1', JSON.stringify(this.recentFx)); } catch { /* نه */ }
+  }
+  /** کپی همهٔ افکت‌های یک لایه. */
+  copyEffects(id) {
+    const l = this.project?.layers.find(l => l.id === id);
+    if (!l || !l.effects?.length) return false;
+    this._fxClipboard = JSON.parse(JSON.stringify(l.effects));
+    return true;
+  }
+  /** چسباندن افکت‌های کپی‌شده روی لایهٔ دیگر (جایگزین می‌کند). */
+  pasteEffects(id) {
+    const l = this.project?.layers.find(l => l.id === id);
+    if (!l || !this._fxClipboard) return false;
+    this._snapshot();
+    l.effects = JSON.parse(JSON.stringify(this._fxClipboard));
+    this.emit();
+    return true;
   }
 
   _snapshot() {

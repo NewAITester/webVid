@@ -61,10 +61,47 @@ export const EFFECTS = [
   fx('tile', 'کاشی', 'repeat', 'canvas', { cols: P('n', 2, 1, 6, 'ستون'), rows: P('n', 2, 1, 6, 'ردیف') }),
   fx('kaleidoscope', 'کالیدوسکوپ', 'repeat', 'canvas', { segments: P('n', 6, 2, 12, 'بخش') }),
   fx('chroma', 'کروما', 'matte', 'canvas', { color: P('c', '#00FF00', 0, 0, 'رنگ'), amount: P('n', 0.4, 0, 1, 'آستانه') }),
+  fx('chromaShift', 'جابه‌جایی رنگ', 'stylize', 'canvas', { amount: P('n', 6, 0, 30, 'پیکسل') }),
+  fx('flash', 'فلش', 'opacity', 'anim', { speed: P('n', 2, 0.5, 10, 'سرعت') }),
+  fx('kenburns', 'کن برنز', 'transform', 'anim', { amount: P('n', 0.15, 0, 0.6, 'مقدار') }),
 ];
 
 export const EFFECT_CATS = [...new Set(EFFECTS.map(e => e.cat))];
 export const effectById = id => EFFECTS.find(e => e.id === id);
+
+/** پیش‌تنظیم‌های ترکیبی افکت (روی لایهٔ انتخاب‌شده اعمال می‌شوند). */
+export const EFFECT_PRESETS = [
+  { id: 'cinema', name: 'سینمایی', effects: [
+    { id: 'contrast', params: { amount: 0.2 } },
+    { id: 'saturation', params: { amount: -0.25 } },
+    { id: 'vignette', params: { amount: 0.55 } },
+  ] },
+  { id: 'neon', name: 'نئون', effects: [
+    { id: 'saturation', params: { amount: 0.5 } },
+    { id: 'glow', params: { color: '#F16586', amount: 22 } },
+    { id: 'contrast', params: { amount: 0.15 } },
+  ] },
+  { id: 'vintage', name: 'قدیمی', effects: [
+    { id: 'sepia', params: { amount: 0.7 } },
+    { id: 'vignette', params: { amount: 0.5 } },
+    { id: 'noise', params: { amount: 0.12 } },
+  ] },
+  { id: 'dream', name: 'رویایی', effects: [
+    { id: 'blur', params: { amount: 6 } },
+    { id: 'brightness', params: { amount: 0.15 } },
+    { id: 'glow', params: { color: '#FFFFFF', amount: 18 } },
+  ] },
+  { id: 'pop', name: 'پاپ', effects: [
+    { id: 'saturation', params: { amount: 0.6 } },
+    { id: 'contrast', params: { amount: 0.25 } },
+    { id: 'sharpen', params: { amount: 0.6 } },
+  ] },
+  { id: 'bw', name: 'سیاه‌سفید دراماتیک', effects: [
+    { id: 'grayscale', params: { amount: 1 } },
+    { id: 'contrast', params: { amount: 0.35 } },
+    { id: 'vignette', params: { amount: 0.6 } },
+  ] },
+];
 
 export function defaultTransform() {
   return { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, anchorX: 0.5, anchorY: 0.5 };

@@ -1,5 +1,5 @@
 /** پوستهٔ ویرایشگر: نوار بالا، صحنه، پخش، تایم‌لاین، شیت، منوی ＋، نوارهای انتخاب. */
-import { newLayer, EFFECTS, effectById } from '../core/schema.js';
+import { newLayer, EFFECTS, EFFECT_PRESETS, effectById } from '../core/schema.js';
 import { Timeline } from './timeline.js';
 import { renderInspector } from './panels.js';
 import { renderFrame } from '../render/renderer.js';
@@ -146,6 +146,47 @@ export class Editor {
     root.innerHTML = '';
     const l = this.store.selection;
     if (!l) { root.innerHTML = '<div class="empty">اول یک لایه انتخاب کن.</div>'; return; }
+    // پیش‌تنظیم‌ها
+    const preTitle = document.createElement('div');
+    preTitle.className = 'fxcat'; preTitle.textContent = 'پیش‌تنظیم‌ها';
+    root.appendChild(preTitle);
+    const preRow = document.createElement('div');
+    preRow.className = 'chips';
+    for (const pre of EFFECT_PRESETS) {
+      const b = document.createElement('button');
+      b.className = 'chip'; b.textContent = '✦ ' + pre.name;
+      b.onclick = () => {
+        const next = [...(l.effects || [])];
+        for (const pe of pre.effects) {
+          const def = effectById(pe.id); if (!def) continue;
+          const params = {};
+          for (const [k, pd] of Object.entries(def.params)) params[k] = pe.params?.[k] ?? pd.def;
+          const i = next.findIndex(f => f.id === pe.id);
+          if (i >= 0) next[i] = { ...next[i], params };
+          else next.push({ id: pe.id, params, enabled: true, keyframes: {} });
+          this.store.noteFx(pe.id);
+        }
+        this.store.updateLayer(l.id, { effects: next });
+      };
+      preRow.appendChild(b);
+    }
+    root.appendChild(preRow);
+    // اخیر
+    const recent = (this.store.recentFx || []).map(effectById).filter(Boolean);
+    if (recent.length) {
+      const rTitle = document.createElement('div');
+      rTitle.className = 'fxcat'; rTitle.textContent = 'اخیر';
+      root.appendChild(rTitle);
+      const rRow = document.createElement('div');
+      rRow.className = 'chips';
+      for (const e of recent) {
+        const b = document.createElement('button');
+        b.className = 'chip'; b.textContent = e.name;
+        b.onclick = () => this._addFxTo(l, e);
+        rRow.appendChild(b);
+      }
+      root.appendChild(rRow);
+    }
     const cats = {};
     for (const e of EFFECTS) (cats[e.cat] ||= []).push(e);
     for (const [cat, list] of Object.entries(cats)) {
@@ -157,15 +198,18 @@ export class Editor {
         row.className = 'lrow';
         const has = (l.effects || []).some(f => f.id === e.id);
         row.innerHTML = `<span class="lnm">${e.name}</span><span class="ltm">${has ? '✓ اضافه شده' : ''}</span>`;
-        row.onclick = () => {
-          if (has) return;
-          const params = {};
-          for (const [k, pd] of Object.entries(e.params)) params[k] = pd.def;
-          this.store.updateLayer(l.id, { effects: [...(l.effects || []), { id: e.id, params }] });
-        };
+        row.onclick = () => this._addFxTo(l, e);
         root.appendChild(row);
       }
     }
+  }
+
+  _addFxTo(layer, def) {
+    if ((layer.effects || []).some(f => f.id === def.id)) return;
+    const params = {};
+    for (const [k, pd] of Object.entries(def.params)) params[k] = pd.def;
+    this.store.updateLayer(layer.id, { effects: [...(layer.effects || []), { id: def.id, params, enabled: true, keyframes: {} }] });
+    this.store.noteFx(def.id);
   }
 
   draw() {

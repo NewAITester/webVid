@@ -1,6 +1,6 @@
 /** رندر Canvas 2D: renderFrame(ctx, project, t, media) — تابع خالصِ رسم.
  *  ترتیب: پایین آرایه عقب، بالا جلو. بدون Math.random (هش قطعی). */
-import { layerTransform, layerOpacity, visibleLayers, filterString, canvasEffects } from '../core/evaluate.js';
+import { layerTransform, layerOpacity, visibleLayers, filterString, canvasEffects, effectParamsAt, isFxOn } from '../core/evaluate.js';
 import { EASINGS } from '../core/easing.js';
 
 function shapePath(ctx, kind, w, h) {
@@ -59,13 +59,13 @@ function drawText(ctx, layer, t) {
   ctx.fillStyle = tx.color || '#FAFAFA';
   ctx.textAlign = tx.align || 'center';
   ctx.textBaseline = 'middle';
-  const typeFx = (layer.effects || []).find(f => f.id === 'typewriter');
+  const typeFx = (layer.effects || []).find(f => f.id === 'typewriter' && isFxOn(f));
   let content = tx.content || '';
   if (typeFx) {
-    const n = Math.floor((t - layer.start) * (typeFx.params?.speed || 12));
+    const n = Math.floor((t - layer.start) * (effectParamsAt(typeFx, t - layer.start).speed || 12));
     content = content.slice(0, Math.max(0, n));
   }
-  const tracking = (layer.effects || []).find(f => f.id === 'tracking');
+  const tracking = (layer.effects || []).find(f => f.id === 'tracking' && isFxOn(f));
   if (tracking && 'letterSpacing' in ctx) ctx.letterSpacing = `${tracking.params?.amount || 0}px`;
   const lines = content.split('\n');
   const lh = size * (tx.lineHeight || 1.4);
@@ -93,7 +93,7 @@ function applyCanvasFx(src, layer, t, W, H) {
   const c = out.getContext('2d');
   c.drawImage(src, 0, 0);
   for (const fx of fxs) {
-    const p = fx.params || {};
+    const p = effectParamsAt(fx, t - layer.start);
     if (fx.id === 'pixelate') {
       const s = Math.max(2, p.size || 12);
       const small = document.createElement('canvas');
@@ -138,6 +138,22 @@ function applyCanvasFx(src, layer, t, W, H) {
       c.clearRect(0, 0, W, H);
       for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++)
         c.drawImage(tmp, 0, 0, W, H, (i * W) / cols, (j * H) / rows, W / cols, H / rows);
+    } else if (fx.id === 'chromaShift') {
+      // تقریب جابه‌جایی کانال: دو نسخهٔ رنگی با جابه‌جایی افقی
+      const dx = p.amount || 6;
+      const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H;
+      tmp.getContext('2d').drawImage(out, 0, 0);
+      c.clearRect(0, 0, W, H);
+      c.globalCompositeOperation = 'lighter';
+      c.filter = 'sepia(1) hue-rotate(-45deg) saturate(4)';
+      c.drawImage(tmp, -dx, 0);
+      c.filter = 'sepia(1) hue-rotate(180deg) saturate(4)';
+      c.drawImage(tmp, dx, 0);
+      c.filter = 'none';
+      c.globalCompositeOperation = 'source-over';
+      c.globalAlpha = 0.85;
+      c.drawImage(tmp, 0, 0);
+      c.globalAlpha = 1;
     }
   }
   return out;
@@ -184,7 +200,7 @@ function renderLayerCanvas(layer, t, project, media, W, H) {
   c2.rotate((tr.rotation * Math.PI) / 180);
   c2.scale(tr.scaleX, tr.scaleY);
   c2.globalAlpha = op;
-  c2.filter = filterString(layer);
+  c2.filter = filterString(layer, t);
   drawLayerContent(c2, layer, t, project, media);
   c2.filter = 'none';
   c2.restore();
@@ -239,7 +255,7 @@ export function renderFrame(ctx, project, t, media) {
     ctx.rotate((tr.rotation * Math.PI) / 180);
     ctx.scale(tr.scaleX, tr.scaleY);
     ctx.globalAlpha = op;
-    ctx.filter = filterString(layer);
+    ctx.filter = filterString(layer, t);
     drawLayerContent(ctx, layer, t, project, media);
     ctx.filter = 'none';
     ctx.restore();

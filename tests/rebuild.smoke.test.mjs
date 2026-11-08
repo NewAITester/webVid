@@ -2,9 +2,9 @@
  * تست دود بازسازی از صفر — بدون DOM.
  *   node tests/rebuild.smoke.test.mjs
  */
-import { LAYER_TYPES, SHAPE_KINDS, EFFECTS, EFFECT_CATS, effectById, newLayer, newProject, demoProject } from '../src/core/schema.js';
+import { LAYER_TYPES, SHAPE_KINDS, EFFECTS, EFFECT_CATS, EFFECT_PRESETS, effectById, newLayer, newProject, demoProject } from '../src/core/schema.js';
 import { Store } from '../src/core/store.js';
-import { valueAt, layerTransform, layerOpacity, isActive, visibleLayers, filterString } from '../src/core/evaluate.js';
+import { valueAt, layerTransform, layerOpacity, isActive, visibleLayers, filterString, effectParamsAt, isFxOn } from '../src/core/evaluate.js';
 import { ease, EASINGS } from '../src/core/easing.js';
 
 let fail = 0;
@@ -117,6 +117,50 @@ console.log('── ویرایش لایه (فاز R2) ──');
   ok(s.project.layers.find(l => l.id === a.id).clip === 'below', 'ماسک below ثبت شد');
   s.updateLayer(a.id, { clip: 'belowInv' });
   ok(s.project.layers.find(l => l.id === a.id).clip === 'belowInv', 'ماسک معکوس ثبت شد');
+}
+
+console.log('── افکت‌ها (فاز R3) ──');
+{
+  // پارامتر متحرک با کی‌فریم
+  const fx = { id: 'brightness', params: { amount: 0 }, keyframes: { amount: [{ t: 0, v: 0 }, { t: 2, v: 1 }] } };
+  ok(effectParamsAt(fx, 1).amount === 0.5, 'پارامتر افکت در وسط کی‌فریم ۰٫۵ است');
+  ok(effectParamsAt(fx, 5).amount === 1, 'بعد از آخرین کی‌فریم مقدار نهایی می‌ماند');
+  ok(effectParamsAt({ id: 'brightness', params: { amount: 0.3 } }, 1).amount === 0.3, 'بدون کی‌فریم مقدار ثابت برمی‌گردد');
+  // فیلتر متحرک در زمان‌های مختلف
+  const l = newLayer('text', { start: 0, end: 4 });
+  l.effects = [{ id: 'brightness', params: { amount: 0 }, keyframes: { amount: [{ t: 0, v: 0 }, { t: 2, v: 1 }] }, enabled: true }];
+  ok(filterString(l, 0) === 'brightness(1)', 'روشنایی در t=0 صفر است: ' + filterString(l, 0));
+  ok(filterString(l, 1) === 'brightness(1.5)', 'روشنایی در t=1 برابر ۱٫۵ است: ' + filterString(l, 1));
+  // افکت خاموش نادیده گرفته می‌شود
+  l.effects[0].enabled = false;
+  ok(filterString(l, 1) === 'none', 'افکت خاموش در فیلتر نیست');
+  ok(isFxOn({ id: 'x' }) && !isFxOn({ id: 'x', enabled: false }), 'پیش‌فرض افکت فعال است');
+  // کن برنز و فلش
+  const k = newLayer('shape', { start: 0, end: 4 });
+  k.effects = [{ id: 'kenburns', params: { amount: 0.2 }, enabled: true }];
+  ok(layerTransform(k, 4).scaleX > layerTransform(k, 0).scaleX, 'کن برنز مقیاس را در طول لایه بزرگ می‌کند');
+  const f = newLayer('shape', { start: 0, end: 4 });
+  f.effects = [{ id: 'flash', params: { speed: 2 }, enabled: true }];
+  ok(layerOpacity(f, 0) !== layerOpacity(f, 0.13), 'فلش شفافیت را عوض می‌کند');
+  // پیش‌تنظیم‌ها
+  ok(EFFECT_PRESETS.length >= 5, `۶ پیش‌تنظیم هست (${EFFECT_PRESETS.length})`);
+  ok(EFFECT_PRESETS.every(p => p.effects.every(e => effectById(e.id))), 'همهٔ افکت‌های پیش‌تنظیم‌ها در رجیستری‌اند');
+  // اخیر و کپی/چسباندن افکت
+  const s = new Store();
+  s.projects = [];
+  s.createProject('R3');
+  const a = newLayer('shape', { start: 0, end: 4 });
+  a.effects = [{ id: 'brightness', params: { amount: 0.2 }, enabled: true }];
+  const b = newLayer('shape', { start: 0, end: 4 });
+  s.addLayer(a); s.addLayer(b);
+  s.noteFx('brightness'); s.noteFx('blur'); s.noteFx('brightness');
+  ok(s.recentFx[0] === 'brightness' && s.recentFx.length === 2, 'اخیر بدون تکرار و با ترتیب تازه‌ترین اول');
+  ok(s.copyEffects(a.id), 'کپی افکت‌ها');
+  ok(s.pasteEffects(b.id) && b.effects.length === 1 && b.effects[0].id === 'brightness', 'چسباندن افکت‌ها روی لایهٔ دیگر');
+  ok(s.copyEffects(b.id), 'کپی از لایهٔ دارای افکت true می‌دهد');
+  const c = newLayer('shape', { start: 0, end: 4 });
+  s.addLayer(c);
+  ok(!s.copyEffects(c.id), 'کپی از لایهٔ بدون افکت false می‌دهد');
 }
 
 console.log(fail === 0 ? '\n✅ همهٔ تست‌ها گذشت' : `\n❌ ${fail} تست ناموفق`);

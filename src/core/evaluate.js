@@ -19,6 +19,21 @@ export function valueAt(keyframes, t, fallback) {
   return fallback;
 }
 
+/** پارامترهای یک افکت در زمان محلی t (داخل لایه): کی‌فریم پارامتر را حل می‌کند. */
+export function effectParamsAt(fx, tLocal) {
+  const base = { ...(fx.params || {}) };
+  const kfs = fx.keyframes || {};
+  for (const [key, list] of Object.entries(kfs)) {
+    if (Array.isArray(list) && list.length && typeof base[key] === 'number') {
+      base[key] = valueAt(list, tLocal, base[key]);
+    }
+  }
+  return base;
+}
+
+/** آیا افکت فعال است؟ (پیش‌فرض فعال؛ enabled:false یعنی خاموش) */
+export const isFxOn = fx => fx.enabled !== false;
+
 /** ترنسفورم نهایی لایه در زمان t (با کی‌فریم‌ها و افکت‌های anim). */
 export function layerTransform(layer, t) {
   const tr = { ...layer.transform };
@@ -27,8 +42,8 @@ export function layerTransform(layer, t) {
     if (kfs) tr[prop] = valueAt(kfs, t, tr[prop]);
   }
   // افکت‌های انیمیشنی روی ترنسفورم
-  for (const fx of layer.effects || []) {
-    const p = fx.params || {};
+  for (const fx of (layer.effects || []).filter(isFxOn)) {
+    const p = effectParamsAt(fx, t - layer.start);
     if (fx.id === 'shake') {
       const s = (p.speed || 8) * t;
       tr.x += Math.sin(s * 2.1) * (p.amount || 6);
@@ -43,18 +58,23 @@ export function layerTransform(layer, t) {
     } else if (fx.id === 'bounce') {
       const u = (t * (p.speed || 2)) % 1;
       tr.y -= Math.abs(Math.sin(u * Math.PI)) * (p.amount || 20);
+    } else if (fx.id === 'kenburns') {
+      const prog = (t - layer.start) / Math.max(0.01, (layer.end - layer.start));
+      const k = 1 + (p.amount || 0.15) * Math.min(1, Math.max(0, prog));
+      tr.scaleX *= k; tr.scaleY *= k;
     }
   }
   return tr;
 }
 
-/** شفافیت نهایی (ترنسفورم + fade + blink). */
+/** شفافیت نهایی (ترنسفورم + fade + blink + flash). */
 export function layerOpacity(layer, t) {
   let o = layerTransform(layer, t).opacity;
-  for (const fx of layer.effects || []) {
-    const p = fx.params || {};
+  for (const fx of (layer.effects || []).filter(isFxOn)) {
+    const p = effectParamsAt(fx, t - layer.start);
     if (fx.id === 'fade') o *= (p.amount ?? 1);
     if (fx.id === 'blink') o *= (Math.sin(t * (p.speed || 4) * Math.PI * 2) > 0 ? 1 : 0.15);
+    if (fx.id === 'flash') o *= 0.6 + 0.4 * Math.sin(t * (p.speed || 2) * Math.PI * 2);
   }
   return Math.min(1, Math.max(0, o));
 }
@@ -69,11 +89,11 @@ export function visibleLayers(project, t) {
   return project.layers.filter(l => isActive(l, t));
 }
 
-/** رشتهٔ ctx.filter از افکت‌های kind=filter. */
-export function filterString(layer) {
+/** رشتهٔ ctx.filter از افکت‌های kind=filter (با پارامترهای متحرک در زمان t). */
+export function filterString(layer, t = 0) {
   const parts = [];
-  for (const fx of layer.effects || []) {
-    const p = fx.params || {};
+  for (const fx of (layer.effects || []).filter(isFxOn)) {
+    const p = effectParamsAt(fx, t - layer.start);
     if (fx.id === 'brightness') parts.push(`brightness(${1 + (p.amount || 0)})`);
     if (fx.id === 'contrast') parts.push(`contrast(${1 + (p.amount || 0)})`);
     if (fx.id === 'saturation') parts.push(`saturate(${1 + (p.amount || 0)})`);
@@ -86,12 +106,12 @@ export function filterString(layer) {
   return parts.length ? parts.join(' ') : 'none';
 }
 
-/** افکت‌های kind=canvas لایه. */
+/** افکت‌های kind=canvas لایه (فعال‌ها). */
 export function canvasEffects(layer) {
-  return (layer.effects || []).filter(fx => {
+  return (layer.effects || []).filter(isFxOn).filter(fx => {
     const def = { temperature: 1, tint: 1, threshold: 1, posterize: 1, motionBlur: 1, radialBlur: 1, sharpen: 1,
       pixelate: 1, bulge: 1, twirl: 1, pinch: 1, ripple: 1, wave: 1, vortex: 1, glow: 1, outline: 1,
-      dropShadow: 1, vignette: 1, noise: 1, scanlines: 1, perspective: 1, tile: 1, kaleidoscope: 1, chroma: 1, textGlow: 1 };
+      dropShadow: 1, vignette: 1, noise: 1, scanlines: 1, perspective: 1, tile: 1, kaleidoscope: 1, chroma: 1, textGlow: 1, chromaShift: 1 };
     return def[fx.id];
   });
 }

@@ -1,6 +1,6 @@
 /** بازرس لایه: ترنسفورم، متن/شکل، افکت‌ها. */
 import { EFFECTS, effectById, SHAPE_KINDS } from '../core/schema.js';
-import { layerTransform } from '../core/evaluate.js';
+import { layerTransform, effectParamsAt, isFxOn } from '../core/evaluate.js';
 
 const $ = s => document.querySelector(s);
 
@@ -67,30 +67,95 @@ export function renderInspector(store) {
   }
 
   // افکت‌ها
-  const fxTitle = document.createElement('div');
-  fxTitle.className = 'fxcat'; fxTitle.textContent = 'افکت‌ها';
-  root.appendChild(fxTitle);
+  const tLocal = Math.max(0, store.time - l.start);
+  const fxHead = document.createElement('div');
+  fxHead.className = 'fxhead';
+  fxHead.innerHTML = `<span class="fxcat">افکت‌ها</span><div class="spacer"></div>
+    <button class="ib" id="fxCopy" title="کپی افکت‌ها">⧉</button>
+    <button class="ib" id="fxPaste" title="چسباندن افکت‌ها">⎘</button>`;
+  fxHead.querySelector('#fxCopy').onclick = () => store.copyEffects(l.id);
+  fxHead.querySelector('#fxPaste').onclick = () => store.pasteEffects(l.id);
+  root.appendChild(fxHead);
   const list = document.createElement('div');
   list.className = 'llist';
-  for (const fx of l.effects || []) {
-    const def = effectById(fx.id); if (!def) continue;
+  (l.effects || []).forEach((fx, i) => {
+    const def = effectById(fx.id); if (!def) return;
+    const setFx = next => store.patchLayer(l.id, { effects: l.effects.map(f => f === fx ? next : f) });
     const row = document.createElement('div');
     row.className = 'lrow';
-    row.innerHTML = `<span class="lnm">${def.name}</span><button class="ib">✕</button>`;
-    row.querySelector('button').onclick = () => {
-      store.updateLayer(l.id, { effects: l.effects.filter(f => f !== fx) });
+    row.style.opacity = isFxOn(fx) ? 1 : 0.45;
+    row.innerHTML = `<button class="ib" title="فعال/غیرفعال">${isFxOn(fx) ? '◉' : '○'}</button>
+      <span class="lnm">${def.name}</span>
+      <button class="ib" title="بالا">↑</button><button class="ib" title="پایین">↓</button>
+      <button class="ib" title="حذف">✕</button>`;
+    const [tog, up, down, del] = row.querySelectorAll('button');
+    tog.onclick = () => { setFx({ ...fx, enabled: !isFxOn(fx) }); };
+    up.onclick = () => {
+      if (i === 0) return;
+      const next = [...l.effects]; [next[i - 1], next[i]] = [next[i], next[i - 1]];
+      store.updateLayer(l.id, { effects: next });
     };
+    down.onclick = () => {
+      if (i === l.effects.length - 1) return;
+      const next = [...l.effects]; [next[i + 1], next[i]] = [next[i], next[i + 1]];
+      store.updateLayer(l.id, { effects: next });
+    };
+    del.onclick = () => store.updateLayer(l.id, { effects: l.effects.filter(f => f !== fx) });
     list.appendChild(row);
+    const resolved = effectParamsAt(fx, tLocal);
     for (const [key, pd] of Object.entries(def.params)) {
       if (pd.type === 'n') {
-        list.appendChild(slider(pd.label, pd.min, pd.max, (pd.max - pd.min) > 20 ? 1 : 0.05,
-          fx.params?.[key] ?? pd.def, v => {
-            const next = l.effects.map(f => f === fx ? { ...f, params: { ...f.params, [key]: v } } : f);
-            store.patchLayer(l.id, { effects: next });
-          }));
+        const kfs = fx.keyframes?.[key] || [];
+        const wrap = document.createElement('div');
+        wrap.className = 'ctl';
+        const sl = slider(`${pd.label}${kfs.length ? ` ◆${kfs.length}` : ''}`, pd.min, pd.max,
+          (pd.max - pd.min) > 20 ? 1 : 0.05, +(resolved[key] ?? pd.def).toFixed(2), v => {
+            if (kfs.length) {
+              // ویرایش نزدیک‌ترین کی‌فریم، یا افزودن یکی در زمان فعلی
+              const list2 = [...kfs];
+              let best = -1, bd = 1e9;
+              list2.forEach((k, j) => { const d = Math.abs(k.t - tLocal); if (d < bd) { bd = d; best = j; } });
+              if (best >= 0 && bd <= 0.3) list2[best] = { ...list2[best], v };
+              else list2.push({ t: +tLocal.toFixed(2), v });
+              list2.sort((a, b) => a.t - b.t);
+              setFx({ ...fx, keyframes: { ...(fx.keyframes || {}), [key]: list2 } });
+            } else {
+              setFx({ ...fx, params: { ...fx.params, [key]: v } });
+            }
+          });
+        wrap.appendChild(sl);
+        const kfBtn = document.createElement('button');
+        kfBtn.className = 'ib'; kfBtn.title = 'افزودن کی‌فریم در زمان فعلی';
+        kfBtn.textContent = '◆';
+        kfBtn.onclick = () => {
+          const list2 = [...kfs];
+          const near = list2.findIndex(k => Math.abs(k.t - tLocal) <= 0.3);
+          if (near >= 0) list2[near] = { ...list2[near], v: resolved[key] ?? pd.def };
+          else list2.push({ t: +tLocal.toFixed(2), v: resolved[key] ?? pd.def });
+          list2.sort((a, b) => a.t - b.t);
+          setFx({ ...fx, keyframes: { ...(fx.keyframes || {}), [key]: list2 } });
+        };
+        wrap.appendChild(kfBtn);
+        if (kfs.length) {
+          const clr = document.createElement('button');
+          clr.className = 'ib'; clr.title = 'پاک کردن کی‌فریم‌ها';
+          clr.textContent = '✕';
+          clr.onclick = () => {
+            const nk = { ...(fx.keyframes || {}) }; delete nk[key];
+            setFx({ ...fx, keyframes: nk });
+          };
+          wrap.appendChild(clr);
+        }
+        list.appendChild(wrap);
+      } else if (pd.type === 'c') {
+        const col = document.createElement('div');
+        col.className = 'ctl';
+        col.innerHTML = `<label>${pd.label}</label><input type="color" value="${resolved[key] || pd.def}">`;
+        col.querySelector('input').oninput = e => setFx({ ...fx, params: { ...fx.params, [key]: e.target.value } });
+        list.appendChild(col);
       }
     }
-  }
+  });
   root.appendChild(list);
   const add = document.createElement('select');
   add.className = 'txt';
@@ -100,7 +165,8 @@ export function renderInspector(store) {
     const def = effectById(add.value);
     const params = {};
     for (const [k, pd] of Object.entries(def.params)) params[k] = pd.def;
-    store.updateLayer(l.id, { effects: [...(l.effects || []), { id: def.id, params }] });
+    store.updateLayer(l.id, { effects: [...(l.effects || []), { id: def.id, params, enabled: true, keyframes: {} }] });
+    store.noteFx(def.id);
     add.value = '';
   };
   root.appendChild(add);
