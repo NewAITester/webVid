@@ -54,7 +54,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-core:1.7.2")
+    implementation("androidx.compose.material:material-icons-extended:1.7.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
