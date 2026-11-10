@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
@@ -288,7 +289,8 @@ object Renderer {
         val bmp = ImageBitmap(pw, ph)
         val canvas = Canvas(bmp)
         val matrix = filter?.let { colorMatrixFor(it) }
-        CanvasDrawScope().draw(density, layoutDirection, canvas, Size(pw.toFloat(), ph.toFloat())) {
+        // DrawScope خودش یک Density است (density: Float چگالی پیکسل است، نه شیء Density)
+        CanvasDrawScope().draw(this, layoutDirection, canvas, Size(pw.toFloat(), ph.toFloat())) {
             if (matrix != null) {
                 drawIntoCanvas { c ->
                     val paint = Paint().apply { colorFilter = ColorFilter.colorMatrix(matrix) }
@@ -357,7 +359,7 @@ object Renderer {
         val sw = max(1, (src.width / k).toInt())
         val sh = max(1, (src.height / k).toInt())
         val small = ImageBitmap(sw, sh)
-        CanvasDrawScope().draw(density, layoutDirection, Canvas(small), Size(sw.toFloat(), sh.toFloat())) {
+        CanvasDrawScope().draw(this, layoutDirection, Canvas(small), Size(sw.toFloat(), sh.toFloat())) {
             drawImage(
                 src,
                 srcOffset = IntOffset.Zero,
@@ -367,7 +369,7 @@ object Renderer {
             )
         }
         val out = ImageBitmap(src.width, src.height)
-        CanvasDrawScope().draw(density, layoutDirection, Canvas(out), Size(src.width.toFloat(), src.height.toFloat())) {
+        CanvasDrawScope().draw(this, layoutDirection, Canvas(out), Size(src.width.toFloat(), src.height.toFloat())) {
             drawImage(
                 small,
                 srcOffset = IntOffset.Zero,
@@ -503,8 +505,9 @@ object Renderer {
         "lighten" -> BlendMode.Lighten
         "colorDodge" -> BlendMode.ColorDodge
         "colorBurn" -> BlendMode.ColorBurn
-        "hardLight" -> BlendMode.HardLight
-        "softLight" -> BlendMode.SoftLight
+        // HardLight/SoftLight در BlendMode کامپوز نیستند — نزدیک‌ترین تقریب
+        "hardLight" -> BlendMode.Overlay
+        "softLight" -> BlendMode.Screen
         "difference" -> BlendMode.Difference
         "exclusion" -> BlendMode.Exclusion
         "hue" -> BlendMode.Hue
