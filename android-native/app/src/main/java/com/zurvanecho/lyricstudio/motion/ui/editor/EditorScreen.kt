@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -300,6 +301,30 @@ fun EditorScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     ProjectPreview(project = project, time = time, modifier = Modifier.fillMaxSize())
+                    // U2: پروژهٔ خالی — راهنما روی صحنه (به‌جای صفحهٔ خالیِ بی‌هدف)
+                    if (project.layers.isEmpty()) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(16.dp),
+                        ) {
+                            Icon(Icons.Filled.AddCircle, contentDescription = null, tint = Alight.Mint, modifier = Modifier.size(56.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                "پروژه خالیه",
+                                color = Alight.Text,
+                                fontWeight = FontWeight.Bold,
+                                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "دکمهٔ + پایین رو بزن و متن، شکل، عکس یا ویدیو اضافه کن",
+                                color = Alight.Text2,
+                                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
                 }
                 Column(
                     modifier = Modifier

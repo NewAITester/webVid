@@ -27,10 +27,20 @@ class MainActivity : ComponentActivity() {
                     HomeScreen(
                         projects = projects,
                         onOpen = { open = it },
-                        onNew = {
-                            val p = store.create("پروژهٔ تازه")
+                        onNew = { p ->
+                            // پروژه از شیت ساخت می‌آید (با تنظیمات کاربر) — ذخیره و باز کن
+                            store.save(p)
                             projects = store.projects
                             open = p
+                        },
+                        onSample = {
+                            val p = store.createSample()
+                            projects = store.projects
+                            open = p
+                        },
+                        onDelete = { p ->
+                            store.delete(p.id)
+                            projects = store.projects
                         },
                     )
                 } else {

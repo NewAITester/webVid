@@ -126,8 +126,38 @@ data class Layer(
 
 fun uid(): String = java.util.UUID.randomUUID().toString().replace("-", "").take(12)
 
-fun newProject(name: String, width: Int = 720, height: Int = 1280): Project =
-    Project(id = uid(), name = name, width = width, height = height)
+/**
+ * نسبت‌های تصویر واقعی Alight (از create_project_fragment دیکدشده):
+ * 16:9، 9:16، 4:5، 1:1، 4:3 + سفارشی. هرکدام ابعاد پایه‌اش را می‌دهد.
+ */
+data class AspectRatio(val id: String, val label: String, val w: Int, val h: Int)
+
+val ASPECT_RATIOS = listOf(
+    AspectRatio("16x9", "۱۶:۹", 1280, 720),
+    AspectRatio("9x16", "۹:۱۶", 720, 1280),
+    AspectRatio("4x5", "۴:۵", 1080, 1350),
+    AspectRatio("1x1", "۱:۱", 1080, 1080),
+    AspectRatio("4x3", "۴:۳", 1440, 1080),
+)
+
+/** رزولوشن‌ها (پیکسلِ ضلع بزرگ) — همان ResolutionDropdown آلایت. */
+val RESOLUTIONS = listOf(720, 1080)
+
+/** نرخ فریم‌ها — همان FpsDropdown آلایت. */
+val FRAME_RATES = listOf(24, 30, 60)
+
+/** رنگ‌های پس‌زمینهٔ پیش‌فرض — همان ColorDropdown آلایت. */
+val BG_COLORS = listOf("#0C0D13", "#000000", "#FFFFFF", "#141620", "#F16586", "#00FFA8")
+
+/** ساخت پروژهٔ تازه و خالی با تنظیمات کاربر (بدون لایهٔ نمایشی). */
+fun newProject(
+    name: String,
+    width: Int = 720,
+    height: Int = 1280,
+    fps: Int = 30,
+    bg: String = "#0C0D13",
+    duration: Double = 10.0,
+): Project = Project(id = uid(), name = name, width = width, height = height, fps = fps, bg = bg, duration = duration)
 
 fun newLayer(type: String, name: String, start: Double = 0.0, end: Double = 10.0): Layer =
     Layer(id = uid(), type = type, name = name, start = start, end = end)
