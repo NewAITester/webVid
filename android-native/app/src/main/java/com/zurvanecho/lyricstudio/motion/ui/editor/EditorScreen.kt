@@ -63,6 +63,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zurvanecho.lyricstudio.motion.audio.AudioPlayer
@@ -71,6 +72,8 @@ import com.zurvanecho.lyricstudio.motion.core.SHAPE_NAMES_FA
 import com.zurvanecho.lyricstudio.motion.core.valueAt
 import com.zurvanecho.lyricstudio.motion.effects.EffectDef
 import com.zurvanecho.lyricstudio.motion.effects.Effects
+import com.zurvanecho.lyricstudio.motion.export.Exporter
+import com.zurvanecho.lyricstudio.motion.export.exportPlan
 import com.zurvanecho.lyricstudio.motion.importers.lrcToLayers
 import com.zurvanecho.lyricstudio.motion.importers.parseLrc
 import com.zurvanecho.lyricstudio.motion.model.AudioSpec
@@ -82,6 +85,7 @@ import com.zurvanecho.lyricstudio.motion.model.ShapeSpec
 import com.zurvanecho.lyricstudio.motion.model.TextSpec
 import com.zurvanecho.lyricstudio.motion.model.Transform
 import com.zurvanecho.lyricstudio.motion.model.newLayer
+import com.zurvanecho.lyricstudio.motion.render.MediaResolver
 import com.zurvanecho.lyricstudio.motion.ui.theme.Alight
 import com.zurvanecho.lyricstudio.motion.ui.theme.hexColor
 import kotlinx.coroutines.Dispatchers
@@ -159,6 +163,49 @@ fun EditorScreen(
         audioPlayer.sync(project, time, playing)
     }
 
+    // خروجی MP4 (N6) — رندر فریم‌ها با همان Renderer پیش‌نمایش
+    val measurer = rememberTextMeasurer()
+    val mediaResolver = remember(context) { MediaResolver(context) }
+    val exporter = remember(context) { Exporter(context) }
+    var exporting by remember { mutableStateOf(false) }
+    var exportProgress by remember { mutableDoubleStateOf(0.0) }
+    var exportMsg by remember { mutableStateOf<String?>(null) }
+    val exportScope = rememberCoroutineScope()
+    fun startExport() {
+        if (exporting) return
+        exporting = true
+        exportProgress = 0.0
+        exportMsg = null
+        exportScope.launch {
+            try {
+                val plan = exportPlan(project)
+                val outFile = Exporter.defaultOutFile(context, "${project.name}.mp4")
+                val result = exporter.exportVideo(project, plan, measurer, mediaResolver, outFile) { p ->
+                    exportProgress = p
+                }
+                exportMsg = "خروجی آماده شد — ${result.frames} فریم، ${result.sizeMB} مگابایت"
+                // اشتراک‌گذاری فایل
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "com.zurvanecho.lyricstudio.motion.fileprovider",
+                    result.file,
+                )
+                val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "video/mp4"
+                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(
+                    android.content.Intent.createChooser(share, "اشتراک‌گذاری ویدیو"),
+                )
+            } catch (e: Exception) {
+                exportMsg = "خروجی ناموفق بود: ${e.message ?: "خطا"}"
+            } finally {
+                exporting = false
+            }
+        }
+    }
+
     // انتخاب فایل صوتی → لایهٔ audio
     val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -211,7 +258,14 @@ fun EditorScreen(
                     Icon(Icons.Filled.ArrowBack, contentDescription = "بازگشت", tint = Alight.Text)
                 }
                 Text(project.name, color = Alight.Text, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onClick = {}) {
+                if (exporting) {
+                    Text(
+                        "${(exportProgress * 100).toInt()}٪",
+                        color = Alight.Mint,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                }
+                IconButton(onClick = { startExport() }) {
                     Icon(Icons.Filled.Share, contentDescription = "خروجی", tint = Alight.Text)
                 }
             }
