@@ -1,5 +1,7 @@
 package com.zurvanecho.lyricstudio.motion.ui.editor
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -16,9 +18,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -50,8 +56,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.zurvanecho.lyricstudio.motion.core.SHAPE_KINDS
+import com.zurvanecho.lyricstudio.motion.core.SHAPE_NAMES_FA
+import com.zurvanecho.lyricstudio.motion.model.Keyframe
 import com.zurvanecho.lyricstudio.motion.model.Layer
 import com.zurvanecho.lyricstudio.motion.model.Project
 import com.zurvanecho.lyricstudio.motion.model.ShapeSpec
@@ -64,7 +75,7 @@ import kotlinx.coroutines.delay
 /**
  * ویرایشگر — همان چیدمان Alight: نوار بالا ۴۲dp، نوار پخش ۴۶dp،
  * صحنه + ریل ۵۰dp در لبهٔ راست، تایم‌لاین ۲۸۰dp پایین، دکمهٔ + ۷۳dp،
- * شیت افزودن ۲۵۱dp و پنل پایین ۲۰۰dp.
+ * شیت افزودن و پنل بازرس ۲۴۰dp (کی‌فریم، ماسک، ترکیب، گروه).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +110,28 @@ fun EditorScreen(
         update(project.copy(layers = project.layers + layer))
         selectedId = layer.id
         showAdd = false
+    }
+
+    // انتخاب رسانه از گالری — تصویر/ویدیو با src = URI
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            addLayer(
+                newLayer("image", "تصویر", time, minOf(project.duration, time + 5.0)).copy(
+                    src = uri.toString(),
+                    transform = Transform(x = 360.0, y = 640.0),
+                ),
+            )
+        }
+    }
+    val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            addLayer(
+                newLayer("video", "ویدیو", time, minOf(project.duration, time + 5.0)).copy(
+                    src = uri.toString(),
+                    transform = Transform(x = 360.0, y = 640.0),
+                ),
+            )
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -178,10 +211,11 @@ fun EditorScreen(
                     .fillMaxWidth()
                     .height(280.dp),
             )
-            // پنل بازرس — ۲۰۰dp (وقتی لایه‌ای انتخاب است)
+            // پنل بازرس — ۲۴۰dp (وقتی لایه‌ای انتخاب است)
             if (selected != null) {
                 Inspector(
                     layer = selected,
+                    time = time,
                     onChange = { changed ->
                         update(project.copy(layers = project.layers.map { if (it.id == changed.id) changed else it }))
                     },
@@ -190,9 +224,39 @@ fun EditorScreen(
                         selectedId = null
                     },
                     onClose = { selectedId = null },
+                    onGroup = {
+                        // گروه‌کردن: لایهٔ انتخاب‌شده داخل یک گروه تازه می‌رود
+                        val group = newLayer("group", "گروه", selected.start, selected.end).copy(
+                            transform = selected.transform,
+                            children = listOf(selected.copy(transform = Transform(x = 0.0, y = 0.0))),
+                        )
+                        update(project.copy(layers = project.layers.map { if (it.id == selected.id) group else it }))
+                        selectedId = group.id
+                    },
+                    onUngroup = {
+                        // باز کردن گروه: فرزندان با ترکیب ترنسفورم گروه جای آن می‌نشینند
+                        val gt = selected.transform
+                        val kids = selected.children.map { ch ->
+                            val ct = ch.transform
+                            ch.copy(transform = ct.copy(
+                                x = ct.x + gt.x,
+                                y = ct.y + gt.y,
+                                rotation = ct.rotation + gt.rotation,
+                                scaleX = ct.scaleX * gt.scaleX,
+                                scaleY = ct.scaleY * gt.scaleY,
+                                opacity = ct.opacity * gt.opacity,
+                            ))
+                        }
+                        val idx = project.layers.indexOfFirst { it.id == selected.id }
+                        val rest = project.layers.toMutableList()
+                        rest.removeAt(idx)
+                        rest.addAll(idx, kids)
+                        update(project.copy(layers = rest))
+                        selectedId = kids.firstOrNull()?.id
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp),
+                        .height(240.dp),
                 )
             }
         }
@@ -201,7 +265,7 @@ fun EditorScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = ((280 + if (selected != null) 200 else 0) + 16).dp)
+                .padding(end = 16.dp, bottom = ((280 + if (selected != null) 240 else 0) + 16).dp)
                 .size(73.dp)
                 .clip(CircleShape)
                 .background(Alight.Pink)
@@ -231,6 +295,16 @@ fun EditorScreen(
                     addLayer(
                         newLayer("text", "متن", time, minOf(project.duration, time + 5.0)).copy(
                             text = TextSpec(content = "متن تازه", weight = 700, size = 56.0, color = "#FAFAFA"),
+                            transform = Transform(x = 360.0, y = 640.0),
+                        ),
+                    )
+                },
+                onImage = { pickImage.launch("image/*") },
+                onVideo = { pickVideo.launch("video/*") },
+                onCamera = {
+                    addLayer(
+                        newLayer("camera", "دوربین", 0.0, project.duration).copy(
+                            camera = com.zurvanecho.lyricstudio.motion.model.CameraSpec(zoom = 1.0),
                             transform = Transform(x = 360.0, y = 640.0),
                         ),
                     )
@@ -307,6 +381,9 @@ private fun Timeline(
                             "shape" -> Alight.Pink
                             "text" -> Alight.Mint
                             "audio" -> Alight.Yellow
+                            "image", "video" -> Alight.Blue
+                            "group" -> Alight.Purple
+                            "camera" -> Alight.Orange
                             else -> Alight.Surface4
                         }
                         Box(
@@ -318,6 +395,17 @@ private fun Timeline(
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(color.copy(alpha = if (layer.id == selectedId) 1f else 0.75f)),
                         )
+                        // نشانگرهای کی‌فریم (لوزی نعنایی) روی ردیف
+                        val kfTimes = layer.keyframes.values.flatten().map { it.t }.distinct()
+                        for (kt in kfTimes) {
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = (kt * 100).dp - 4.dp, y = 10.dp)
+                                    .size(8.dp)
+                                    .rotate(45f)
+                                    .background(Alight.Mint, RoundedCornerShape(2.dp)),
+                            )
+                        }
                         // خط پخش
                         Box(
                             modifier = Modifier
@@ -336,32 +424,110 @@ private fun Timeline(
 @Composable
 private fun Inspector(
     layer: Layer,
+    time: Double,
     onChange: (Layer) -> Unit,
     onDelete: () -> Unit,
     onClose: () -> Unit,
+    onGroup: () -> Unit,
+    onUngroup: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val t = layer.transform
+    val scroll = rememberScrollState()
+
+    /** تغییر/حذف کی‌فریم یک ویژگی در زمان فعلی. */
+    fun toggleKeyframe(prop: String, value: Double) {
+        val list = layer.keyframes[prop].orEmpty()
+        val existing = list.firstOrNull { kotlin.math.abs(it.t - time) < 0.05 }
+        val next = if (existing != null) {
+            list.filter { it !== existing }
+        } else {
+            (list + Keyframe(t = time, value = value)).sortedBy { it.t }
+        }
+        onChange(layer.copy(keyframes = layer.keyframes + (prop to next)))
+    }
+
+    fun hasKeyframe(prop: String) =
+        layer.keyframes[prop].orEmpty().any { kotlin.math.abs(it.t - time) < 0.05 }
+
     Column(
         modifier = modifier
             .background(Alight.Surface1)
+            .verticalScroll(scroll)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(layer.name, color = Alight.Text, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (layer.type == "group") {
+                Text("باز کردن گروه", color = Alight.Mint, modifier = Modifier.clickable { onUngroup() }.padding(8.dp))
+            } else {
+                Text("گروه", color = Alight.Mint, modifier = Modifier.clickable { onGroup() }.padding(8.dp))
+            }
             IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, null, tint = Alight.Red) }
             IconButton(onClick = onClose) { Icon(Icons.Filled.Close, null, tint = Alight.Text2) }
         }
-        SliderRow("شفافیت", t.opacity, 0.0..1.0) { onChange(layer.copy(transform = t.copy(opacity = it))) }
-        SliderRow("مقیاس", t.scaleX, 0.1..3.0) {
+        SliderRow("شفافیت", t.opacity, 0.0..1.0, hasKeyframe("opacity"), { toggleKeyframe("opacity", t.opacity) }) {
+            onChange(layer.copy(transform = t.copy(opacity = it)))
+        }
+        SliderRow("مقیاس", t.scaleX, 0.1..3.0, hasKeyframe("scaleX"), { toggleKeyframe("scaleX", t.scaleX) }) {
             onChange(layer.copy(transform = t.copy(scaleX = it, scaleY = it)))
         }
-        SliderRow("چرخش", t.rotation, -180.0..180.0) { onChange(layer.copy(transform = t.copy(rotation = it))) }
+        SliderRow("چرخش", t.rotation, -180.0..180.0, hasKeyframe("rotation"), { toggleKeyframe("rotation", t.rotation) }) {
+            onChange(layer.copy(transform = t.copy(rotation = it)))
+        }
+        SliderRow("موقعیت X", t.x, 0.0..720.0, hasKeyframe("x"), { toggleKeyframe("x", t.x) }) {
+            onChange(layer.copy(transform = t.copy(x = it)))
+        }
+        SliderRow("موقعیت Y", t.y, 0.0..1280.0, hasKeyframe("y"), { toggleKeyframe("y", t.y) }) {
+            onChange(layer.copy(transform = t.copy(y = it)))
+        }
+        // ماسک (clip)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            Text("ماسک", color = Alight.Text2, modifier = Modifier.width(64.dp))
+            for ((label, value) in listOf("هیچ" to "none", "زیرین" to "below", "برعکس" to "belowInv")) {
+                val active = layer.clip == value
+                Box(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (active) Alight.Mint else Alight.Surface4)
+                        .clickable { onChange(layer.copy(clip = value)) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Text(label, color = if (active) Color.Black else Alight.Text)
+                }
+            }
+        }
+        // حالت ترکیب
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            Text("ترکیب", color = Alight.Text2, modifier = Modifier.width(64.dp))
+            for ((label, value) in listOf("عادی" to "normal", "ضرب" to "multiply", "صفحه" to "screen", "هم‌پوشانی" to "overlay")) {
+                val active = layer.blend == value
+                Box(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (active) Alight.Mint else Alight.Surface4)
+                        .clickable { onChange(layer.copy(blend = value)) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Text(label, color = if (active) Color.Black else Alight.Text)
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
     }
 }
 
 @Composable
-private fun SliderRow(label: String, value: Double, range: ClosedFloatingPointRange<Double>, onChange: (Double) -> Unit) {
+private fun SliderRow(
+    label: String,
+    value: Double,
+    range: ClosedFloatingPointRange<Double>,
+    hasKf: Boolean,
+    onKf: () -> Unit,
+    onChange: (Double) -> Unit,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = Alight.Text2, modifier = Modifier.width(64.dp))
         Slider(
@@ -371,26 +537,59 @@ private fun SliderRow(label: String, value: Double, range: ClosedFloatingPointRa
             modifier = Modifier.weight(1f),
         )
         Text("%.2f".format(value), color = Alight.Text, modifier = Modifier.width(48.dp))
+        // دکمهٔ کی‌فریم (لوزی) — نعنایی یعنی در این زمان کی‌فریم دارد
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clickable { onKf() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .rotate(45f)
+                    .background(if (hasKf) Alight.Mint else Alight.Surface4, RoundedCornerShape(2.dp)),
+            )
+        }
     }
 }
 
 @Composable
-private fun AddSheet(onShape: (String, String) -> Unit, onText: () -> Unit) {
+private fun AddSheet(
+    onShape: (String, String) -> Unit,
+    onText: () -> Unit,
+    onImage: () -> Unit,
+    onVideo: () -> Unit,
+    onCamera: () -> Unit,
+) {
     Column(modifier = Modifier.padding(16.dp)) {
         Text("افزودن", color = Alight.Text, fontWeight = FontWeight.Black)
         Spacer(modifier = Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            AddTile("مستطیل", Alight.Pink) { onShape("rect", "#F16586") }
-            AddTile("دایره", Alight.Mint) { onShape("ellipse", "#00FFA8") }
-            AddTile("حلقه", Alight.Yellow) { onShape("ring", "#F9DE66") }
             AddTile("متن", Alight.Text) { onText() }
+            AddTile("تصویر", Alight.Blue) { onImage() }
+            AddTile("ویدیو", Alight.Purple) { onVideo() }
+            AddTile("دوربین", Alight.Orange) { onCamera() }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("شکل‌ها", color = Alight.Text2)
+        Spacer(modifier = Modifier.height(8.dp))
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            modifier = Modifier.height(280.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(SHAPE_KINDS) { kind ->
+                AddTile(SHAPE_NAMES_FA[kind] ?: kind, Alight.Pink) { onShape(kind, "#F16586") }
+            }
         }
         Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun AddTile(label: String, color: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
+private fun AddTile(label: String, color: Color, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.clickable { onClick() },

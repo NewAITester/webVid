@@ -32,6 +32,9 @@ object Alight {
     val GreenLight = Color(0xFF69FC97) // C1
     val Green = Color(0xFF29E59C) // C2
     val Yellow = Color(0xFFF9DE66) // E3
+    val Blue = Color(0xFF4A9EFF)
+    val Purple = Color(0xFF9B7BFF)
+    val Orange = Color(0xFFFF9F43)
 
     val Text = Color(0xFFFAFAFA) // G0
     val Text2 = Color(0xFFC4C5CB) // P1

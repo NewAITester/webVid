@@ -34,6 +34,8 @@ data class Transform(
 data class Keyframe(
     val t: Double,
     val value: Double,
+    /** نام easing این کی‌فریم (linear | easeIn | easeOut | easeInOut | ...) */
+    val ease: String = "linear",
 )
 
 @Serializable
@@ -75,10 +77,25 @@ data class AudioSpec(
     val fadeOut: Double = 0.0,
 )
 
+/** یک ضربهٔ قلم آزاد (لایهٔ draw): نقاط نسبی به مرکز لایه. */
+@Serializable
+data class StrokePoint(val x: Double, val y: Double)
+
+@Serializable
+data class Stroke(
+    val color: String = "#FAFAFA",
+    val width: Double = 5.0,
+    val points: List<StrokePoint> = emptyList(),
+)
+
+/** تنظیمات لایهٔ دوربین (camera): بزرگنمایی صحنه. */
+@Serializable
+data class CameraSpec(val zoom: Double = 1.0)
+
 @Serializable
 data class Layer(
     val id: String,
-    val type: String, // shape | text | media | audio | draw | group | camera | vector | element
+    val type: String, // shape | text | image | video | audio | draw | group | camera | null
     val name: String,
     val start: Double = 0.0,
     val end: Double = 10.0,
@@ -89,6 +106,16 @@ data class Layer(
     val shape: ShapeSpec? = null,
     val text: TextSpec? = null,
     val audio: AudioSpec? = null,
+    /** منبع رسانه (image/video/audio): مسیر فایل یا content:// URI */
+    val src: String? = null,
+    /** فرزندان لایهٔ گروه */
+    val children: List<Layer> = emptyList(),
+    /** ضربه‌های قلم لایهٔ draw */
+    val strokes: List<Stroke> = emptyList(),
+    /** تنظیمات لایهٔ دوربین */
+    val camera: CameraSpec? = null,
+    /** حالت ترکیب (normal | multiply | screen | overlay | ...) */
+    val blend: String = "normal",
     val solo: Boolean = false,
 )
 
