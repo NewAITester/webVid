@@ -22,3 +22,7 @@ android/capacitor-cordova-android-plugins/build/
 
 # native app: local SDK path (never commit)
 android-native/local.properties
+
+# Rust نیتیو: خروجی بیلد و کتابخانهٔ بومی (CI از سورس می‌سازد)
+android-native/rust/lyricstudio-jni/target/
+android-native/app/src/main/jniLibs/

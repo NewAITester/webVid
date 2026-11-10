@@ -1,0 +1,18 @@
+[package]
+name = "lyricstudio-jni"
+version = "0.1.0"
+edition = "2021"
+description = "Rust/JNI compute core for LyricStudio Android: per-pixel effects (same math as the web Rust/WASM core)"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni = "0.21"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

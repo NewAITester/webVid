@@ -221,7 +221,6 @@ object FxEngine {
         if (canvasFx.isEmpty()) return src
         var cur = src
         for (fx in canvasFx) {
-            val impl = FxImpls.ALL[fx.id] ?: continue
             val def = Effects.byId(fx.id)
             // پارامترهای حل‌شده (عددها + کی‌فریم) — همان effectParamsAt وب
             val p = mutableMapOf<String, Double>()
@@ -240,9 +239,22 @@ object FxEngine {
             }
             tp.putAll(fx.textParams)
             try {
+                val isRust = fx.id in RustFx.SUPPORTED
+                val impl = if (isRust) null else FxImpls.ALL[fx.id]
+                // اگر نه Rust دارد نه کاتلین، افکت را رد کن (بدون ساخت بیت‌مپ)
+                if (!isRust && impl == null) continue
                 val dst = cur.copy(Bitmap.Config.ARGB_8888, true)
-                val ctx = FxCtx(cur.width, cur.height, t, cur, dst)
-                impl(ctx, p, tp)
+                // مسیر سریع Rust (۲۲ افکت)؛ اگر نشد، پیاده‌سازی کاتلین
+                val rustOk = if (isRust) RustFx.applyToBitmap(dst, fx, t) else false
+                if (!rustOk) {
+                    val kImpl = impl ?: FxImpls.ALL[fx.id]
+                    if (kImpl == null) {
+                        dst.recycle()
+                        continue
+                    }
+                    val ctx = FxCtx(cur.width, cur.height, t, cur, dst)
+                    kImpl(ctx, p, tp)
+                }
                 if (cur !== src) cur.recycle()
                 cur = dst
             } catch (_: Exception) {
