@@ -59,6 +59,9 @@ data class ShapeSpec(
 )
 
 @Serializable
+data class WordTiming(val t: Double, val text: String)
+
+@Serializable
 data class TextSpec(
     val content: String = "",
     val font: String = "IRANSansX",
@@ -67,6 +70,8 @@ data class TextSpec(
     val color: String = "#FAFAFA",
     val align: String = "center",
     val lineHeight: Double = 1.3,
+    /** زمان‌بندی کلمه‌ها (نسبی به شروع لایه) برای کارائوکه — از LRC می‌آید. */
+    val words: List<WordTiming> = emptyList(),
 )
 
 @Serializable

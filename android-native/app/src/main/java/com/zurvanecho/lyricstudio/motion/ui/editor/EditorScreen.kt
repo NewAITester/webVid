@@ -48,25 +48,32 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zurvanecho.lyricstudio.motion.audio.AudioPlayer
 import com.zurvanecho.lyricstudio.motion.core.SHAPE_KINDS
 import com.zurvanecho.lyricstudio.motion.core.SHAPE_NAMES_FA
 import com.zurvanecho.lyricstudio.motion.core.valueAt
 import com.zurvanecho.lyricstudio.motion.effects.EffectDef
 import com.zurvanecho.lyricstudio.motion.effects.Effects
+import com.zurvanecho.lyricstudio.motion.importers.lrcToLayers
+import com.zurvanecho.lyricstudio.motion.importers.parseLrc
+import com.zurvanecho.lyricstudio.motion.model.AudioSpec
 import com.zurvanecho.lyricstudio.motion.model.EffectRef
 import com.zurvanecho.lyricstudio.motion.model.Keyframe
 import com.zurvanecho.lyricstudio.motion.model.Layer
@@ -77,7 +84,10 @@ import com.zurvanecho.lyricstudio.motion.model.Transform
 import com.zurvanecho.lyricstudio.motion.model.newLayer
 import com.zurvanecho.lyricstudio.motion.ui.theme.Alight
 import com.zurvanecho.lyricstudio.motion.ui.theme.hexColor
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * ویرایشگر — همان چیدمان Alight: نوار بالا ۴۲dp، نوار پخش ۴۶dp،
@@ -138,6 +148,48 @@ fun EditorScreen(
                     transform = Transform(x = 360.0, y = 640.0),
                 ),
             )
+        }
+    }
+
+    // پخش صدا در پیش‌نمایش (N5) — با زمان پروژه همگام می‌شود
+    val context = LocalContext.current
+    val audioPlayer = remember { AudioPlayer(context) }
+    DisposableEffect(Unit) { onDispose { audioPlayer.release() } }
+    LaunchedEffect(time, playing, project) {
+        audioPlayer.sync(project, time, playing)
+    }
+
+    // انتخاب فایل صوتی → لایهٔ audio
+    val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            addLayer(
+                newLayer("audio", "صدا", time, minOf(project.duration, time + 5.0)).copy(
+                    src = uri.toString(),
+                    audio = AudioSpec(),
+                ),
+            )
+        }
+    }
+    // ایمپورت شعر LRC → لایه‌های متن زمان‌بندی‌شده
+    val scope = rememberCoroutineScope()
+    val pickLrc = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+                    val result = parseLrc(text)
+                    if (result.lines.isNotEmpty()) {
+                        val layers = lrcToLayers(result.lines)
+                        withContext(Dispatchers.Main) {
+                            update(project.copy(layers = project.layers + layers))
+                            selectedId = layers.firstOrNull()?.id
+                            showAdd = false
+                        }
+                    }
+                } catch (_: Exception) {
+                    // فایل خراب — نادیده گرفته می‌شود
+                }
+            }
         }
     }
 
@@ -308,6 +360,8 @@ fun EditorScreen(
                 },
                 onImage = { pickImage.launch("image/*") },
                 onVideo = { pickVideo.launch("video/*") },
+                onAudio = { pickAudio.launch("audio/*") },
+                onLrc = { pickLrc.launch("text/*") },
                 onCamera = {
                     addLayer(
                         newLayer("camera", "دوربین", 0.0, project.duration).copy(
@@ -721,6 +775,8 @@ private fun AddSheet(
     onText: () -> Unit,
     onImage: () -> Unit,
     onVideo: () -> Unit,
+    onAudio: () -> Unit,
+    onLrc: () -> Unit,
     onCamera: () -> Unit,
 ) {
     Column(modifier = Modifier.padding(16.dp)) {
@@ -731,6 +787,11 @@ private fun AddSheet(
             AddTile("تصویر", Alight.Blue) { onImage() }
             AddTile("ویدیو", Alight.Purple) { onVideo() }
             AddTile("دوربین", Alight.Orange) { onCamera() }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AddTile("صدا", Alight.Mint) { onAudio() }
+            AddTile("شعر (LRC)", Alight.Yellow) { onLrc() }
         }
         Spacer(modifier = Modifier.height(16.dp))
         Text("شکل‌ها", color = Alight.Text2)
