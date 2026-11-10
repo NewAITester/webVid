@@ -60,7 +60,8 @@ jobs:
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG"
           cargo build --release --target aarch64-linux-android
           mkdir -p ../app/src/main/jniLibs/arm64-v8a
-          cp target/aarch64-linux-android/release/liblyricstudio-jni.so ../app/src/main/jniLibs/arm64-v8a/
+          # نام فایل خروجی cargo با آندرلاین است (liblyricstudio_jni.so)، نه خط‌تیره
+          cp target/aarch64-linux-android/release/liblyricstudio_jni.so ../app/src/main/jniLibs/arm64-v8a/
           ls -la ../app/src/main/jniLibs/arm64-v8a/
 
       - name: ساخت APK دیباگ
