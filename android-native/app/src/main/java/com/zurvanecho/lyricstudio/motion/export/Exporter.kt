@@ -171,13 +171,16 @@ class Exporter(private val context: Context) {
         height: Int,
     ): androidx.compose.ui.graphics.ImageBitmap {
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
+        val imageBitmap = bmp.asImageBitmap()
+        // Canvas کامپوز فقط ImageBitmap می‌گیرد (نه Bitmap اندروید) —
+        // asImageBitmap همان پیکسل‌ها را می‌پیچد، پس رندر روی بیت‌مپ اصلی می‌نشیند
+        val canvas = Canvas(imageBitmap)
         val drawScope = CanvasDrawScope()
         val size = androidx.compose.ui.geometry.Size(width.toFloat(), height.toFloat())
         drawScope.draw(Density(1f), LayoutDirection.Ltr, canvas, size) {
             renderFrame(project, t, measurer, media)
         }
-        return bmp.asImageBitmap()
+        return imageBitmap
     }
 
     /** تخلیهٔ خروجی انکودر به فهرست نمونه‌ها (کپی بایت‌ها). */
