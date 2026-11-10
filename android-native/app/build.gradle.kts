@@ -15,7 +15,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -24,11 +24,17 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // N7: R8 روشن — آیکون‌های استفاده‌نشدهٔ material-icons-extended
+            // و کد مرده حذف می‌شوند؛ APK کوچک‌تر می‌شود.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // نسخهٔ انتشار با کلید دیباگ امضا می‌شود (پروژهٔ اوپن‌سورس؛
+            // توزیع از GitHub Releases با sideload — بدون فروشگاه).
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

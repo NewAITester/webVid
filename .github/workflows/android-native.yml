@@ -68,15 +68,29 @@ jobs:
         working-directory: android-native
         run: ./gradlew :app:assembleDebug --stacktrace
 
+      - name: ساخت APK انتشار (R8)
+        # N7: بیلد انتشار با R8 — با کلید دیباگ امضا می‌شود (توزیع اوپن‌سورس).
+        working-directory: android-native
+        run: ./gradlew :app:assembleRelease --stacktrace
+
       - name: گزارش APK
         run: |
           APK=$(find android-native/app/build/outputs/apk/debug -name '*.apk' | head -1)
           echo "### APK نیتیو ساخته شد" >> $GITHUB_STEP_SUMMARY
           echo "فایل: \`$APK\` — حجم: **$(du -h "$APK" | cut -f1)**" >> $GITHUB_STEP_SUMMARY
+          REL=$(find android-native/app/build/outputs/apk/release -name '*.apk' | head -1)
+          echo "فایل انتشار (R8): \`$REL\` — حجم: **$(du -h "$REL" | cut -f1)**" >> $GITHUB_STEP_SUMMARY
 
       - name: آپلود APK
         uses: actions/upload-artifact@v4
         with:
           name: lyricstudio-native-apk
           path: android-native/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+      - name: آپلود APK انتشار
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyricstudio-native-apk-release
+          path: android-native/app/build/outputs/apk/release/*.apk
           retention-days: 7
