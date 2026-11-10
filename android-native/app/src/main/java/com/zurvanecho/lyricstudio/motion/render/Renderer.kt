@@ -37,6 +37,8 @@ import com.zurvanecho.lyricstudio.motion.core.layerTransform
 import com.zurvanecho.lyricstudio.motion.core.repeatOf
 import com.zurvanecho.lyricstudio.motion.core.shapePath
 import com.zurvanecho.lyricstudio.motion.core.visibleLayers
+import com.zurvanecho.lyricstudio.motion.effects.Effects
+import com.zurvanecho.lyricstudio.motion.effects.FxEngine
 import com.zurvanecho.lyricstudio.motion.model.Layer
 import com.zurvanecho.lyricstudio.motion.model.Project
 import com.zurvanecho.lyricstudio.motion.ui.theme.LyricStudioFont
@@ -108,22 +110,26 @@ object Renderer {
                 drawRepeated(layer, rep, t, s, measurer, media)
                 continue
             }
-            // فیلتر رنگ یا حالت ترکیب → بیت‌مپ خارج‌صفحه
+            // فیلتر رنگ یا حالت ترکیب یا افکت canvas → بیت‌مپ خارج‌صفحه
             val fp = filterParamsFor(layer, t)
-            if (!fp.isIdentity || layer.blend != "normal") {
-                val bmp = renderLayerBitmap(layer, t, s, measurer, media, fp)
-                val cf = colorMatrixFor(fp)?.let { ColorFilter.colorMatrix(it) }
+            val hasCanvasFx = Effects.canvasEffectsOf(layer).isNotEmpty()
+            if (!fp.isIdentity || layer.blend != "normal" || hasCanvasFx) {
+                // ترتیب وب: فیلتر رنگ (داخل renderLayerBitmap) → تاری → افکت‌های canvas
+                var bmp = renderLayerBitmap(layer, t, s, measurer, media, fp)
+                if (fp.blur > 0.0) bmp = blurBitmap(bmp, fp.blur)
+                if (hasCanvasFx) {
+                    val androidBmp = FxEngine.toBitmap(bmp)
+                    val effected = FxEngine.apply(androidBmp, layer.effects, t - layer.start)
+                    bmp = FxEngine.toImageBitmap(effected)
+                }
                 val bm = blendModeFor(layer.blend)
-                // تاری: تقریب با کوچک‌کردن و بزرگ‌کردن دوباره (دوبخطی)
-                val finalBmp = if (fp.blur > 0.0) blurBitmap(bmp, fp.blur) else bmp
                 drawImage(
-                    finalBmp,
+                    bmp,
                     srcOffset = IntOffset.Zero,
-                    srcSize = IntSize(finalBmp.width, finalBmp.height),
+                    srcSize = IntSize(bmp.width, bmp.height),
                     dstOffset = IntOffset.Zero,
                     dstSize = IntSize(size.width.toInt(), size.height.toInt()),
                     alpha = 1f,
-                    colorFilter = cf,
                     blendMode = bm,
                 )
                 continue

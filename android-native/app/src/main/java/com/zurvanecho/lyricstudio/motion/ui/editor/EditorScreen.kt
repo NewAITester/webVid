@@ -3,6 +3,7 @@ package com.zurvanecho.lyricstudio.motion.ui.editor
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -60,8 +61,13 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zurvanecho.lyricstudio.motion.core.SHAPE_KINDS
 import com.zurvanecho.lyricstudio.motion.core.SHAPE_NAMES_FA
+import com.zurvanecho.lyricstudio.motion.core.valueAt
+import com.zurvanecho.lyricstudio.motion.effects.EffectDef
+import com.zurvanecho.lyricstudio.motion.effects.Effects
+import com.zurvanecho.lyricstudio.motion.model.EffectRef
 import com.zurvanecho.lyricstudio.motion.model.Keyframe
 import com.zurvanecho.lyricstudio.motion.model.Layer
 import com.zurvanecho.lyricstudio.motion.model.Project
@@ -70,6 +76,7 @@ import com.zurvanecho.lyricstudio.motion.model.TextSpec
 import com.zurvanecho.lyricstudio.motion.model.Transform
 import com.zurvanecho.lyricstudio.motion.model.newLayer
 import com.zurvanecho.lyricstudio.motion.ui.theme.Alight
+import com.zurvanecho.lyricstudio.motion.ui.theme.hexColor
 import kotlinx.coroutines.delay
 
 /**
@@ -516,6 +523,160 @@ private fun Inspector(
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
+        // افکت‌ها (N3)
+        EffectSection(layer, time, onChange)
+    }
+}
+
+/** بخش افکت‌های لایه: فهرست افکت‌های اعمال‌شده + اسلایدر پارامترها + افزودن افکت. */
+@Composable
+private fun EffectSection(
+    layer: Layer,
+    time: Double,
+    onChange: (Layer) -> Unit,
+) {
+    var pickerOpen by remember { mutableStateOf(false) }
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+            Text("افکت‌ها", color = Alight.Text, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(
+                "＋ افزودن",
+                color = Alight.Mint,
+                modifier = Modifier.clickable { pickerOpen = true }.padding(8.dp),
+            )
+        }
+        for ((idx, fx) in layer.effects.withIndex()) {
+            val def = Effects.byId(fx.id) ?: continue
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    def.name,
+                    color = if (fx.enabled) Alight.Text else Alight.Text2,
+                    modifier = Modifier.weight(1f).clickable {
+                        val next = layer.effects.toMutableList()
+                        next[idx] = fx.copy(enabled = !fx.enabled)
+                        onChange(layer.copy(effects = next))
+                    },
+                )
+                IconButton(onClick = {
+                    onChange(layer.copy(effects = layer.effects.filterIndexed { i, _ -> i != idx }))
+                }) {
+                    Icon(Icons.Filled.Delete, null, tint = Alight.Text2)
+                }
+            }
+            if (fx.enabled) {
+                for ((key, pd) in def.params) {
+                    if (pd.type == "n") {
+                        val cur = fx.params[key] ?: pd.defNum
+                        // پارامتر عددی با کی‌فریم (همان effectParamsAt وب)
+                        val kfList = fx.keyframes[key].orEmpty()
+                        val shown = if (kfList.isNotEmpty()) valueAt(kfList, time, cur) else cur
+                        SliderRow(pd.label, shown, pd.min..pd.max, false, {}) { v ->
+                            val next = layer.effects.toMutableList()
+                            next[idx] = fx.copy(params = fx.params + (key to v))
+                            onChange(layer.copy(effects = next))
+                        }
+                    } else if (pd.type == "c") {
+                        val cur = fx.textParams[key] ?: pd.defStr
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                            Text(pd.label, color = Alight.Text2, modifier = Modifier.width(64.dp))
+                            for (sw in listOf("#FFFFFF", "#000000", "#F16586", "#E01445", "#00FFA8", "#69FC97", "#F9DE66", "#4A9EFF", "#9B7BFF")) {
+                                val active = cur.equals(sw, ignoreCase = true)
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 6.dp)
+                                        .size(if (active) 26.dp else 22.dp)
+                                        .clip(CircleShape)
+                                        .background(hexColor(sw))
+                                        .border(if (active) 2.dp else 1.dp, if (active) Alight.Mint else Alight.Surface4, CircleShape)
+                                        .clickable {
+                                            val next = layer.effects.toMutableList()
+                                            next[idx] = fx.copy(textParams = fx.textParams + (key to sw))
+                                            onChange(layer.copy(effects = next))
+                                        },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (pickerOpen) {
+        EffectPicker(
+            onPick = { id ->
+                val def = Effects.byId(id) ?: return@EffectPicker
+                val params = def.params.filter { it.value.type == "n" }.mapValues { it.value.defNum }
+                val tp = def.params.filter { it.value.type == "c" }.mapValues { it.value.defStr }
+                onChange(layer.copy(effects = layer.effects + EffectRef(id = id, params = params, textParams = tp)))
+                pickerOpen = false
+            },
+            onClose = { pickerOpen = false },
+        )
+    }
+}
+
+/** انتخاب‌کنندهٔ افکت: فهرست ۲۹۱ افکت دسته‌بندی‌شده. */
+@Composable
+private fun EffectPicker(
+    onPick: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val scroll = rememberScrollState()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xCC0C0D13))
+            .clickable { onClose() },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scroll)
+                .padding(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("افزودن افکت", color = Alight.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, null, tint = Alight.Text) }
+            }
+            for (cat in Effects.CATS) {
+                Text(cat, color = Alight.Mint, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+                val items = Effects.byCat(cat)
+                // شبکهٔ ۳ ستونه با FlowRow
+                var row = mutableListOf<EffectDef>()
+                for (fx in items) {
+                    row.add(fx)
+                    if (row.size == 3) {
+                        EffectChipRow(row, onPick)
+                        row = mutableListOf()
+                    }
+                }
+                if (row.isNotEmpty()) EffectChipRow(row, onPick)
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun EffectChipRow(row: List<EffectDef>, onPick: (String) -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+        for (fx in row) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 6.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Alight.Surface4)
+                    .clickable { onPick(fx.id) }
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+            ) {
+                Text(fx.name, color = Alight.Text, fontSize = 13.sp)
+            }
+        }
+        // پر کردن ستون‌های خالی
+        repeat(3 - row.size) { Spacer(modifier = Modifier.weight(1f).padding(end = 6.dp)) }
     }
 }
 
