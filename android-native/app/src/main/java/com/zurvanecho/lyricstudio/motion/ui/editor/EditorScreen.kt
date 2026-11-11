@@ -2,14 +2,19 @@ package com.zurvanecho.lyricstudio.motion.ui.editor
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,9 +35,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -40,13 +50,19 @@ import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.Widgets
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -62,6 +78,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -83,9 +104,13 @@ import com.zurvanecho.lyricstudio.motion.model.Keyframe
 import com.zurvanecho.lyricstudio.motion.model.Layer
 import com.zurvanecho.lyricstudio.motion.model.Project
 import com.zurvanecho.lyricstudio.motion.model.ShapeSpec
+import com.zurvanecho.lyricstudio.motion.model.Stroke
+import com.zurvanecho.lyricstudio.motion.model.StrokePoint
 import com.zurvanecho.lyricstudio.motion.model.TextSpec
 import com.zurvanecho.lyricstudio.motion.model.Transform
+import com.zurvanecho.lyricstudio.motion.model.demoProject
 import com.zurvanecho.lyricstudio.motion.model.newLayer
+import com.zurvanecho.lyricstudio.motion.model.uid
 import com.zurvanecho.lyricstudio.motion.render.MediaResolver
 import com.zurvanecho.lyricstudio.motion.ui.theme.Alight
 import com.zurvanecho.lyricstudio.motion.ui.theme.hexColor
@@ -97,7 +122,8 @@ import kotlinx.coroutines.withContext
 /**
  * ویرایشگر — همان چیدمان Alight: نوار بالا ۴۲dp، نوار پخش ۴۶dp،
  * صحنه + ریل ۵۰dp در لبهٔ راست، تایم‌لاین ۲۸۰dp پایین، دکمهٔ + ۷۳dp،
- * شیت افزودن و پنل بازرس ۲۴۰dp (کی‌فریم، ماسک، ترکیب، گروه).
+ * پاپ‌آپ افزودن (۵ تب + ستون quick-add، از activity_edit_addpopup دیکدشده)
+ * و پنل المان ۲۰۰dp (برش/تقسیم/کپی، رنگ و پرکردن، ویرایش متن/شکل، صدا، دوربین).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,6 +137,10 @@ fun EditorScreen(
     var playing by remember { mutableStateOf(false) }
     var selectedId by remember { mutableStateOf<String?>(null) }
     var showAdd by remember { mutableStateOf(false) }
+    // U3: حالت نقاشی (دست‌آزاد/وکتور) + ضربهٔ در حال کشیدن (مختصات پروژه)
+    var drawMode by remember { mutableStateOf<String?>(null) }
+    var drawPoints by remember { mutableStateOf<List<StrokePoint>>(emptyList()) }
+    var drawWidthPx by remember { mutableStateOf(0f) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val selected = project.layers.firstOrNull { it.id == selectedId }
@@ -132,6 +162,75 @@ fun EditorScreen(
         update(project.copy(layers = project.layers + layer))
         selectedId = layer.id
         showAdd = false
+    }
+
+    /** ثبت ضربهٔ نقاشی: به لایهٔ draw انتخاب‌شده اضافه می‌شود یا لایهٔ تازه می‌سازد. */
+    fun commitDraw(points: List<StrokePoint>) {
+        if (points.size < 2) return
+        val cx = project.width / 2.0
+        val cy = project.height / 2.0
+        val rel = points.map { StrokePoint(it.x - cx, it.y - cy) }
+        val stroke = Stroke(color = "#FAFAFA", width = 5.0, points = rel)
+        val existing = project.layers.firstOrNull { it.id == selectedId && it.type == "draw" }
+        if (existing != null) {
+            update(project.copy(layers = project.layers.map { if (it.id == existing.id) it.copy(strokes = it.strokes + stroke) else it }))
+        } else {
+            val layer = newLayer("draw", if (drawMode == "vector") "وکتور" else "دست‌آزاد", time, minOf(project.duration, time + 5.0)).copy(
+                strokes = listOf(stroke),
+                transform = Transform(x = cx, y = cy),
+            )
+            update(project.copy(layers = project.layers + layer))
+            selectedId = layer.id
+        }
+        drawPoints = emptyList()
+    }
+
+    /** افزودن لایه‌های پروژهٔ نمایشی به‌صورت یک گروه (تب قالب‌ها / المان نمونه). */
+    fun addDemoAsGroup(name: String) {
+        val cx = project.width / 2.0
+        val cy = project.height / 2.0
+        val kids = demoProject().layers.map { dl ->
+            dl.copy(id = uid(), transform = dl.transform.copy(x = dl.transform.x - cx, y = dl.transform.y - cy))
+        }
+        addLayer(
+            newLayer("group", name, time, minOf(project.duration, time + 5.0)).copy(
+                transform = Transform(x = cx, y = cy),
+                children = kids,
+            ),
+        )
+    }
+
+    /** تقسیم لایهٔ انتخاب‌شده در زمان پخش (دو لایه پشت سر هم). */
+    fun splitSelected() {
+        val s = selected ?: return
+        if (time <= s.start || time >= s.end) return
+        val first = s.copy(end = time)
+        val second = s.copy(id = uid(), start = time)
+        val idx = project.layers.indexOfFirst { it.id == s.id }
+        val rest = project.layers.toMutableList()
+        rest[idx] = first
+        rest.add(idx + 1, second)
+        update(project.copy(layers = rest))
+        selectedId = first.id
+    }
+
+    /** کپی لایهٔ انتخاب‌شده (بلافاصله بعد از خودش). */
+    fun duplicateSelected() {
+        val s = selected ?: return
+        val copy = s.copy(id = uid(), name = s.name + " (کپی)")
+        val idx = project.layers.indexOfFirst { it.id == s.id }
+        val rest = project.layers.toMutableList()
+        rest.add(idx + 1, copy)
+        update(project.copy(layers = rest))
+        selectedId = copy.id
+    }
+
+    /** برش ابتدا/انتهای لایهٔ انتخاب‌شده تا زمان پخش. */
+    fun trimSelected(toStart: Boolean) {
+        val s = selected ?: return
+        if (time <= s.start || time >= s.end) return
+        val changed = if (toStart) s.copy(start = time) else s.copy(end = time)
+        update(project.copy(layers = project.layers.map { if (it.id == s.id) changed else it }))
     }
 
     // انتخاب رسانه از گالری — تصویر/ویدیو با src = URI
@@ -325,6 +424,75 @@ fun EditorScreen(
                             )
                         }
                     }
+                    // U3: حالت نقاشی — لایهٔ لمسی روی صحنه، هم‌اندازهٔ پیش‌نمایش
+                    if (drawMode != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(project.width.toFloat() / project.height.toFloat())
+                                .onSizeChanged { drawWidthPx = it.width.toFloat() }
+                                .pointerInput(drawMode, drawWidthPx) {
+                                    val scale = if (drawWidthPx > 0f) drawWidthPx / project.width else 1f
+                                    if (drawMode == "vector") {
+                                        // وکتور: هر ضربه یک نقطهٔ چندضلعی می‌گذارد
+                                        detectTapGestures(onTap = { off ->
+                                            drawPoints = drawPoints + StrokePoint(off.x / scale, off.y / scale)
+                                        })
+                                    } else {
+                                        // دست‌آزاد: کشیدن = خط پیوسته
+                                        detectDragGestures(
+                                            onDragStart = { off ->
+                                                drawPoints = listOf(StrokePoint(off.x / scale, off.y / scale))
+                                            },
+                                            onDrag = { change, _ ->
+                                                drawPoints = drawPoints + StrokePoint(change.position.x / scale, change.position.y / scale)
+                                            },
+                                            onDragEnd = { commitDraw(drawPoints); drawMode = null },
+                                            onDragCancel = { drawPoints = emptyList() },
+                                        )
+                                    }
+                                },
+                        ) {
+                            if (drawPoints.size >= 2) {
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val scale = if (drawWidthPx > 0f) drawWidthPx / project.width else 1f
+                                    val path = Path()
+                                    drawPoints.forEachIndexed { i, p ->
+                                        val px = (p.x * scale).toFloat()
+                                        val py = (p.y * scale).toFloat()
+                                        if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                                    }
+                                    drawPath(path, color = Color.White, style = DrawStroke(width = 5f * scale))
+                                }
+                            }
+                        }
+                        // نوار تمام/لغو بالای صحنه
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                                .background(Alight.Surface4, RoundedCornerShape(20.dp))
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                if (drawMode == "vector") "وکتور — نقطه بزن" else "دست‌آزاد",
+                                color = Alight.Text2,
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                            )
+                            Text(
+                                "تمام",
+                                color = Alight.Mint,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable { commitDraw(drawPoints); drawMode = null }.padding(8.dp),
+                            )
+                            Text(
+                                "لغو",
+                                color = Alight.Text2,
+                                modifier = Modifier.clickable { drawPoints = emptyList(); drawMode = null }.padding(8.dp),
+                            )
+                        }
+                    }
                 }
                 Column(
                     modifier = Modifier
@@ -362,6 +530,10 @@ fun EditorScreen(
                         selectedId = null
                     },
                     onClose = { selectedId = null },
+                    onSplit = { splitSelected() },
+                    onDuplicate = { duplicateSelected() },
+                    onTrimStart = { trimSelected(true) },
+                    onTrimEnd = { trimSelected(false) },
                     onGroup = {
                         // گروه‌کردن: لایهٔ انتخاب‌شده داخل یک گروه تازه می‌رود
                         val group = newLayer("group", "گروه", selected.start, selected.end).copy(
@@ -394,16 +566,16 @@ fun EditorScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(240.dp),
+                        .height(200.dp),
                 )
             }
         }
 
-        // دکمهٔ + شناور — ۷۳dp، بالای تایم‌لاین (و پنل بازرس اگر باز است)
+        // دکمهٔ + شناور — ۷۳dp، بالای تایم‌لاین (و پنل المان اگر باز است)
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = ((280 + if (selected != null) 240 else 0) + 16).dp)
+                .padding(end = 16.dp, bottom = ((280 + if (selected != null) 200 else 0) + 16).dp)
                 .size(73.dp)
                 .clip(CircleShape)
                 .background(Alight.Pink)
@@ -449,6 +621,17 @@ fun EditorScreen(
                         ),
                     )
                 },
+                onNull = {
+                    addLayer(newLayer("null", "نال", time, minOf(project.duration, time + 5.0)))
+                },
+                onEmptyGroup = {
+                    addLayer(newLayer("group", "گروه خالی", time, minOf(project.duration, time + 5.0)))
+                },
+                onElements = { addDemoAsGroup("المان نمونه") },
+                onTemplate = { addDemoAsGroup("قالب نمایش") },
+                onFreehand = { drawMode = "freehand"; showAdd = false },
+                onVector = { drawMode = "vector"; showAdd = false },
+                onClose = { showAdd = false },
             )
         }
     }
@@ -570,10 +753,17 @@ private fun Inspector(
     onClose: () -> Unit,
     onGroup: () -> Unit,
     onUngroup: () -> Unit,
+    onSplit: () -> Unit,
+    onDuplicate: () -> Unit,
+    onTrimStart: () -> Unit,
+    onTrimEnd: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val t = layer.transform
     val scroll = rememberScrollState()
+    var textEditOpen by remember { mutableStateOf(false) }
+    var textDraft by remember { mutableStateOf("") }
+    var shapePickOpen by remember { mutableStateOf(false) }
 
     /** تغییر/حذف کی‌فریم یک ویژگی در زمان فعلی. */
     fun toggleKeyframe(prop: String, value: Double) {
@@ -605,6 +795,92 @@ private fun Inspector(
             }
             IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, null, tint = Alight.Red) }
             IconButton(onClick = onClose) { Icon(Icons.Filled.Close, null, tint = Alight.Text2) }
+        }
+        // ردیف ابزار ویرایش — ردیف اول پنل المان آلایت (fragment_element_edit)
+        val inRange = time > layer.start && time < layer.end
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 4.dp),
+        ) {
+            PanelButton("برش ابتدا", inRange) { onTrimStart() }
+            PanelButton("تقسیم", inRange) { onSplit() }
+            PanelButton("برش انتها", inRange) { onTrimEnd() }
+            PanelButton("کپی", true) { onDuplicate() }
+        }
+        // رنگ و پرکردن / ویرایشِ وابسته به نوع لایه (ردیف دوم و سوم پنل آلایت)
+        when (layer.type) {
+            "shape" -> {
+                val spec = layer.shape
+                ColorRow("پرکردن", spec?.fill) { c ->
+                    if (spec != null) onChange(layer.copy(shape = spec.copy(fill = c)))
+                }
+                ColorRow("حاشیه", spec?.stroke) { c ->
+                    if (spec != null) onChange(layer.copy(shape = spec.copy(stroke = c)))
+                }
+                if (spec != null) {
+                    SliderRow("ضخامت حاشیه", spec.strokeWidth, 0.0..20.0, false, {}) {
+                        onChange(layer.copy(shape = spec.copy(strokeWidth = it)))
+                    }
+                }
+                Text(
+                    "ویرایش شکل",
+                    color = Alight.Mint,
+                    modifier = Modifier.clickable { shapePickOpen = !shapePickOpen }.padding(vertical = 8.dp),
+                )
+                if (shapePickOpen) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        modifier = Modifier.height(140.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(SHAPE_KINDS) { kind ->
+                            AddTile(SHAPE_NAMES_FA[kind] ?: kind, Alight.Pink) {
+                                if (spec != null) onChange(layer.copy(shape = spec.copy(kind = kind)))
+                                shapePickOpen = false
+                            }
+                        }
+                    }
+                }
+            }
+            "text" -> {
+                val spec = layer.text
+                ColorRow("رنگ متن", spec?.color) { c ->
+                    if (spec != null) onChange(layer.copy(text = spec.copy(color = c)))
+                }
+                if (spec != null) {
+                    SliderRow("اندازه", spec.size, 12.0..200.0, false, {}) {
+                        onChange(layer.copy(text = spec.copy(size = it)))
+                    }
+                }
+                Text(
+                    "ویرایش متن",
+                    color = Alight.Mint,
+                    modifier = Modifier.clickable { textDraft = layer.text?.content ?: ""; textEditOpen = true }.padding(vertical = 8.dp),
+                )
+            }
+            "audio" -> {
+                val spec = layer.audio
+                if (spec != null) {
+                    SliderRow("صدا", spec.volume, 0.0..1.0, false, {}) {
+                        onChange(layer.copy(audio = spec.copy(volume = it)))
+                    }
+                    SliderRow("محو شروع", spec.fadeIn, 0.0..3.0, false, {}) {
+                        onChange(layer.copy(audio = spec.copy(fadeIn = it)))
+                    }
+                    SliderRow("محو پایان", spec.fadeOut, 0.0..3.0, false, {}) {
+                        onChange(layer.copy(audio = spec.copy(fadeOut = it)))
+                    }
+                }
+            }
+            "camera" -> {
+                val spec = layer.camera
+                if (spec != null) {
+                    SliderRow("بزرگنمایی", spec.zoom, 0.5..4.0, false, {}) {
+                        onChange(layer.copy(camera = spec.copy(zoom = it)))
+                    }
+                }
+            }
         }
         SliderRow("شفافیت", t.opacity, 0.0..1.0, hasKeyframe("opacity"), { toggleKeyframe("opacity", t.opacity) }) {
             onChange(layer.copy(transform = t.copy(opacity = it)))
@@ -658,6 +934,31 @@ private fun Inspector(
         Spacer(modifier = Modifier.height(8.dp))
         // افکت‌ها (N3)
         EffectSection(layer, time, onChange)
+    }
+
+    if (textEditOpen) {
+        AlertDialog(
+            onDismissRequest = { textEditOpen = false },
+            title = { Text("ویرایش متن", color = Alight.Text) },
+            text = {
+                TextField(
+                    value = textDraft,
+                    onValueChange = { textDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val spec = layer.text
+                    if (spec != null) onChange(layer.copy(text = spec.copy(content = textDraft)))
+                    textEditOpen = false
+                }) { Text("ذخیره", color = Alight.Mint) }
+            },
+            dismissButton = {
+                TextButton(onClick = { textEditOpen = false }) { Text("لغو", color = Alight.Text2) }
+            },
+            containerColor = Alight.Surface1,
+        )
     }
 }
 
@@ -813,6 +1114,41 @@ private fun EffectChipRow(row: List<EffectDef>, onPick: (String) -> Unit) {
     }
 }
 
+/** دکمهٔ کوچک ردیف ابزار پنل المان (برش/تقسیم/کپی). */
+@Composable
+private fun PanelButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (enabled) Alight.Surface4 else Alight.Surface)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = if (enabled) Alight.Text else Alight.TextDim)
+    }
+}
+
+/** ردیف سوئیچ رنگ (پرکردن/حاشیه/رنگ متن) — همان swatchهای EffectSection. */
+@Composable
+private fun ColorRow(label: String, selected: String?, onPick: (String) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+        Text(label, color = Alight.Text2, modifier = Modifier.width(64.dp))
+        for (sw in listOf("#FFFFFF", "#000000", "#F16586", "#E01445", "#00FFA8", "#69FC97", "#F9DE66", "#4A9EFF", "#9B7BFF")) {
+            val active = selected.equals(sw, ignoreCase = true)
+            Box(
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(if (active) 26.dp else 22.dp)
+                    .clip(CircleShape)
+                    .background(hexColor(sw))
+                    .border(if (active) 2.dp else 1.dp, if (active) Alight.Mint else Alight.Surface4, CircleShape)
+                    .clickable { onPick(sw) },
+            )
+        }
+    }
+}
+
 @Composable
 private fun SliderRow(
     label: String,
@@ -848,6 +1184,11 @@ private fun SliderRow(
     }
 }
 
+/**
+ * پاپ‌آپ افزودن — از activity_edit_addpopup دیکدشده (۲۵۱dp):
+ * ردیف ۵ تب ۵۸dp (شکل/رسانه/صدا/ابژه/قالب‌ها) + ستون quick-add ۵۸dp
+ * (دست‌آزاد/وکتور/متن + بستن ۵۰dp)؛ محتوای هر تب زیر تب‌ها.
+ */
 @Composable
 private fun AddSheet(
     onShape: (String, String) -> Unit,
@@ -857,35 +1198,132 @@ private fun AddSheet(
     onAudio: () -> Unit,
     onLrc: () -> Unit,
     onCamera: () -> Unit,
+    onNull: () -> Unit,
+    onEmptyGroup: () -> Unit,
+    onElements: () -> Unit,
+    onTemplate: () -> Unit,
+    onFreehand: () -> Unit,
+    onVector: () -> Unit,
+    onClose: () -> Unit,
 ) {
-    Column(modifier = Modifier.padding(16.dp)) {
-        Text("افزودن", color = Alight.Text, fontWeight = FontWeight.Black)
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            AddTile("متن", Alight.Text) { onText() }
-            AddTile("تصویر", Alight.Blue) { onImage() }
-            AddTile("ویدیو", Alight.Purple) { onVideo() }
-            AddTile("دوربین", Alight.Orange) { onCamera() }
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            AddTile("صدا", Alight.Mint) { onAudio() }
-            AddTile("شعر (LRC)", Alight.Yellow) { onLrc() }
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("شکل‌ها", color = Alight.Text2)
-        Spacer(modifier = Modifier.height(8.dp))
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(4),
-            modifier = Modifier.height(280.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(SHAPE_KINDS) { kind ->
-                AddTile(SHAPE_NAMES_FA[kind] ?: kind, Alight.Pink) { onShape(kind, "#F16586") }
+    var tab by remember { mutableStateOf("shape") }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(251.dp)
+            .background(Alight.Surface9),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            // ردیف تب‌ها — ۵۸dp
+            Row(modifier = Modifier.fillMaxWidth().height(58.dp)) {
+                AddTab("shape", "شکل", Icons.Filled.Category, tab) { tab = it }
+                AddTab("media", "رسانه", Icons.Filled.Image, tab) { tab = it }
+                AddTab("audio", "صدا", Icons.Filled.Audiotrack, tab) { tab = it }
+                AddTab("object", "ابژه", Icons.Filled.Widgets, tab) { tab = it }
+                AddTab("templates", "قالب‌ها", Icons.Filled.Dashboard, tab) { tab = it }
+            }
+            // محتوای تب — ۱۹۳dp
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(Alight.Surface9)
+                    .padding(9.dp),
+            ) {
+                when (tab) {
+                    "shape" -> LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        verticalArrangement = Arrangement.spacedBy(9.dp),
+                    ) {
+                        items(SHAPE_KINDS) { kind ->
+                            AddTile(SHAPE_NAMES_FA[kind] ?: kind, Alight.Pink) { onShape(kind, "#F16586") }
+                        }
+                    }
+                    "media" -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AddTile("تصویر", Alight.Blue) { onImage() }
+                        AddTile("ویدیو", Alight.Purple) { onVideo() }
+                        Text(
+                            "از گالری دستگاه\nانتخاب می‌شود",
+                            color = Alight.Text2,
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
+                    "audio" -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AddTile("صدا", Alight.Mint) { onAudio() }
+                        AddTile("شعر (LRC)", Alight.Yellow) { onLrc() }
+                    }
+                    "object" -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            AddTile("دوربین", Alight.Orange) { onCamera() }
+                            AddTile("نال", Alight.Surface6) { onNull() }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            AddTile("گروه خالی", Alight.Green) { onEmptyGroup() }
+                            AddTile("المان نمونه", Alight.Purple) { onElements() }
+                        }
+                    }
+                    "templates" -> Column {
+                        Text("قالب نمایش", color = Alight.Text, fontWeight = FontWeight.Bold)
+                        Text("۴ لایه • ۱۰ ثانیه — حلقه، عنوان، زیرنویس", color = Alight.Text2)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "افزودن به پروژه",
+                            color = Alight.Mint,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Alight.Surface4)
+                                .clickable { onTemplate() }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+                }
             }
         }
-        Spacer(modifier = Modifier.height(24.dp))
+        // جداکنندهٔ ۱dp بین تب‌ها و ستون quick-add
+        Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(Alight.Surface))
+        // ستون quick-add — ۵۸dp
+        Column(modifier = Modifier.width(58.dp).fillMaxHeight()) {
+            QuickTile("دست‌آزاد", Icons.Filled.Brush, Modifier.weight(1f)) { onFreehand() }
+            QuickTile("وکتور", Icons.Filled.Timeline, Modifier.weight(1f)) { onVector() }
+            QuickTile("متن", Icons.Filled.TextFields, Modifier.height(58.dp)) { onText() }
+            QuickTile("بستن", Icons.Filled.Close, Modifier.height(50.dp)) { onClose() }
+        }
+    }
+}
+
+/** یک تب پاپ‌آپ افزودن: آیکون + برچسب ۹sp؛ فعال = نعنایی. */
+@Composable
+private fun RowScope.AddTab(id: String, label: String, icon: ImageVector, current: String, onPick: (String) -> Unit) {
+    val active = id == current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Bottom,
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clickable { onPick(id) }
+            .padding(bottom = 1.dp),
+    ) {
+        Icon(icon, contentDescription = label, tint = if (active) Alight.Mint else Alight.Text, modifier = Modifier.size(22.dp))
+        Text(label, color = if (active) Alight.Mint else Alight.Text, fontWeight = FontWeight.Bold, fontSize = 9.sp)
+    }
+}
+
+/** یک خانهٔ ستون quick-add پاپ‌آپ افزودن (۵۸dp عرض). */
+@Composable
+private fun QuickTile(label: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Bottom,
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+    ) {
+        Icon(icon, contentDescription = label, tint = Alight.Text, modifier = Modifier.size(22.dp))
+        Text(label, color = Alight.Text, fontWeight = FontWeight.Bold, fontSize = 9.sp, modifier = Modifier.padding(bottom = 1.dp))
     }
 }
 
