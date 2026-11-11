@@ -18,6 +18,9 @@ import kotlin.math.sin
 
 private val PROPS = listOf("x", "y", "scaleX", "scaleY", "rotation", "opacity")
 
+/** زمان محلی لایه با اعمال سرعت (retime): ۰ = شروع لایه. */
+fun localTime(layer: Layer, t: Double): Double = (t - layer.start) * layer.speed
+
 /** درون‌یابی یک ویژگی با کی‌فریم‌ها. */
 fun valueAt(keyframes: List<Keyframe>?, t: Double, fallback: Double): Double {
     if (keyframes.isNullOrEmpty()) return fallback
@@ -52,7 +55,7 @@ fun isFxOn(fx: EffectRef): Boolean = fx.enabled
 /** بزرگنمایی دوربین در زمان t — کی‌فریم‌های zoom وگرنه مقدار ثابت. */
 fun cameraZoomAt(layer: Layer, t: Double): Double {
     val kfs = layer.keyframes["zoom"]
-    return if (kfs != null) valueAt(kfs, t - layer.start, layer.camera?.zoom ?: 1.0) else (layer.camera?.zoom ?: 1.0)
+    return if (kfs != null) valueAt(kfs, localTime(layer, t), layer.camera?.zoom ?: 1.0) else (layer.camera?.zoom ?: 1.0)
 }
 
 /** ترنسفورم نهایی لایه در زمان t (با کی‌فریم‌ها و افکت‌های anim). */
@@ -67,7 +70,7 @@ fun layerTransform(layer: Layer, t: Double): Transform {
     }
     // افکت‌های انیمیشنی روی ترنسفورم — همان ریاضی وب
     for (fx in layer.effects.filter(::isFxOn)) {
-        val p = effectParamsAt(fx, t - layer.start)
+        val p = effectParamsAt(fx, localTime(layer, t))
         when (fx.id) {
             "shake" -> {
                 val s = (p["speed"] ?: 8.0) * t
@@ -158,7 +161,7 @@ private fun setProp(tr: Transform, prop: String, v: Double): Transform = when (p
 fun layerOpacity(layer: Layer, t: Double): Double {
     var o = layerTransform(layer, t).opacity
     for (fx in layer.effects.filter(::isFxOn)) {
-        val p = effectParamsAt(fx, t - layer.start)
+        val p = effectParamsAt(fx, localTime(layer, t))
         when (fx.id) {
             "fade" -> o *= (p["amount"] ?: 1.0)
             "blink" -> o *= if (sin(t * (p["speed"] ?: 4.0) * PI * 2.0) > 0) 1.0 else 0.15
@@ -196,7 +199,7 @@ fun filterParamsFor(layer: Layer, t: Double): FilterParams {
     var b = 0.0; var c = 0.0; var s = 0.0; var h = 0.0
     var g = 0.0; var se = 0.0; var inv = 0.0; var bl = 0.0
     for (fx in layer.effects.filter(::isFxOn)) {
-        val p = effectParamsAt(fx, t - layer.start)
+        val p = effectParamsAt(fx, localTime(layer, t))
         when (fx.id) {
             "brightness" -> b += (p["amount"] ?: 0.0)
             "contrast" -> c += (p["amount"] ?: 0.0)
@@ -224,7 +227,7 @@ data class RepeatParams(
 fun repeatOf(layer: Layer, t: Double): RepeatParams? {
     for (fx in layer.effects.filter(::isFxOn)) {
         if (fx.id == "repeat") {
-            val p = effectParamsAt(fx, t - layer.start)
+            val p = effectParamsAt(fx, localTime(layer, t))
             return RepeatParams(
                 count = p["count"] ?: 2.0,
                 dx = p["dx"] ?: 0.0,

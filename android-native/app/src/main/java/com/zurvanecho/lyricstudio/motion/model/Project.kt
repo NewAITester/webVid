@@ -106,6 +106,8 @@ data class Layer(
     val name: String,
     val start: Double = 0.0,
     val end: Double = 10.0,
+    /** ضریب سرعت پخش (۱٫۰ = طبیعی؛ مثل retime آلایت). */
+    val speed: Double = 1.0,
     val clip: String = "none", // none | below | belowInv
     val transform: Transform = Transform(),
     val keyframes: Map<String, List<Keyframe>> = emptyMap(),

@@ -34,6 +34,7 @@ import com.zurvanecho.lyricstudio.motion.core.isActive
 import com.zurvanecho.lyricstudio.motion.core.isFxOn
 import com.zurvanecho.lyricstudio.motion.core.layerOpacity
 import com.zurvanecho.lyricstudio.motion.core.layerTransform
+import com.zurvanecho.lyricstudio.motion.core.localTime
 import com.zurvanecho.lyricstudio.motion.core.repeatOf
 import com.zurvanecho.lyricstudio.motion.core.shapePath
 import com.zurvanecho.lyricstudio.motion.core.visibleLayers
@@ -119,7 +120,7 @@ object Renderer {
                 if (fp.blur > 0.0) bmp = blurBitmap(bmp, fp.blur)
                 if (hasCanvasFx) {
                     val androidBmp = FxEngine.toBitmap(bmp)
-                    val effected = FxEngine.apply(androidBmp, layer.effects, t - layer.start)
+                    val effected = FxEngine.apply(androidBmp, layer.effects, localTime(layer, t))
                     bmp = FxEngine.toImageBitmap(effected)
                 }
                 val bm = blendModeFor(layer.blend)
@@ -177,7 +178,7 @@ object Renderer {
                 )
             }
             "video" -> {
-                val img = media?.videoFrame(layer.src, t - layer.start) ?: return
+                val img = media?.videoFrame(layer.src, localTime(layer, t)) ?: return
                 val iw = 320f
                 val ih = iw * img.height / max(1, img.width)
                 drawImage(
@@ -245,13 +246,13 @@ object Renderer {
         // تایپ‌رایتر: برش محتوا بر اساس زمان
         val typeFx = layer.effects.firstOrNull { it.id == "typewriter" && isFxOn(it) }
         if (typeFx != null) {
-            val p = effectParamsAt(typeFx, t - layer.start)
-            val n = ((t - layer.start) * (p["speed"] ?: 12.0)).toInt()
+            val p = effectParamsAt(typeFx, localTime(layer, t))
+            val n = ((localTime(layer, t)) * (p["speed"] ?: 12.0)).toInt()
             content = content.take(max(0, n))
         }
         val tracking = layer.effects.firstOrNull { it.id == "tracking" && isFxOn(it) }
         val letterSpacing = if (tracking != null) {
-            val p = effectParamsAt(tracking, t - layer.start)
+            val p = effectParamsAt(tracking, localTime(layer, t))
             TextUnit((p["amount"] ?: 0.0).toFloat(), TextUnitType.Sp)
         } else {
             TextUnit.Unspecified

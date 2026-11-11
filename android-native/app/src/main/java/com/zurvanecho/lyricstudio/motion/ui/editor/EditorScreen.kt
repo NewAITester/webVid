@@ -106,6 +106,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -145,6 +146,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /**
  * ویرایشگر — همان چیدمان Alight: نوار بالا ۴۲dp، نوار پخش ۴۶dp،
@@ -199,6 +201,12 @@ fun EditorScreen(
 
     fun update(p: Project) {
         if (p == project) return
+        // اگر کشیدنی در جریان بود، اول حالت پایه‌اش را ثبت کن.
+        val base = pendingBase
+        if (base != null) {
+            pendingBase = null
+            undoStack = (undoStack + base).takeLast(50)
+        }
         undoStack = (undoStack + project).takeLast(50)
         redoStack = emptyList()
         project = p
@@ -207,14 +215,34 @@ fun EditorScreen(
 
     fun undo() {
         val prev = undoStack.lastOrNull() ?: return
+        pendingBase = null
         redoStack = redoStack + project
         undoStack = undoStack.dropLast(1)
         project = prev
         onSave(prev)
     }
 
+    /** تغییر زنده بدون ثبت تاریخچه (کشیدن اسلایدر/نوار) — حالت پایه در
+     *  اولین تغییر ذخیره می‌شود و در پایان کشیدن یک ورودی ثبت می‌کند. */
+    var pendingBase by remember { mutableStateOf<Project?>(null) }
+
+    fun preview(p: Project) {
+        if (p == project) return
+        if (pendingBase == null) pendingBase = project
+        project = p
+        onSave(p)
+    }
+
+    fun finishDrag() {
+        val base = pendingBase ?: return
+        pendingBase = null
+        undoStack = (undoStack + base).takeLast(50)
+        redoStack = emptyList()
+    }
+
     fun redo() {
         val next = redoStack.lastOrNull() ?: return
+        pendingBase = null
         undoStack = (undoStack + project).takeLast(50)
         redoStack = redoStack.dropLast(1)
         project = next
@@ -250,8 +278,10 @@ fun EditorScreen(
     /** پرش زمان به بوک‌مارک/کی‌فریم قبلی یا بعدی لایهٔ انتخاب‌شده. */
     fun jumpCue(forward: Boolean) {
         val sel = selected
+        // کی‌فریم‌های ترنسفورم زمانِ پروژه‌اند (مثل وب)؛ کی‌فریم zoom محلی است
+        // و در پرش cue حساب نمی‌شود.
         val marks =
-            (project.bookmarks + (sel?.keyframes?.values?.flatten()?.map { it.t + sel.start } ?: emptyList()))
+            (project.bookmarks + (sel?.keyframes?.filterKeys { it != "zoom" }?.values?.flatten()?.map { it.t } ?: emptyList()))
                 .sorted()
         if (marks.isEmpty()) return
         val target =
@@ -781,6 +811,27 @@ fun EditorScreen(
                 time = time,
                 selectedId = selectedId,
                 onSelect = { selectedId = it },
+                onTimeChange = { time = it },
+                onLayerChange = { changed ->
+                    update(project.copy(layers = project.layers.map { if (it.id == changed.id) changed else it }))
+                },
+                onKeyframeChange = { layer, prop, oldT, newT ->
+                    update(
+                        project.copy(
+                            layers = project.layers.map {
+                                if (it.id != layer.id) it
+                                else {
+                                    val list = it.keyframes[prop].orEmpty()
+                                    val next =
+                                        list.map { kf ->
+                                            if (kotlin.math.abs(kf.t - oldT) < 0.001) kf.copy(t = newT) else kf
+                                        }.sortedBy { k -> k.t }
+                                    it.copy(keyframes = it.keyframes + (prop to next))
+                                }
+                            },
+                        ),
+                    )
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(280.dp),
@@ -935,6 +986,10 @@ fun EditorScreen(
                     onTrimEnd = { trimSelected(false) },
                     onGroup = { groupSelected() },
                     onUngroup = { ungroupSelected() },
+                    onPreview = { changed ->
+                        preview(project.copy(layers = project.layers.map { if (it.id == changed.id) changed else it }))
+                    },
+                    onFinish = { finishDrag() },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp),
@@ -1103,47 +1158,121 @@ fun EditorScreen(
 }
 
 @Composable
+/** وضعیت کشیدن نوار لایه (جابه‌جایی/برش ابتدا/برش انتها). */
+private data class BarDrag(
+    val layerId: String,
+    val mode: String,
+    val start0: Double,
+    val end0: Double,
+    val dxSec: Double,
+)
+
+@Composable
 private fun Timeline(
     project: Project,
     time: Double,
     selectedId: String?,
     onSelect: (String?) -> Unit,
+    onTimeChange: (Double) -> Unit,
+    onLayerChange: (Layer) -> Unit,
+    onKeyframeChange: (layer: Layer, prop: String, oldT: Double, newT: Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // ۱۰۰dp به ازای هر ثانیه — همان timeline_base_dp_per_sec آلایت
     val pxPerSec = 100.dp
+    val density = LocalDensity.current
     val scroll = rememberScrollState()
     val trackWidth = (project.duration * 100).dp
     val rows = project.layers.reversed()
+    val frame = 1.0 / project.fps
+    val dpPerSecPx = with(density) { pxPerSec.toPx() }
+    fun snap(v: Double): Double = (v / frame).roundToInt().toDouble() * frame
+
+    var barDrag by remember { mutableStateOf<BarDrag?>(null) }
+    // کشیدن لوزی کی‌فریم: (layerId, prop, t0) + جابه‌جایی انباشته (ثانیه)
+    var kfDrag by remember { mutableStateOf<Triple<String, String, Double>?>(null) }
+    var kfDx by remember { mutableDoubleStateOf(0.0) }
+
+    /** بازهٔ نوار لایه در پایان کشیدن (با جابه‌جاییِ انباشته). */
+    fun rangeOf(d: BarDrag): Pair<Double, Double> =
+        when (d.mode) {
+            "move" -> {
+                val len = d.end0 - d.start0
+                val ns = (d.start0 + d.dxSec).coerceIn(0.0, project.duration - len)
+                ns to ns + len
+            }
+            "trimStart" -> (d.start0 + d.dxSec).coerceIn(0.0, d.end0 - frame) to d.end0
+            "trimEnd" -> d.start0 to (d.end0 + d.dxSec).coerceIn(d.start0 + frame, project.duration)
+            else -> d.start0 to d.end0
+        }
+
+    /** بازهٔ نمایشی نوار لایه (حین کشیدن، پیش‌نمایش جابه‌جایی). */
+    fun dispRange(layer: Layer): Pair<Double, Double> {
+        val d = barDrag
+        return if (d != null && d.layerId == layer.id) rangeOf(d) else layer.start to layer.end
+    }
+
     Column(
         modifier = modifier.background(Alight.Surface),
     ) {
-        // خط‌کش زمان — سربرگ ۷۰dp ثابت، بقیه با همان اسکرول ردیف‌ها
+        // خط‌کش زمان — ضربه/کشیدن = جابه‌جایی زمان پخش (playheadTouchZone آلایت)
         Row(modifier = Modifier.fillMaxWidth().height(28.dp)) {
             Spacer(modifier = Modifier.width(70.dp))
-            Row(modifier = Modifier.weight(1f).horizontalScroll(scroll)) {
-                for (s in 0..project.duration.toInt()) {
-                    Box(modifier = Modifier.width(pxPerSec)) {
-                        Text(
-                            "%d:%02d".format(s / 60, s % 60),
-                            color = Alight.TextDim,
-                            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-                        )
-                        // K1: بوک‌مارک‌ها — لوزی نعنایی روی خط‌کش
-                        for (b in project.bookmarks) {
-                            if (b >= s && b < s + 1) {
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .offset(x = ((b - s) * 100).dp - 3.dp, y = 16.dp)
-                                            .size(6.dp)
-                                            .rotate(45f)
-                                            .background(Alight.Mint),
-                                )
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .horizontalScroll(scroll)
+                        .pointerInput(dpPerSecPx, project.duration) {
+                            detectTapGestures(onTap = { off ->
+                                onTimeChange((off.x / dpPerSecPx).coerceIn(0.0, project.duration))
+                            })
+                        }
+                        .pointerInput(dpPerSecPx, project.duration) {
+                            detectDragGestures(
+                                onDragStart = { off ->
+                                    onTimeChange((off.x / dpPerSecPx).coerceIn(0.0, project.duration))
+                                },
+                                onDrag = { change, _ ->
+                                    onTimeChange((change.position.x / dpPerSecPx).coerceIn(0.0, project.duration))
+                                },
+                            )
+                        },
+            ) {
+                Row {
+                    for (s in 0..project.duration.toInt()) {
+                        Box(modifier = Modifier.width(pxPerSec)) {
+                            Text(
+                                "%d:%02d".format(s / 60, s % 60),
+                                color = Alight.TextDim,
+                                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                            )
+                            // K1: بوک‌مارک‌ها — لوزی نعنایی روی خط‌کش
+                            for (b in project.bookmarks) {
+                                if (b >= s && b < s + 1) {
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .offset(x = ((b - s) * 100).dp - 3.dp, y = 16.dp)
+                                                .size(6.dp)
+                                                .rotate(45f)
+                                                .background(Alight.Mint),
+                                    )
+                                }
                             }
                         }
                     }
                 }
+                // خط پخش روی خط‌کش
+                Box(
+                    modifier =
+                        Modifier
+                            .offset(x = (time * 100).dp)
+                            .width(2.dp)
+                            .fillMaxHeight()
+                            .background(Alight.Red),
+                )
             }
         }
         // ردیف‌ها — سربرگ نام ثابت، بلوک‌ها اسکرول‌پذیر
@@ -1187,25 +1316,93 @@ private fun Timeline(
                             "camera" -> Alight.Orange
                             else -> Alight.Surface4
                         }
+                        val (dispStart, dispEnd) = dispRange(layer)
                         Box(
                             modifier = Modifier
-                                .offset(x = (layer.start * 100).dp)
-                                .width(((layer.end - layer.start) * 100).dp)
+                                .offset(x = (dispStart * 100).dp)
+                                .width(((dispEnd - dispStart) * 100).dp)
                                 .fillMaxHeight()
                                 .padding(vertical = 3.dp)
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(color.copy(alpha = if (layer.id == selectedId) 1f else 0.75f)),
+                                .background(color.copy(alpha = if (layer.id == selectedId) 1f else 0.75f))
+                                .pointerInput(layer.id, dpPerSecPx) {
+                                    detectDragGestures(
+                                        onDragStart = { off ->
+                                            onSelect(layer.id)
+                                            val zone = when {
+                                                off.x < 16.dp.toPx() -> "trimStart"
+                                                off.x > size.width - 16.dp.toPx() -> "trimEnd"
+                                                else -> "move"
+                                            }
+                                            barDrag = BarDrag(layer.id, zone, layer.start, layer.end, 0.0)
+                                        },
+                                        onDrag = { _, dragAmount ->
+                                            val d = barDrag ?: return@detectDragGestures
+                                            barDrag = d.copy(dxSec = d.dxSec + dragAmount.x / dpPerSecPx)
+                                        },
+                                        onDragEnd = {
+                                            val d = barDrag ?: return@detectDragGestures
+                                            val (ns, ne) = rangeOf(d)
+                                            onLayerChange(layer.copy(start = snap(ns), end = snap(ne)))
+                                            barDrag = null
+                                        },
+                                        onDragCancel = { barDrag = null },
+                                    )
+                                },
                         )
-                        // نشانگرهای کی‌فریم (لوزی نعنایی) روی ردیف
-                        val kfTimes = layer.keyframes.values.flatten().map { it.t }.distinct()
-                        for (kt in kfTimes) {
-                            Box(
-                                modifier = Modifier
-                                    .offset(x = (kt * 100).dp - 4.dp, y = 10.dp)
-                                    .size(8.dp)
-                                    .rotate(45f)
-                                    .background(Alight.Mint, RoundedCornerShape(2.dp)),
-                            )
+                        // نشانگرهای کی‌فریم (لوزی نعنایی) روی ردیف — لایهٔ انتخاب‌شده قابل‌کشیدن است
+                        for ((prop, list) in layer.keyframes) {
+                            if (prop == "zoom") continue
+                            for (kf in list) {
+                                val isSel = layer.id == selectedId
+                                val kd = kfDrag
+                                val dragging = isSel && kd != null && kd.first == layer.id &&
+                                    kd.second == prop &&
+                                    kotlin.math.abs(kf.t - kd.third) < 0.001
+                                val drawT = if (dragging) kf.t + kfDx else kf.t
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = (drawT * 100).dp - 10.dp, y = 4.dp)
+                                        .size(20.dp)
+                                        .then(
+                                            if (isSel) {
+                                                Modifier.pointerInput(layer.id, prop, kf.t, dpPerSecPx) {
+                                                    detectDragGestures(
+                                                        onDragStart = {
+                                                            kfDrag = Triple(layer.id, prop, kf.t)
+                                                            kfDx = 0.0
+                                                        },
+                                                        onDrag = { _, dragAmount ->
+                                                            kfDx += dragAmount.x / dpPerSecPx
+                                                        },
+                                                        onDragEnd = {
+                                                            val nt = snap(
+                                                                (kf.t + kfDx).coerceIn(layer.start, layer.end),
+                                                            )
+                                                            onKeyframeChange(layer, prop, kf.t, nt)
+                                                            kfDrag = null
+                                                            kfDx = 0.0
+                                                        },
+                                                        onDragCancel = {
+                                                            kfDrag = null
+                                                            kfDx = 0.0
+                                                        },
+                                                    )
+                                                }
+                                            } else {
+                                                Modifier
+                                            },
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .rotate(45f)
+                                            .background(Alight.Mint, RoundedCornerShape(2.dp)),
+                                    )
+                                }
+                            }
                         }
                         // خط پخش
                         Box(
@@ -1235,9 +1432,20 @@ private fun Inspector(
     onDuplicate: () -> Unit,
     onTrimStart: () -> Unit,
     onTrimEnd: () -> Unit,
+    onPreview: ((Layer) -> Unit)? = null,
+    onFinish: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val t = layer.transform
+
+    /** تغییر زندهٔ اسلایدر (بدون تاریخچه)؛ پایان کشیدن یک ورودی ثبت می‌کند. */
+    fun sc(changed: Layer) {
+        if (onPreview != null) onPreview(changed) else onChange(changed)
+    }
+
+    fun fin() {
+        onFinish?.invoke()
+    }
     val scroll = rememberScrollState()
     var textEditOpen by remember { mutableStateOf(false) }
     var textDraft by remember { mutableStateOf("") }
@@ -1285,6 +1493,29 @@ private fun Inspector(
             PanelButton("برش انتها", inRange) { onTrimEnd() }
             PanelButton("کپی", true) { onDuplicate() }
         }
+        // سرعت/ریتایم — مثل fragment_speed_keyframe.xml آلایت
+        // (دکمه‌های کش‌دادن دو سر + اسلایدر ضریب با اسنپ‌های آلایت)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 4.dp),
+        ) {
+            Text(
+                "سرعت",
+                color = Alight.Text2,
+                modifier = Modifier.width(64.dp).align(Alignment.CenterVertically),
+            )
+            PanelButton("−شروع", layer.start > 0.0) { onChange(layer.copy(start = maxOf(0.0, layer.start - 0.5))) }
+            PanelButton("+شروع", layer.end - layer.start > 0.6) { onChange(layer.copy(start = minOf(layer.end - 0.1, layer.start + 0.5))) }
+            PanelButton("−پایان", layer.end - layer.start > 0.6) { onChange(layer.copy(end = maxOf(layer.start + 0.1, layer.end - 0.5))) }
+            PanelButton("+پایان", true) { onChange(layer.copy(end = layer.end + 0.5)) }
+        }
+        SliderRow("ضریب", layer.speed, 0.25..4.0, false, {}, onFinish = { fin() }) { v ->
+            // اسنپ به مقدارهای آلایت (۰٫۲۵/۰٫۵/۰٫۷۵/۱/۲/۳/۴)؛
+            // طول نوار به همان نسبت عوض می‌شود (طول رسانه ثابت می‌ماند).
+            val snapped = listOf(0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0).minByOrNull { kotlin.math.abs(it - v) } ?: v
+            val mediaLen = (layer.end - layer.start) * layer.speed
+            sc(layer.copy(speed = snapped, end = layer.start + mediaLen / snapped))
+        }
         // رنگ و پرکردن / ویرایشِ وابسته به نوع لایه (ردیف دوم و سوم پنل آلایت)
         when (layer.type) {
             "shape" -> {
@@ -1296,8 +1527,8 @@ private fun Inspector(
                     if (spec != null) onChange(layer.copy(shape = spec.copy(stroke = c)))
                 }
                 if (spec != null) {
-                    SliderRow("ضخامت حاشیه", spec.strokeWidth, 0.0..20.0, false, {}) {
-                        onChange(layer.copy(shape = spec.copy(strokeWidth = it)))
+                    SliderRow("ضخامت حاشیه", spec.strokeWidth, 0.0..20.0, false, {}, onFinish = { fin() } {
+                        sc(layer.copy(shape = spec.copy(strokeWidth = it)))
                     }
                 }
                 Text(
@@ -1327,8 +1558,8 @@ private fun Inspector(
                     if (spec != null) onChange(layer.copy(text = spec.copy(color = c)))
                 }
                 if (spec != null) {
-                    SliderRow("اندازه", spec.size, 12.0..200.0, false, {}) {
-                        onChange(layer.copy(text = spec.copy(size = it)))
+                    SliderRow("اندازه", spec.size, 12.0..200.0, false, {}, onFinish = { fin() } {
+                        sc(layer.copy(text = spec.copy(size = it)))
                     }
                 }
                 Text(
@@ -1340,40 +1571,40 @@ private fun Inspector(
             "audio" -> {
                 val spec = layer.audio
                 if (spec != null) {
-                    SliderRow("صدا", spec.volume, 0.0..1.0, false, {}) {
-                        onChange(layer.copy(audio = spec.copy(volume = it)))
+                    SliderRow("صدا", spec.volume, 0.0..1.0, false, {}, onFinish = { fin() } {
+                        sc(layer.copy(audio = spec.copy(volume = it)))
                     }
-                    SliderRow("محو شروع", spec.fadeIn, 0.0..3.0, false, {}) {
-                        onChange(layer.copy(audio = spec.copy(fadeIn = it)))
+                    SliderRow("محو شروع", spec.fadeIn, 0.0..3.0, false, {}, onFinish = { fin() } {
+                        sc(layer.copy(audio = spec.copy(fadeIn = it)))
                     }
-                    SliderRow("محو پایان", spec.fadeOut, 0.0..3.0, false, {}) {
-                        onChange(layer.copy(audio = spec.copy(fadeOut = it)))
+                    SliderRow("محو پایان", spec.fadeOut, 0.0..3.0, false, {}, onFinish = { fin() } {
+                        sc(layer.copy(audio = spec.copy(fadeOut = it)))
                     }
                 }
             }
             "camera" -> {
                 val spec = layer.camera
                 if (spec != null) {
-                    SliderRow("بزرگنمایی", spec.zoom, 0.5..4.0, false, {}) {
-                        onChange(layer.copy(camera = spec.copy(zoom = it)))
+                    SliderRow("بزرگنمایی", spec.zoom, 0.5..4.0, false, {}, onFinish = { fin() } {
+                        sc(layer.copy(camera = spec.copy(zoom = it)))
                     }
                 }
             }
         }
-        SliderRow("شفافیت", t.opacity, 0.0..1.0, hasKeyframe("opacity"), { toggleKeyframe("opacity", t.opacity) }) {
-            onChange(layer.copy(transform = t.copy(opacity = it)))
+        SliderRow("شفافیت", t.opacity, 0.0..1.0, hasKeyframe("opacity"), { toggleKeyframe("opacity", t.opacity) }, onFinish = { fin() } {
+            sc(layer.copy(transform = t.copy(opacity = it)))
         }
-        SliderRow("مقیاس", t.scaleX, 0.1..3.0, hasKeyframe("scaleX"), { toggleKeyframe("scaleX", t.scaleX) }) {
-            onChange(layer.copy(transform = t.copy(scaleX = it, scaleY = it)))
+        SliderRow("مقیاس", t.scaleX, 0.1..3.0, hasKeyframe("scaleX"), { toggleKeyframe("scaleX", t.scaleX) }, onFinish = { fin() } {
+            sc(layer.copy(transform = t.copy(scaleX = it, scaleY = it)))
         }
-        SliderRow("چرخش", t.rotation, -180.0..180.0, hasKeyframe("rotation"), { toggleKeyframe("rotation", t.rotation) }) {
-            onChange(layer.copy(transform = t.copy(rotation = it)))
+        SliderRow("چرخش", t.rotation, -180.0..180.0, hasKeyframe("rotation"), { toggleKeyframe("rotation", t.rotation) }, onFinish = { fin() } {
+            sc(layer.copy(transform = t.copy(rotation = it)))
         }
-        SliderRow("موقعیت X", t.x, 0.0..720.0, hasKeyframe("x"), { toggleKeyframe("x", t.x) }) {
-            onChange(layer.copy(transform = t.copy(x = it)))
+        SliderRow("موقعیت X", t.x, 0.0..720.0, hasKeyframe("x"), { toggleKeyframe("x", t.x) }, onFinish = { fin() } {
+            sc(layer.copy(transform = t.copy(x = it)))
         }
-        SliderRow("موقعیت Y", t.y, 0.0..1280.0, hasKeyframe("y"), { toggleKeyframe("y", t.y) }) {
-            onChange(layer.copy(transform = t.copy(y = it)))
+        SliderRow("موقعیت Y", t.y, 0.0..1280.0, hasKeyframe("y"), { toggleKeyframe("y", t.y) }, onFinish = { fin() } {
+            sc(layer.copy(transform = t.copy(y = it)))
         }
         // ماسک (clip)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
@@ -1483,10 +1714,10 @@ private fun EffectSection(
                         // پارامتر عددی با کی‌فریم (همان effectParamsAt وب)
                         val kfList = fx.keyframes[key].orEmpty()
                         val shown = if (kfList.isNotEmpty()) valueAt(kfList, time, cur) else cur
-                        SliderRow(pd.label, shown, pd.min..pd.max, false, {}) { v ->
+                        SliderRow(pd.label, shown, pd.min..pd.max, false, {}, onFinish = { fin() } { v ->
                             val next = layer.effects.toMutableList()
                             next[idx] = fx.copy(params = fx.params + (key to v))
-                            onChange(layer.copy(effects = next))
+                            sc(layer.copy(effects = next))
                         }
                     } else if (pd.type == "c") {
                         val cur = fx.textParams[key] ?: pd.defStr
@@ -1635,12 +1866,14 @@ private fun SliderRow(
     hasKf: Boolean,
     onKf: () -> Unit,
     onChange: (Double) -> Unit,
+    onFinish: () -> Unit = {},
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = Alight.Text2, modifier = Modifier.width(64.dp))
         Slider(
             value = value.toFloat(),
             onValueChange = { onChange(it.toDouble()) },
+            onValueChangeFinished = onFinish,
             valueRange = range.start.toFloat()..range.endInclusive.toFloat(),
             modifier = Modifier.weight(1f),
         )

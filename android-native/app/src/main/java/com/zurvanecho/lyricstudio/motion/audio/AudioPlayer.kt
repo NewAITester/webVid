@@ -20,8 +20,9 @@ fun audioVolumeAt(layer: Layer, t: Double): Double {
     val a = layer.audio
     val vol = a?.volume ?: 1.0
     if (t < layer.start || t > layer.end) return 0.0
-    val local = t - layer.start
-    val dur = max(0.01, layer.end - layer.start)
+    // زمان محلی رسانه با اعمال سرعت (retime)؛ مدت هم به همان نسبت.
+    val local = (t - layer.start) * layer.speed
+    val dur = max(0.01, (layer.end - layer.start) * layer.speed)
     var k = 1.0
     val fi = a?.fadeIn ?: 0.0
     val fo = a?.fadeOut ?: 0.0
@@ -31,7 +32,7 @@ fun audioVolumeAt(layer: Layer, t: Double): Double {
 }
 
 class AudioPlayer(private val context: Context) {
-    private data class Rec(val player: MediaPlayer, val src: String)
+    private data class Rec(val player: MediaPlayer, val src: String, var speed: Double = 1.0)
     private val players = mutableMapOf<String, Rec>()
     var muted: Boolean = false
 
@@ -115,15 +116,24 @@ class AudioPlayer(private val context: Context) {
                 if (muted) 0f else audioVolumeAt(l, t).toFloat(),
                 if (muted) 0f else audioVolumeAt(l, t).toFloat(),
             )
+            // ریتایم صدا: سرعت پخش + جابه‌جایی با زمان محلیِ ریتایم‌شده.
+            val speed = l.speed.coerceIn(0.25, 4.0)
+            if (rec.speed != speed) {
+                rec.speed = speed
+                try {
+                    val params = mp.playbackParams
+                    mp.playbackParams = params.setSpeed(speed.toFloat())
+                } catch (_: Exception) { }
+            }
             val active = t >= l.start && t <= l.end
             if (!active || !playing) {
                 if (mp.isPlaying) mp.pause()
                 if (active) {
-                    try { mp.seekTo(max(0, ((t - l.start) * 1000).toInt())) } catch (_: Exception) { }
+                    try { mp.seekTo(max(0, (((t - l.start) * speed) * 1000).toInt())) } catch (_: Exception) { }
                 }
                 continue
             }
-            val target = max(0, ((t - l.start) * 1000).toInt())
+            val target = max(0, (((t - l.start) * speed) * 1000).toInt())
             if (kotlin.math.abs(mp.currentPosition - target) > 250) {
                 try { mp.seekTo(target) } catch (_: Exception) { }
             }
