@@ -1250,6 +1250,75 @@ impl LyricApp {
             }
             list.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
         }
+        // ---- Mask & blend ----
+        ui.separator();
+        ui.label(shp("ماسک و ترکیب"));
+        ui.horizontal(|ui| {
+            ui.label(shp("ماسک"));
+            let clip_label = match proj.layers[idx].clip.as_str() {
+                "below" => "ماسک لایهٔ زیر",
+                "belowInv" => "ماسک معکوس لایهٔ زیر",
+                _ => "هیچ‌کدام",
+            };
+            egui::ComboBox::from_id_salt("clip_pick")
+                .selected_text(shp(clip_label))
+                .show_ui(ui, |ui| {
+                    for (v, label) in [
+                        ("none", "هیچ‌کدام"),
+                        ("below", "ماسک لایهٔ زیر"),
+                        ("belowInv", "ماسک معکوس لایهٔ زیر"),
+                    ] {
+                        if ui
+                            .selectable_value(
+                                &mut proj.layers[idx].clip,
+                                v.to_string(),
+                                shp(label),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    }
+                });
+        });
+        ui.horizontal(|ui| {
+            ui.label(shp("ترکیب"));
+            let blend_label = match proj.layers[idx].blend.as_str() {
+                "multiply" => "ضرب",
+                "screen" => "پرده",
+                "overlay" => "پوشش",
+                "add" => "جمع",
+                "darken" => "تیره",
+                "lighten" => "روشن",
+                "difference" => "تفاضل",
+                _ => "معمولی",
+            };
+            egui::ComboBox::from_id_salt("blend_pick")
+                .selected_text(shp(blend_label))
+                .show_ui(ui, |ui| {
+                    for (v, label) in [
+                        ("normal", "معمولی"),
+                        ("multiply", "ضرب"),
+                        ("screen", "پرده"),
+                        ("overlay", "پوشش"),
+                        ("add", "جمع"),
+                        ("darken", "تیره"),
+                        ("lighten", "روشن"),
+                        ("difference", "تفاضل"),
+                    ] {
+                        if ui
+                            .selectable_value(
+                                &mut proj.layers[idx].blend,
+                                v.to_string(),
+                                shp(label),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    }
+                });
+        });
         if let Some(sh) = &mut proj.layers[idx].shape {
             ui.horizontal(|ui| {
                 ui.label(shp("رنگ"));

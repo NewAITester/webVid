@@ -10,10 +10,12 @@
 //! Persian text, so it comes out joined; draw strokes are thick
 //! polylines. Camera zoom scales the whole view about the stage centre.
 //!
-//! Honest gaps in this version: image/video layers have no decoder yet
-//! (skipped), masks (`clip`) and non-normal blend modes are ignored,
-//! text alignment other than center uses anchor semantics (`start` =
-//! the layer anchor is the left edge). These are noted, not faked.
+//! Honest gaps in this version: image/video layers are decoded by the
+//! app (the renderer looks them up by `src`); text alignment other
+//! than center uses anchor semantics (`start` = the layer anchor is
+//! the left edge); group transforms are not composed into children.
+//! Masks (`clip` below/belowInv) and blend modes (multiply, screen,
+//! overlay, add, darken, lighten, difference) are implemented.
 
 use crate::evaluate;
 use crate::model::{Layer, Project};
@@ -219,7 +221,13 @@ impl Renderer {
     }
 
     /// Render a list of layers (bottom first) into `dst`, applying each
-    /// layer's effects and opacity as it goes.
+    /// layer's effects, opacity and blend mode as it goes.
+    ///
+    /// Masks (`clip`): a layer with `clip` "below"/"belowInv" is not
+    /// drawn itself; instead its rendered alpha (scaled by its own
+    /// opacity) clips the layer directly below it in the stack. The
+    /// pending layer is held back one step so the mask can apply to it
+    /// before it is composited.
     fn render_layers(
         &self,
         layers: &[&Layer],
@@ -231,6 +239,7 @@ impl Renderer {
         view: &View,
         images: &std::collections::HashMap<String, ImageData>,
     ) {
+        let mut pending: Option<(Vec<u8>, f64, String)> = None;
         for layer in layers {
             let mut lbuf = vec![0u8; w * h * 4];
             self.render_layer_into(layer, project, t, &mut lbuf, w, h, view, images);
@@ -251,7 +260,26 @@ impl Renderer {
                 );
             }
             let opacity = evaluate::layer_opacity(layer, t);
-            composite(dst, &lbuf, w, opacity);
+            if layer.clip == "below" || layer.clip == "belowInv" {
+                let invert = layer.clip == "belowInv";
+                if let Some((mut pbuf, pop, pblend)) = pending.take() {
+                    for (i, px) in pbuf.chunks_exact_mut(4).enumerate() {
+                        let m = lbuf[i * 4 + 3] as f64 / 255.0 * opacity;
+                        let f = if invert { 1.0 - m } else { m };
+                        px[3] = (px[3] as f64 * f).round() as u8;
+                    }
+                    composite(dst, &pbuf, pop, &pblend);
+                }
+                // The mask layer itself is not drawn.
+                continue;
+            }
+            if let Some((pbuf, pop, pblend)) = pending.take() {
+                composite(dst, &pbuf, pop, &pblend);
+            }
+            pending = Some((lbuf, opacity, layer.blend.clone()));
+        }
+        if let Some((pbuf, pop, pblend)) = pending.take() {
+            composite(dst, &pbuf, pop, &pblend);
         }
     }
 
@@ -682,9 +710,33 @@ fn sample_bilinear(img: &ImageData, u: f64, v: f64) -> (u8, u8, u8, f64) {
     )
 }
 
+/// Blend one color channel (0–255) by mode: source over destination.
+fn blend_channel(mode: &str, s: f64, d: f64) -> f64 {
+    match mode {
+        "multiply" => s * d / 255.0,
+        "screen" => 255.0 - (255.0 - s) * (255.0 - d) / 255.0,
+        "overlay" => {
+            if d < 128.0 {
+                2.0 * s * d / 255.0
+            } else {
+                255.0 - 2.0 * (255.0 - s) * (255.0 - d) / 255.0
+            }
+        }
+        "add" => (s + d).min(255.0),
+        "darken" => s.min(d),
+        "lighten" => s.max(d),
+        "difference" => (s - d).abs(),
+        _ => s, // "normal" and anything unknown
+    }
+}
+
 /// Source-over composite of a whole buffer (`src`, straight alpha) onto
-/// `dst` (also straight alpha), scaled by `opacity` 0–1.
-fn composite(dst: &mut [u8], src: &[u8], _w: usize, opacity: f64) {
+/// `dst` (also straight alpha), scaled by `opacity` 0–1 and blended by
+/// `mode` ("normal" | "multiply" | "screen" | "overlay" | "add" |
+/// "darken" | "lighten" | "difference"). The blend is computed between
+/// the source and destination colors, then composited with the source
+/// alpha (the same as SVG/CSS layer blending).
+fn composite(dst: &mut [u8], src: &[u8], opacity: f64, mode: &str) {
     let op = opacity.clamp(0.0, 1.0);
     if op <= 0.0 {
         return;
@@ -701,8 +753,8 @@ fn composite(dst: &mut [u8], src: &[u8], _w: usize, opacity: f64) {
             continue;
         }
         for c in 0..3 {
-            d[c] = ((s[c] as f64 * sa + d[c] as f64 * da * (1.0 - sa)) / out_a)
-                .round() as u8;
+            let b = blend_channel(mode, s[c] as f64, d[c] as f64);
+            d[c] = ((b * sa + d[c] as f64 * da * (1.0 - sa)) / out_a).round() as u8;
         }
         d[3] = (out_a * 255.0).round() as u8;
     }
@@ -933,6 +985,87 @@ mod tests {
         // The project bg is #0C0D13 (the #141620 rect is a layer).
         let buf2 = ren.render(&proj, 1.0, 72, 128, &HashMap::new());
         assert_eq!((buf2[i], buf2[i + 1], buf2[i + 2]), (0x0C, 0x0D, 0x13));
+    }
+
+    #[test]
+    fn composite_blend_modes() {
+        // Grey dst (128), grey src (128), full opacity.
+        let dst = vec![128u8, 128, 128, 255];
+        let src = vec![128u8, 128, 128, 255];
+        let mut d = dst.clone();
+        composite(&mut d, &src, 1.0, "multiply");
+        assert_eq!((d[0], d[1], d[2]), (64, 64, 64));
+        let mut d = dst.clone();
+        composite(&mut d, &src, 1.0, "screen");
+        // 255 - 127*127/255 = 192.
+        assert_eq!((d[0], d[1], d[2]), (192, 192, 192));
+        let mut d = dst.clone();
+        composite(&mut d, &src, 1.0, "overlay");
+        // d == 128: 255 - 2*127*127/255 = 128.498 -> 128.
+        assert_eq!((d[0], d[1], d[2]), (128, 128, 128));
+        let mut d = dst.clone();
+        composite(&mut d, &src, 1.0, "add");
+        assert_eq!((d[0], d[1], d[2]), (255, 255, 255));
+        let mut d = dst.clone();
+        composite(&mut d, &src, 1.0, "darken");
+        assert_eq!((d[0], d[1], d[2]), (128, 128, 128));
+        let mut d = dst.clone();
+        composite(&mut d, &src, 1.0, "normal");
+        assert_eq!((d[0], d[1], d[2]), (128, 128, 128));
+        // Half opacity over white: multiply blends halfway toward white.
+        let mut d = vec![255u8, 255, 255, 255];
+        composite(&mut d, &src, 0.5, "multiply");
+        assert_eq!((d[0], d[1], d[2]), (192, 192, 192));
+    }
+
+    #[test]
+    fn mask_below_clips_layer_under_it() {
+        let ren = renderer();
+        let mut proj = demo_project();
+        proj.layers.clear();
+        // Red rect, full frame (the masked layer, bottom).
+        let mut red = Layer::new("shape", "قرمز", 0.0, 10.0);
+        red.transform.x = 360.0;
+        red.transform.y = 640.0;
+        red.shape = Some(crate::model::ShapeSpec {
+            kind: "rect".to_string(),
+            fill: Some("#FF0000".to_string()),
+            w: 720.0,
+            h: 1280.0,
+            ..Default::default()
+        });
+        proj.layers.push(red);
+        // Circle mask on top: only the circle keeps the red.
+        let mut mask = Layer::new("shape", "ماسک", 0.0, 10.0);
+        mask.transform.x = 360.0;
+        mask.transform.y = 640.0;
+        mask.clip = "below".to_string();
+        mask.shape = Some(crate::model::ShapeSpec {
+            kind: "circle".to_string(),
+            fill: Some("#FFFFFF".to_string()),
+            w: 200.0,
+            h: 200.0,
+            ..Default::default()
+        });
+        proj.layers.push(mask);
+        let buf = ren.render(&proj, 1.0, 72, 128, &HashMap::new());
+        let px = |x: usize, y: usize| {
+            let i = (y * 72 + x) * 4;
+            (buf[i], buf[i + 1], buf[i + 2])
+        };
+        // Center (inside the circle): red.
+        assert_eq!(px(36, 64), (255, 0, 0));
+        // Corner (outside the circle): project bg, not red.
+        assert_eq!(px(2, 2), (0x0C, 0x0D, 0x13));
+        // Inverted mask: red everywhere EXCEPT the circle.
+        proj.layers[1].clip = "belowInv".to_string();
+        let buf = ren.render(&proj, 1.0, 72, 128, &HashMap::new());
+        let px = |x: usize, y: usize| {
+            let i = (y * 72 + x) * 4;
+            (buf[i], buf[i + 1], buf[i + 2])
+        };
+        assert_eq!(px(36, 64), (0x0C, 0x0D, 0x13));
+        assert_eq!(px(2, 2), (255, 0, 0));
     }
 
     #[test]
