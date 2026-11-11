@@ -36,8 +36,14 @@ eframe = { version = "0.37", default-features = false, features = [
 android-activity = "0.6"
 
 # cargo-apk packaging (CI builds the APK; see .github/workflows/rust-clone.yml).
+# NOTE: min/target SDK versions go under the nested `sdk` table — flat keys
+# under [package.metadata.android] are silently ignored by cargo-apk, which
+# then defaults the target platform to 30 (cargo-apk 0.10 caps it there)
+# and fails with "Platform 30 is not installed" (run #3).
 [package.metadata.android]
 package = "com.zurvanecho.lyricstudio.motion"
 build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
 min_sdk_version = 24
 target_sdk_version = 34
