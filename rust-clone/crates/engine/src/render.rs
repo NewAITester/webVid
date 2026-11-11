@@ -44,21 +44,95 @@ pub fn decode_image(bytes: &[u8]) -> Result<ImageData, String> {
 pub fn decode_image_capped(bytes: &[u8], max_w: usize) -> Result<ImageData, String> {
     let img = image::load_from_memory(bytes).map_err(|e| format!("decode: {e}"))?;
     let rgba = img.to_rgba8();
-    let (width, height) = (rgba.width() as usize, rgba.height() as usize);
-    if width > max_w {
-        let h = (max_w * height / width).max(1);
-        let small = image::imageops::resize(&rgba, max_w as u32, h as u32, image::imageops::FilterType::Triangle);
-        return Ok(ImageData {
-            width: small.width() as usize,
-            height: small.height() as usize,
-            rgba: small.into_raw(),
-        });
-    }
-    Ok(ImageData {
-        width,
-        height,
+    let data = ImageData {
+        width: rgba.width() as usize,
+        height: rgba.height() as usize,
         rgba: rgba.into_raw(),
-    })
+    };
+    Ok(downscale_rgba(data, max_w))
+}
+
+/// Downscale an RGBA image (Triangle filter) when its width exceeds
+/// `max_w`; a no-op otherwise. Used for decoded video frames too.
+pub fn downscale_rgba(img: ImageData, max_w: usize) -> ImageData {
+    if img.width <= max_w {
+        return img;
+    }
+    let h = (max_w * img.height / img.width).max(1);
+    let rgba = image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.rgba)
+        .expect("ImageData has w*h*4 bytes");
+    let small = image::imageops::resize(&rgba, max_w as u32, h as u32, image::imageops::FilterType::Triangle);
+    ImageData {
+        width: small.width() as usize,
+        height: small.height() as usize,
+        rgba: small.into_raw(),
+    }
+}
+
+/// YUV420 layout of a decoder output buffer.
+#[derive(Clone, Copy, PartialEq)]
+pub enum YuvFormat {
+    /// Y plane + interleaved UV (COLOR_FormatYUV420SemiPlanar, 21).
+    Nv12,
+    /// Y plane + U plane + V plane (COLOR_FormatYUV420Planar, 19).
+    I420,
+}
+
+/// Convert decoder YUV420 (BT.601 limited range) to RGBA8. `stride` is
+/// the Y-plane row stride (may exceed `w` on hardware decoders);
+/// `slice_h` is the Y-plane height (`h` when the format omits it).
+/// The chroma planes use half the stride/height. Out-of-range samples
+/// clamp; the alpha channel is always 255.
+pub fn yuv_to_rgba(
+    yuv: &[u8],
+    w: usize,
+    h: usize,
+    stride: usize,
+    slice_h: usize,
+    format: YuvFormat,
+) -> Vec<u8> {
+    let y_size = stride * slice_h;
+    let uv_stride = stride / 2;
+    let mut out = vec![0u8; w * h * 4];
+    let px = |y: i32, u: i32, v: i32| -> (u8, u8, u8) {
+        let c = y - 16;
+        let d = u - 128;
+        let e = v - 128;
+        let r = (298 * c + 409 * e + 128) >> 8;
+        let g = (298 * c - 100 * d - 208 * e + 128) >> 8;
+        let b = (298 * c + 516 * d + 128) >> 8;
+        (
+            r.clamp(0, 255) as u8,
+            g.clamp(0, 255) as u8,
+            b.clamp(0, 255) as u8,
+        )
+    };
+    for row in 0..h {
+        for col in 0..w {
+            let y = yuv[row * stride + col] as i32;
+            let (u, v) = match format {
+                YuvFormat::Nv12 => {
+                    let o = y_size + (row / 2) * stride + (col / 2) * 2;
+                    (yuv[o] as i32, yuv[o + 1] as i32)
+                }
+                YuvFormat::I420 => {
+                    let uv_size = uv_stride * (slice_h / 2);
+                    let o = (row / 2) * uv_stride + col / 2;
+                    (
+                        yuv[y_size + o] as i32,
+                        yuv[y_size + uv_size + o] as i32,
+                    )
+                }
+            };
+            let (r, g, b) = px(y, u, v);
+            let i = (row * w + col) * 4;
+            out[i] = r;
+            out[i + 1] = g;
+            out[i + 2] = b;
+            out[i + 3] = 255;
+        }
+    }
+    out
 }
 
 /// Pixel-space scale + camera zoom, for mapping project coords to pixels.
@@ -213,9 +287,11 @@ impl Renderer {
                     .collect();
                 self.render_layers(&kids, project, t, buf, w, h, view, images);
             }
-            "image" => {
-                // Decoded image looked up by the layer's src URI; a missing
-                // entry (not loaded yet, or the file is gone) draws nothing.
+            "image" | "video" => {
+                // Decoded image / video frame looked up by the layer's src
+                // URI; a missing entry (not loaded yet, or the file is
+                // gone) draws nothing. The app fills the map: images on
+                // insert, video frames per playhead.
                 if let Some(src) = layer.src.as_deref() {
                     if let Some(img) = images.get(src) {
                         self.raster_image(layer, img, t, buf, w, h, view);
@@ -878,5 +954,50 @@ mod tests {
         assert_eq!(&img.rgba[0..4], &[255, 0, 0, 255]);
         assert_eq!(&img.rgba[12..16], &[255, 255, 255, 255]);
         assert!(decode_image(b"not an image").is_err());
+    }
+
+    #[test]
+    fn yuv_nv12_red_and_white() {
+        // 2x2 solid red: Y=82, U=90, V=240 (BT.601 limited).
+        let nv12 = vec![82u8, 82, 82, 82, 90, 240];
+        let rgba = yuv_to_rgba(&nv12, 2, 2, 2, 2, YuvFormat::Nv12);
+        assert_eq!(rgba.len(), 16);
+        for i in (0..16).step_by(4) {
+            assert!((rgba[i] as i32 - 255).abs() <= 2, "r={}", rgba[i]);
+            assert!(rgba[i + 1] as i32 <= 3, "g={}", rgba[i + 1]);
+            assert!(rgba[i + 2] as i32 <= 2, "b={}", rgba[i + 2]);
+            assert_eq!(rgba[i + 3], 255);
+        }
+        // White: Y=235, U=V=128. Black: Y=16.
+        let white = vec![235u8, 235, 235, 235, 128, 128];
+        let rgba = yuv_to_rgba(&white, 2, 2, 2, 2, YuvFormat::Nv12);
+        for i in (0..16).step_by(4) {
+            assert_eq!((rgba[i], rgba[i + 1], rgba[i + 2]), (255, 255, 255));
+        }
+        let black = vec![16u8, 16, 16, 16, 128, 128];
+        let rgba = yuv_to_rgba(&black, 2, 2, 2, 2, YuvFormat::Nv12);
+        for i in (0..16).step_by(4) {
+            assert_eq!((rgba[i], rgba[i + 1], rgba[i + 2]), (0, 0, 0));
+        }
+        // Same red, planar (I420): Y + U + V planes.
+        let i420 = vec![82u8, 82, 82, 82, 90, 240];
+        let rgba = yuv_to_rgba(&i420, 2, 2, 2, 2, YuvFormat::I420);
+        assert!((rgba[0] as i32 - 255).abs() <= 2);
+        assert!(rgba[1] as i32 <= 3);
+        // Stride wider than the width (hardware decoders pad rows).
+        let padded = vec![82u8, 82, 82, 82, 82, 82, 82, 82, 90, 240, 0, 0];
+        let rgba = yuv_to_rgba(&padded, 2, 2, 4, 2, YuvFormat::Nv12);
+        assert!((rgba[0] as i32 - 255).abs() <= 2);
+    }
+
+    #[test]
+    fn downscale_caps_width() {
+        let img = ImageData {
+            width: 4,
+            height: 2,
+            rgba: vec![200u8; 4 * 2 * 4],
+        };
+        let small = downscale_rgba(img, 2);
+        assert_eq!((small.width, small.height), (2, 1));
     }
 }

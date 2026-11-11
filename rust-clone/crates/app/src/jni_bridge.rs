@@ -76,6 +76,13 @@ fn vm(app: &AndroidApp) -> Result<JavaVM, String> {
         .map_err(|e| format!("JavaVM: {e}"))
 }
 
+/// Public version of `vm` for other Android modules (e.g. the video
+/// decoder, which closes its file descriptor on drop).
+#[cfg(target_os = "android")]
+pub fn vm_for(app: &AndroidApp) -> Result<JavaVM, String> {
+    vm(app)
+}
+
 #[cfg(target_os = "android")]
 fn activity(app: &AndroidApp) -> JObject<'static> {
     // SAFETY: activity_as_ptr is the NativeActivity's clazz (a jobject),
@@ -382,8 +389,7 @@ pub fn read_uri(app: &AndroidApp, uri: &str) -> Result<Vec<u8>, String> {
 /// `Activity.getExternalFilesDir(null)` — the app's files dir on shared
 /// storage (visible to the user in a file manager), for MP4 output.
 #[cfg(target_os = "android")]
-pub fn external_files_dir(app: &AndroidApp) -> Result<String, String> {
-    let vm = vm(app)?;
+pub fn external_files_dir(app: &AndroidApp) -> Result<String, String> {    let vm = vm(app)?;
     let mut guard = vm.attach_current_thread().map_err(|e| e.to_string())?;
     let env: &mut JNIEnv = &mut guard;
     let act = activity(app);
@@ -410,6 +416,51 @@ pub fn external_files_dir(app: &AndroidApp) -> Result<String, String> {
     .l()
     .map_err(|e| e.to_string())?;
     get_string(env, path)
+}
+
+/// Open a content:// URI as a file descriptor, for `AMediaExtractor`
+/// (video/audio decoding). Returns `(fd, size, pfd)` where `pfd` is a
+/// global ref to the `ParcelFileDescriptor` — the fd stays valid only
+/// while it is alive; hand it to `close_fd` when the decoder is done.
+/// The fd is a plain int (not a Java object), so the decoder can use it
+/// from any thread; the PFD itself is only touched through JNI.
+#[cfg(target_os = "android")]
+pub fn open_fd(app: &AndroidApp, uri: &str) -> Result<(i32, i64, GlobalRef), String> {
+    let vm = vm(app)?;
+    let mut guard = vm.attach_current_thread().map_err(|e| e.to_string())?;
+    let env: &mut JNIEnv = &mut guard;
+    let cr = content_resolver(env, app)?;
+    let u = uri_parse(env, uri)?;
+    let mode = jstr(env, "r")?;
+    let pfd = call(
+        env,
+        &cr,
+        "openFileDescriptor",
+        "(Landroid/net/Uri;Ljava/lang/String;)Landroid/os/ParcelFileDescriptor;",
+        &[JValue::Object(&u), JValue::Object(&mode.into())],
+    )?
+    .l()
+    .map_err(|e| format!("openFileDescriptor: {e}"))?;
+    if pfd.is_null() {
+        return Err("openFileDescriptor returned null".to_string());
+    }
+    let fd = call(env, &pfd, "getFd", "()I", &[])?.i().map_err(|e| e.to_string())?;
+    let size = call(env, &pfd, "getStatSize", "()J", &[])?
+        .j()
+        .map_err(|e| e.to_string())?;
+    let g = env.new_global_ref(&pfd).map_err(|e| e.to_string())?;
+    Ok((fd, size, g))
+}
+
+/// Close a `ParcelFileDescriptor` opened by `open_fd` (also releases
+/// the global ref when `pfd` is dropped).
+#[cfg(target_os = "android")]
+pub fn close_fd(vm: &JavaVM, pfd: GlobalRef) {
+    if let Ok(mut guard) = vm.attach_current_thread() {
+        let env: &mut JNIEnv = &mut guard;
+        let obj = pfd.as_obj();
+        let _ = call(env, obj, "close", "()V", &[]);
+    }
 }
 
 /// A Java `android.media.MediaPlayer` for audio preview. The player object

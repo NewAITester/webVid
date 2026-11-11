@@ -22,6 +22,8 @@ use lyricstudio_engine::render::decode_image_capped;
 use lyricstudio_engine::shape::shape_persian;
 
 use crate::{export, hex_color, jni_bridge, store, theme, to_hex, AndroidHandle};
+#[cfg(target_os = "android")]
+use crate::video;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -83,6 +85,9 @@ pub struct LyricApp {
     /// Audio preview player (Android only).
     #[cfg(target_os = "android")]
     audio_player: Option<jni_bridge::AudioPlayer>,
+    /// Open video decoders, keyed by layer `src` URI (Android only).
+    #[cfg(target_os = "android")]
+    video_decoders: HashMap<String, video::VideoDecoder>,
     /// URI of the audio currently loaded in `audio_player`.
     /// Read only by the Android-only audio preview.
     #[allow(dead_code)]
@@ -123,6 +128,8 @@ impl LyricApp {
             media_error: None,
             #[cfg(target_os = "android")]
             audio_player: None,
+            #[cfg(target_os = "android")]
+            video_decoders: HashMap::new(),
             audio_src: None,
             export_open: false,
             export_job: None,
@@ -243,6 +250,102 @@ impl LyricApp {
         self.mark_changed();
     }
 
+    /// Decode the video frame at time `t` into the image cache (Android
+    /// only; host: no-op). The decoder decodes forward from its current
+    /// position, so playback is cheap; a backward jump re-seeks.
+    #[cfg(target_os = "android")]
+    fn ensure_video_frame(&mut self, src: &str, t: f64) {
+        let Some(app) = self.android.clone() else {
+            return;
+        };
+        if !self.video_decoders.contains_key(src) {
+            match video::VideoDecoder::open(&app, src) {
+                Ok(d) => {
+                    self.video_decoders.insert(src.to_string(), d);
+                }
+                Err(e) => {
+                    eprintln!("LyricStudio: video open failed for {src}: {e}");
+                    return;
+                }
+            }
+        }
+        let Some(dec) = self.video_decoders.get_mut(src) else {
+            return;
+        };
+        match dec.frame_at(t) {
+            Ok(Some(img)) => {
+                self.images.insert(src.to_string(), img);
+            }
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("LyricStudio: video decode failed for {src}: {e}");
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn ensure_video_frame(&mut self, _src: &str, _t: f64) {}
+
+    fn insert_video(&mut self, item: &jni_bridge::MediaItem) {
+        #[cfg(target_os = "android")]
+        {
+            let Some(app) = self.android.clone() else {
+                self.media_error = Some("no Android activity".to_string());
+                return;
+            };
+            let dec = match video::VideoDecoder::open(&app, &item.uri) {
+                Ok(d) => d,
+                Err(e) => {
+                    self.media_error = Some(e);
+                    return;
+                }
+            };
+            let info = dec.info();
+            let dur = if info.duration_secs > 0.0 {
+                info.duration_secs
+            } else if item.duration_ms > 0 {
+                item.duration_ms as f64 / 1000.0
+            } else {
+                10.0
+            };
+            let (pw, ph) = (
+                self.projects[self.current].width as f64,
+                self.projects[self.current].height as f64,
+            );
+            let fw = if info.width > 0 {
+                (info.width as f64).min(pw)
+            } else {
+                pw
+            };
+            let fh = if info.width > 0 && info.height > 0 {
+                fw * info.height as f64 / info.width as f64
+            } else {
+                ph
+            };
+            let mut layer = Layer::new("video", &item.name, self.playhead, self.playhead + dur);
+            layer.src = Some(item.uri.clone());
+            layer.transform.x = pw / 2.0;
+            layer.transform.y = ph / 2.0;
+            layer.shape = Some(ShapeSpec {
+                kind: "video".to_string(),
+                w: fw,
+                h: fh,
+                ..Default::default()
+            });
+            self.projects[self.current].layers.push(layer);
+            // Keep the opened decoder for the stage (it already read the
+            // track header; the first frame decodes on the next render).
+            self.video_decoders.insert(item.uri.clone(), dec);
+            self.media_open = false;
+            self.mark_changed();
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let _ = item;
+            self.media_error = Some("وارد کردن ویدیو فقط روی گوشی کار می‌کند".to_string());
+        }
+    }
+
     /// Start an MP4 export of the current project in a background thread.
     /// Output goes to the app's external files dir (`.../files/exports/`)
     /// on Android so the user can find it in a file manager.
@@ -269,6 +372,7 @@ impl LyricApp {
             self.current_project().clone(),
             self.images.clone(),
             dir.join(name),
+            self.android.clone(),
         );
         self.export_job = Some(job);
     }
@@ -601,10 +705,7 @@ impl LyricApp {
                     match self.media_kind {
                         jni_bridge::MediaKind::Images => self.insert_image(&item),
                         jni_bridge::MediaKind::Audio => self.insert_audio(&item),
-                        jni_bridge::MediaKind::Videos => {
-                            self.media_error =
-                                Some("وارد کردن ویدیو هنوز ساخته نشده".to_string());
-                        }
+                        jni_bridge::MediaKind::Videos => self.insert_video(&item),
                     }
                 }
             });
@@ -956,7 +1057,7 @@ impl LyricApp {
                 if ui.button(shp("مرور ویدیوها")).clicked() {
                     self.open_media_browser(jni_bridge::MediaKind::Videos);
                 }
-                ui.label(shp("ویدیو فعلاً فقط فهرست می‌شود — وارد کردن فریم ویدیو هنوز ساخته نشده."));
+                ui.label(shp("ویدیو با دی‌کدر سخت‌افزاری گوشی وارد می‌شود."));
             }
             2 => {
                 if ui.button(shp("مرور آهنگ‌ها")).clicked() {
@@ -1041,6 +1142,17 @@ impl LyricApp {
     /// Render width is capped at 480px to bound the per-pixel cost; the
     /// widget shows the texture scaled to fit.
     fn draw_stage(&mut self, ui: &mut egui::Ui, proj: &Project, t: f64) {
+        // Decode the current frame of every video layer first; the
+        // renderer then blits it like an image.
+        let video_srcs: Vec<String> = proj
+            .layers
+            .iter()
+            .filter(|l| l.type_ == "video")
+            .filter_map(|l| l.src.clone())
+            .collect();
+        for src in video_srcs {
+            self.ensure_video_frame(&src, t);
+        }
         let avail = ui.available_size();
         let s = (avail.x / proj.width as f32).min(avail.y / proj.height as f32);
         let w = proj.width as f32 * s;

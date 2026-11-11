@@ -9,6 +9,7 @@ pub mod app;
 pub mod export;
 pub mod jni_bridge;
 pub mod store;
+pub mod video;
 
 use eframe::egui;
 

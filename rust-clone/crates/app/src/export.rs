@@ -39,11 +39,14 @@ impl ExportJob {
 }
 
 /// Spawn the export worker. The project and images are cloned so the UI
-/// can keep editing while it runs.
+/// can keep editing while it runs. `android` is the activity handle the
+/// worker uses to open video files (export frames come from decoders it
+/// opens itself); `None` means no video layers will render.
 pub fn start_export(
     project: Project,
     images: HashMap<String, ImageData>,
     out_path: PathBuf,
+    android: Option<crate::AndroidHandle>,
 ) -> ExportJob {
     let job = ExportJob::new();
     #[cfg(target_os = "android")]
@@ -52,13 +55,13 @@ pub fn start_export(
         let result = job.result.clone();
         let cancel = job.cancel.clone();
         std::thread::spawn(move || {
-            let r = run_export(&project, &images, &out_path, &progress, &cancel);
+            let r = run_export(&project, &images, &out_path, &progress, &cancel, android.as_ref());
             *result.lock().unwrap() = Some(r);
         });
     }
     #[cfg(not(target_os = "android"))]
     {
-        let _ = (project, images, out_path);
+        let _ = (project, images, out_path, android);
         *job.result.lock().unwrap() = Some(Err("MP4 export runs on the phone only".to_string()));
     }
     job
@@ -106,7 +109,9 @@ fn run_export(
     out_path: &std::path::Path,
     progress: &Arc<Mutex<f32>>,
     cancel: &Arc<AtomicBool>,
+    android: Option<&android_activity::AndroidApp>,
 ) -> Result<PathBuf, String> {
+    use crate::video::VideoDecoder;
     use lyricstudio_engine::render::Renderer;
     use ndk::media::media_codec::{
         DequeuedInputBufferResult, DequeuedOutputBufferInfoResult, MediaCodec,
@@ -262,12 +267,48 @@ fn run_export(
     };
 
     let mut nv12 = vec![0u8; w * h * 3 / 2];
+    // Video decoders opened per layer (each owns its fd + extractor);
+    // frames are decoded into the local image map per frame.
+    let mut video_decoders: HashMap<String, VideoDecoder> = HashMap::new();
+    let mut frame_images = images.clone();
     for i in 0..total {
         if cancel.load(Ordering::Relaxed) {
             return Err("export cancelled".to_string());
         }
         let t = i as f64 / fps;
-        let rgba = renderer.render(project, t, w, h, images);
+        if let Some(app) = android {
+            for layer in &project.layers {
+                if layer.type_ != "video" {
+                    continue;
+                }
+                let Some(src) = layer.src.as_deref() else {
+                    continue;
+                };
+                if !video_decoders.contains_key(src) {
+                    match VideoDecoder::open(app, src) {
+                        Ok(d) => {
+                            video_decoders.insert(src.to_string(), d);
+                        }
+                        Err(e) => {
+                            eprintln!("export: video open failed for {src}: {e}");
+                            continue;
+                        }
+                    }
+                }
+                if let Some(dec) = video_decoders.get_mut(src) {
+                    match dec.frame_at(t) {
+                        Ok(Some(img)) => {
+                            frame_images.insert(src.to_string(), img);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            eprintln!("export: video decode failed for {src}: {e}");
+                        }
+                    }
+                }
+            }
+        }
+        let rgba = renderer.render(project, t, w, h, &frame_images);
         rgba_to_nv12(&rgba, w, h, &mut nv12);
         match codec.dequeue_input_buffer(Duration::from_millis(10)) {
             Ok(DequeuedInputBufferResult::Buffer(mut ib)) => {
