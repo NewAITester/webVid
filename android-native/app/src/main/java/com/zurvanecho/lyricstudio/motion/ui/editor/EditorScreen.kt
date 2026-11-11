@@ -94,11 +94,13 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
@@ -119,6 +121,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.zurvanecho.lyricstudio.motion.audio.AudioPlayer
 import com.zurvanecho.lyricstudio.motion.core.SHAPE_KINDS
 import com.zurvanecho.lyricstudio.motion.core.SHAPE_NAMES_FA
+import com.zurvanecho.lyricstudio.motion.core.layerTransform
 import com.zurvanecho.lyricstudio.motion.core.valueAt
 import com.zurvanecho.lyricstudio.motion.effects.EffectDef
 import com.zurvanecho.lyricstudio.motion.effects.Effects
@@ -154,6 +157,29 @@ import kotlin.math.roundToInt
  * پاپ‌آپ افزودن (۵ تب + ستون quick-add، از activity_edit_addpopup دیکدشده)
  * و پنل المان ۲۰۰dp (برش/تقسیم/کپی، رنگ و پرکردن، ویرایش متن/شکل، صدا، دوربین).
  */
+
+/** تبدیل مختصات محلی نقطه (نسبت به مرکز لایه) به مختصات پروژه. */
+private fun pointToProject(tr: Transform, p: StrokePoint): Offset {
+    val rot = kotlin.math.toRadians(tr.rotation)
+    val c = kotlin.math.cos(rot)
+    val s = kotlin.math.sin(rot)
+    val sx = p.x * tr.scaleX
+    val sy = p.y * tr.scaleY
+    return Offset((tr.x + sx * c - sy * s).toFloat(), (tr.y + sx * s + sy * c).toFloat())
+}
+
+/** تبدیل مختصات پروژه به مختصات محلی نقطه (معکوس ترنسفورم لایه). */
+private fun projectToPoint(tr: Transform, p: Offset): StrokePoint {
+    val px = p.x.toDouble() - tr.x
+    val py = p.y.toDouble() - tr.y
+    val rot = kotlin.math.toRadians(tr.rotation)
+    val c = kotlin.math.cos(rot)
+    val s = kotlin.math.sin(rot)
+    return StrokePoint(
+        (px * c + py * s) / kotlin.math.max(0.01, tr.scaleX),
+        (-px * s + py * c) / kotlin.math.max(0.01, tr.scaleY),
+    )
+}
 
 /** زمان پروژه به شکل m:ss.ff (مثل editTimeView آلایت؛ ff شمارهٔ فریم است). */
 private fun formatTime(t: Double, fps: Int): String {
@@ -236,6 +262,11 @@ fun EditorScreen(
     var copiedLayer by remember { mutableStateOf<Layer?>(null) }
     var showProjectSettings by remember { mutableStateOf(false) }
     var previewFullscreen by remember { mutableStateOf(false) }
+    // K3b: ترک‌پد ویرایش نقطه — زیرپنل باز اینسپکتور و نقطهٔ انتخاب‌شده.
+    var inspectorPanel by remember { mutableStateOf<String?>(null) }
+    var pointStroke by remember { mutableStateOf(0) }
+    var pointPoint by remember { mutableStateOf(0) }
+    var pointWidthPx by remember { mutableStateOf(0f) }
     var meterLevel by remember { mutableFloatStateOf(0f) }
     // K2: حالت پایهٔ کشیدنِ در جریان (برای ثبت یک ورودی تاریخچه در پایان کشیدن).
     var pendingBase by remember { mutableStateOf<Project?>(null) }
@@ -830,6 +861,93 @@ fun EditorScreen(
                             )
                         }
                     }
+                    // K3b: ترک‌پد ویرایش نقطه — کشیدن نقطه روی صحنه
+                    // (مثل movePointTrackpad در fragment_edit_points2.xml آلایت)
+                    val editLayer = selected
+                    if (inspectorPanel == "points" && editLayer != null && editLayer.type == "draw" && editLayer.strokes.isNotEmpty()) {
+                        val layerState = rememberUpdatedState(editLayer)
+                        val timeState = rememberUpdatedState(time)
+                        val projectState = rememberUpdatedState(project)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(project.width.toFloat() / project.height.toFloat())
+                                .onSizeChanged { pointWidthPx = it.width.toFloat() }
+                                .pointerInput(editLayer.id, pointStroke, pointWidthPx) {
+                                    var active = -1
+                                    val scale = if (pointWidthPx > 0f) pointWidthPx / project.width else 1f
+                                    val threshold = 24.dp.toPx()
+                                    detectDragGestures(
+                                        onDragStart = { off ->
+                                            val layer = layerState.value
+                                            val tr = layerTransform(layer, timeState.value)
+                                            val st = layer.strokes.getOrNull(pointStroke) ?: return@detectDragGestures
+                                            val nearest = st.points.mapIndexed { i, p ->
+                                                i to (pointToProject(tr, p) * scale - off).getDistance()
+                                            }.minByOrNull { it.second }
+                                            if (nearest != null && nearest.second <= threshold) {
+                                                active = nearest.first
+                                                pointPoint = active
+                                            } else {
+                                                active = -1
+                                            }
+                                        },
+                                        onDrag = { change, _ ->
+                                            if (active < 0) return@detectDragGestures
+                                            val cur = projectState.value.layers.firstOrNull { it.id == layerState.value.id }
+                                                ?: return@detectDragGestures
+                                            val tr = layerTransform(cur, timeState.value)
+                                            val np = projectToPoint(tr, Offset(change.position.x / scale, change.position.y / scale))
+                                            val stIdx = pointStroke.coerceIn(0, cur.strokes.size - 1)
+                                            val strokes = cur.strokes.mapIndexed { si, s ->
+                                                if (si != stIdx) s
+                                                else s.copy(points = s.points.mapIndexed { pi, p -> if (pi == active) np else p })
+                                            }
+                                            val proj = projectState.value
+                                            preview(proj.copy(layers = proj.layers.map { if (it.id == cur.id) cur.copy(strokes = strokes) else it }))
+                                        },
+                                        onDragEnd = {
+                                            if (active >= 0) finishDrag()
+                                            active = -1
+                                        },
+                                        onDragCancel = { active = -1 },
+                                    )
+                                },
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val layer = editLayer
+                                val tr = layerTransform(layer, time)
+                                val scale = if (pointWidthPx > 0f) pointWidthPx / project.width else 1f
+                                // همهٔ خط‌ها؛ خط انتخاب‌شده سفید، بقیه کم‌رنگ
+                                for ((si, st) in layer.strokes.withIndex()) {
+                                    if (st.points.size < 2) continue
+                                    val path = Path()
+                                    st.points.forEachIndexed { i, p ->
+                                        val o = pointToProject(tr, p) * scale
+                                        if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y)
+                                    }
+                                    drawPath(
+                                        path,
+                                        color = if (si == pointStroke) Color.White else Alight.TextDim,
+                                        style = DrawStroke(width = (if (si == pointStroke) 3f else 2f) * scale),
+                                    )
+                                }
+                                // دستگیرهٔ نقطه‌ها روی خط انتخاب‌شده
+                                val st = layer.strokes.getOrNull(pointStroke)
+                                if (st != null) {
+                                    for ((i, p) in st.points.withIndex()) {
+                                        val o = pointToProject(tr, p) * scale
+                                        drawCircle(color = Color.Black, radius = 8.dp.toPx(), center = o)
+                                        drawCircle(
+                                            color = if (i == pointPoint) Alight.Mint else Color.White,
+                                            radius = 6.dp.toPx(),
+                                            center = o,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Column(
                     modifier = Modifier
@@ -849,7 +967,7 @@ fun EditorScreen(
                 project = project,
                 time = time,
                 selectedId = selectedId,
-                onSelect = { selectedId = it },
+                onSelect = { selectedId = it; pointStroke = 0; pointPoint = 0 },
                 onTimeChange = { time = it },
                 onLayerChange = { changed ->
                     update(project.copy(layers = project.layers.map { if (it.id == changed.id) changed else it }))
@@ -1032,6 +1150,10 @@ fun EditorScreen(
                     duration = project.duration,
                     projW = project.width,
                     projH = project.height,
+                    onPanelChange = { inspectorPanel = it },
+                    pointStroke = pointStroke,
+                    pointPoint = pointPoint,
+                    onPointSelect = { s, p -> pointStroke = s; pointPoint = p },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp),
@@ -1478,6 +1600,10 @@ private fun Inspector(
     duration: Double = 10.0,
     projW: Int = 720,
     projH: Int = 1280,
+    onPanelChange: ((String?) -> Unit)? = null,
+    pointStroke: Int = 0,
+    pointPoint: Int = 0,
+    onPointSelect: ((Int, Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val t = layer.transform
@@ -1487,6 +1613,7 @@ private fun Inspector(
 
     fun togglePanel(name: String) {
         panel = if (panel == name) null else name
+        onPanelChange?.invoke(panel)
     }
 
     /** تغییر زندهٔ اسلایدر (بدون تاریخچه)؛ پایان کشیدن یک ورودی ثبت می‌کند. */
@@ -1750,8 +1877,10 @@ private fun Inspector(
             "points" -> {
                 // ویرایش نقطه‌ها (مثل fragment_edit_points2، بدون ترک‌پد صحنه در این قدم)
                 if (layer.type == "draw" && layer.strokes.isNotEmpty()) {
-                    var strokeIdx by remember { mutableStateOf(0) }
-                    var pointIdx by remember { mutableStateOf(0) }
+                    // نقطهٔ انتخاب‌شده در EditorScreen نگه داشته می‌شود تا
+                    // ترک‌پد صحنه و این پنل یک انتخاب مشترک داشته باشند.
+                    val strokeIdx = pointStroke
+                    val pointIdx = pointPoint
                     val st = layer.strokes[strokeIdx.coerceIn(0, layer.strokes.size - 1)]
                     val pts = st.points
                     val sel = pts.getOrNull(pointIdx.coerceIn(0, maxOf(0, pts.size - 1)))
@@ -1760,7 +1889,7 @@ private fun Inspector(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         for (i in layer.strokes.indices) {
-                            PanelButton("خط ${i + 1}", i == strokeIdx) { strokeIdx = i; pointIdx = 0 }
+                            PanelButton("خط ${i + 1}", i == strokeIdx) { onPointSelect?.invoke(i, 0) }
                         }
                     }
                     Row(
@@ -1768,7 +1897,7 @@ private fun Inspector(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         for (i in pts.indices) {
-                            PanelButton("${i + 1}", i == pointIdx) { pointIdx = i }
+                            PanelButton("${i + 1}", i == pointIdx) { onPointSelect?.invoke(strokeIdx, i) }
                         }
                     }
                     if (sel != null) {
@@ -1789,12 +1918,12 @@ private fun Inspector(
                             val mid = StrokePoint((a.x + b.x) / 2.0, (a.y + b.y) / 2.0)
                             val np = pts.toMutableList().apply { add(i + 1, mid) }
                             onChange(layer.copy(strokes = layer.strokes.mapIndexed { si, s -> if (si == strokeIdx) s.copy(points = np) else s }))
-                            pointIdx = i + 1
+                            onPointSelect?.invoke(strokeIdx, i + 1)
                         }
                         PanelButton("− نقطه", pts.size > 2) {
                             val np = pts.toMutableList().apply { removeAt(pointIdx.coerceIn(0, pts.size - 1)) }
                             onChange(layer.copy(strokes = layer.strokes.mapIndexed { si, s -> if (si == strokeIdx) s.copy(points = np) else s }))
-                            pointIdx = maxOf(0, pointIdx - 1)
+                            onPointSelect?.invoke(strokeIdx, maxOf(0, pointIdx - 1))
                         }
                     }
                 } else {
