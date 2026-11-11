@@ -163,6 +163,45 @@ private fun formatTime(t: Double, fps: Int): String {
     return "%d:%02d.%02d".format(m, s, f)
 }
 
+/** ساخت یک EffectRef از روی تعریف رجیستری + پارامترهای داده‌شده. */
+private fun presetRef(id: String, overrides: Map<String, Double>): EffectRef? {
+    val def = Effects.byId(id) ?: return null
+    val params = def.params.filter { it.value.type == "n" }.mapValues { it.value.defNum } + overrides
+    val tp = def.params.filter { it.value.type == "c" }.mapValues { it.value.defStr }
+    return EffectRef(id = id, params = params, textParams = tp)
+}
+
+/** ۶ پریست آماده (ترکیب افکت‌های واقعی رجیستری) — مثل پریست‌های آلایت. */
+private val PRESETS: List<Pair<String, List<EffectRef>>> = listOf(
+    "سینمایی" to listOfNotNull(
+        presetRef("brightness", mapOf("amount" to 0.1)),
+        presetRef("contrast", mapOf("amount" to 0.25)),
+        presetRef("saturation", mapOf("amount" to -0.1)),
+    ),
+    "سیاه‌سفید" to listOfNotNull(
+        presetRef("grayscale", mapOf("amount" to 1.0)),
+        presetRef("contrast", mapOf("amount" to 0.15)),
+    ),
+    "سپیا" to listOfNotNull(
+        presetRef("sepia", mapOf("amount" to 1.0)),
+        presetRef("contrast", mapOf("amount" to 0.1)),
+        presetRef("brightness", mapOf("amount" to -0.05)),
+    ),
+    "زنده" to listOfNotNull(
+        presetRef("saturation", mapOf("amount" to 0.4)),
+        presetRef("contrast", mapOf("amount" to 0.15)),
+        presetRef("brightness", mapOf("amount" to 0.05)),
+    ),
+    "سرد" to listOfNotNull(
+        presetRef("temperature", mapOf("amt" to -40.0)),
+        presetRef("saturation", mapOf("amount" to 0.1)),
+    ),
+    "گرم" to listOfNotNull(
+        presetRef("temperature", mapOf("amt" to 40.0)),
+        presetRef("saturation", mapOf("amount" to 0.15)),
+    ),
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
@@ -990,6 +1029,9 @@ fun EditorScreen(
                         preview(project.copy(layers = project.layers.map { if (it.id == changed.id) changed else it }))
                     },
                     onFinish = { finishDrag() },
+                    duration = project.duration,
+                    projW = project.width,
+                    projH = project.height,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp),
@@ -1433,9 +1475,19 @@ private fun Inspector(
     onTrimEnd: () -> Unit,
     onPreview: ((Layer) -> Unit)? = null,
     onFinish: (() -> Unit)? = null,
+    duration: Double = 10.0,
+    projW: Int = 720,
+    projH: Int = 1280,
     modifier: Modifier = Modifier,
 ) {
     val t = layer.transform
+
+    // زیرپنل باز پنل المان (null = فقط ردیف دکمه‌ها)
+    var panel by remember { mutableStateOf<String?>(null) }
+
+    fun togglePanel(name: String) {
+        panel = if (panel == name) null else name
+    }
 
     /** تغییر زندهٔ اسلایدر (بدون تاریخچه)؛ پایان کشیدن یک ورودی ثبت می‌کند. */
     fun sc(changed: Layer) {
@@ -1448,7 +1500,6 @@ private fun Inspector(
     val scroll = rememberScrollState()
     var textEditOpen by remember { mutableStateOf(false) }
     var textDraft by remember { mutableStateOf("") }
-    var shapePickOpen by remember { mutableStateOf(false) }
 
     /** تغییر/حذف کی‌فریم یک ویژگی در زمان فعلی. */
     fun toggleKeyframe(prop: String, value: Double) {
@@ -1481,96 +1532,84 @@ private fun Inspector(
             IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, null, tint = Alight.Red) }
             IconButton(onClick = onClose) { Icon(Icons.Filled.Close, null, tint = Alight.Text2) }
         }
-        // ردیف ابزار ویرایش — ردیف اول پنل المان آلایت (fragment_element_edit)
+        // ردیف اول پنل المان آلایت (fragment_element_edit) — ۳۸dp:
+        // سرعت، برش ابتدا، تقسیم، برش انتها، جابه‌جایی، صدا
         val inRange = time > layer.start && time < layer.end
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(top = 4.dp),
         ) {
+            PanelButton("سرعت", true) { togglePanel("speed") }
             PanelButton("برش ابتدا", inRange) { onTrimStart() }
             PanelButton("تقسیم", inRange) { onSplit() }
             PanelButton("برش انتها", inRange) { onTrimEnd() }
-            PanelButton("کپی", true) { onDuplicate() }
+            PanelButton("← جابه‌جا", layer.start > 0.0) {
+                val ns = maxOf(0.0, layer.start - 0.5)
+                onChange(layer.copy(start = ns, end = layer.end - (layer.start - ns)))
+            }
+            PanelButton("جابه‌جا →", layer.end < duration) {
+                val ne = minOf(duration, layer.end + 0.5)
+                onChange(layer.copy(start = layer.start + (ne - layer.end), end = ne))
+            }
+            PanelButton("صدا", true) { togglePanel("volume") }
         }
-        // سرعت/ریتایم — مثل fragment_speed_keyframe.xml آلایت
-        // (دکمه‌های کش‌دادن دو سر + اسلایدر ضریب با اسنپ‌های آلایت)
+        // ردیف دوم — ۵۷dp: رنگ و پرکردن، حاشیه و سایه، ترکیب و شفافیت
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier.padding(top = 8.dp),
         ) {
-            Text(
-                "سرعت",
-                color = Alight.Text2,
-                modifier = Modifier.width(64.dp).align(Alignment.CenterVertically),
-            )
-            PanelButton("−شروع", layer.start > 0.0) { onChange(layer.copy(start = maxOf(0.0, layer.start - 0.5))) }
-            PanelButton("+شروع", layer.end - layer.start > 0.6) { onChange(layer.copy(start = minOf(layer.end - 0.1, layer.start + 0.5))) }
-            PanelButton("−پایان", layer.end - layer.start > 0.6) { onChange(layer.copy(end = maxOf(layer.start + 0.1, layer.end - 0.5))) }
-            PanelButton("+پایان", true) { onChange(layer.copy(end = layer.end + 0.5)) }
+            PanelButton("رنگ و پرکردن", true) { togglePanel("color") }
+            PanelButton("حاشیه و سایه", true) { togglePanel("border") }
+            PanelButton("ترکیب و شفافیت", true) { togglePanel("blend") }
         }
-        SliderRow("ضریب", layer.speed, 0.25..4.0, false, {}, onFinish = { fin() }) { v ->
-            // اسنپ به مقدارهای آلایت (۰٫۲۵/۰٫۵/۰٫۷۵/۱/۲/۳/۴)؛
-            // طول نوار به همان نسبت عوض می‌شود (طول رسانه ثابت می‌ماند).
-            val snapped = listOf(0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0).minByOrNull { kotlin.math.abs(it - v) } ?: v
-            val mediaLen = (layer.end - layer.start) * layer.speed
-            sc(layer.copy(speed = snapped, end = layer.start + mediaLen / snapped))
+        // ردیف سوم — ۵۷dp: جابه‌جایی و ترنسفورم، ویرایشِ نوع لایه، پریست‌ها، افکت‌ها
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            PanelButton("جابه‌جایی", true) { togglePanel("move") }
+            when (layer.type) {
+                "draw" -> PanelButton("ویرایش نقطه‌ها", true) { togglePanel("points") }
+                "text" -> PanelButton("ویرایش متن", true) { togglePanel("text") }
+                "camera" -> PanelButton("دوربین", true) { togglePanel("camera") }
+                "shape" -> PanelButton("ویرایش شکل", true) { togglePanel("shape") }
+                "audio" -> PanelButton("صدا", true) { togglePanel("volume") }
+                else -> PanelButton("ویرایش", true) { togglePanel("move") }
+            }
+            PanelButton("پریست‌ها", true) { togglePanel("presets") }
+            PanelButton("افکت‌ها", true) { togglePanel("effects") }
         }
-        // رنگ و پرکردن / ویرایشِ وابسته به نوع لایه (ردیف دوم و سوم پنل آلایت)
-        when (layer.type) {
-            "shape" -> {
-                val spec = layer.shape
-                ColorRow("پرکردن", spec?.fill) { c ->
-                    if (spec != null) onChange(layer.copy(shape = spec.copy(fill = c)))
+        // زیرپنل باز (دکمه، پنل مربوطش را باز می‌کند مثل آلایت)
+        when (panel) {
+            "speed" -> {
+                // سرعت/ریتایم — مثل fragment_speed_keyframe.xml آلایت
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    Text(
+                        "سرعت",
+                        color = Alight.Text2,
+                        modifier = Modifier.width(64.dp).align(Alignment.CenterVertically),
+                    )
+                    PanelButton("−شروع", layer.start > 0.0) { onChange(layer.copy(start = maxOf(0.0, layer.start - 0.5))) }
+                    PanelButton("+شروع", layer.end - layer.start > 0.6) { onChange(layer.copy(start = minOf(layer.end - 0.1, layer.start + 0.5))) }
+                    PanelButton("−پایان", layer.end - layer.start > 0.6) { onChange(layer.copy(end = maxOf(layer.start + 0.1, layer.end - 0.5))) }
+                    PanelButton("+پایان", true) { onChange(layer.copy(end = layer.end + 0.5)) }
                 }
-                ColorRow("حاشیه", spec?.stroke) { c ->
-                    if (spec != null) onChange(layer.copy(shape = spec.copy(stroke = c)))
-                }
-                if (spec != null) {
-                    SliderRow("ضخامت حاشیه", spec.strokeWidth, 0.0..20.0, false, {}, onFinish = { fin() }) {
-                        sc(layer.copy(shape = spec.copy(strokeWidth = it)))
-                    }
-                }
-                Text(
-                    "ویرایش شکل",
-                    color = Alight.Mint,
-                    modifier = Modifier.clickable { shapePickOpen = !shapePickOpen }.padding(vertical = 8.dp),
-                )
-                if (shapePickOpen) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(4),
-                        modifier = Modifier.height(140.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(SHAPE_KINDS) { kind ->
-                            AddTile(SHAPE_NAMES_FA[kind] ?: kind, Alight.Pink) {
-                                if (spec != null) onChange(layer.copy(shape = spec.copy(kind = kind)))
-                                shapePickOpen = false
-                            }
-                        }
-                    }
+                SliderRow("ضریب", layer.speed, 0.25..4.0, false, {}, onFinish = { fin() }) { v ->
+                    // اسنپ به مقدارهای آلایت (۰٫۲۵/۰٫۵/۰٫۷۵/۱/۲/۳/۴)؛
+                    // طول نوار به همان نسبت عوض می‌شود (طول رسانه ثابت می‌ماند).
+                    val snapped = listOf(0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0).minByOrNull { kotlin.math.abs(it - v) } ?: v
+                    val mediaLen = (layer.end - layer.start) * layer.speed
+                    sc(layer.copy(speed = snapped, end = layer.start + mediaLen / snapped))
                 }
             }
-            "text" -> {
-                val spec = layer.text
-                ColorRow("رنگ متن", spec?.color) { c ->
-                    if (spec != null) onChange(layer.copy(text = spec.copy(color = c)))
-                }
-                if (spec != null) {
-                    SliderRow("اندازه", spec.size, 12.0..200.0, false, {}, onFinish = { fin() }) {
-                        sc(layer.copy(text = spec.copy(size = it)))
-                    }
-                }
-                Text(
-                    "ویرایش متن",
-                    color = Alight.Mint,
-                    modifier = Modifier.clickable { textDraft = layer.text?.content ?: ""; textEditOpen = true }.padding(vertical = 8.dp),
-                )
-            }
-            "audio" -> {
+            "volume" -> {
                 val spec = layer.audio
                 if (spec != null) {
-                    SliderRow("صدا", spec.volume, 0.0..1.0, false, {}, onFinish = { fin() }) {
+                    // مثل fragment_volume_edit.xml: اسلایدر بلندی + مقدار
+                    SliderRow("بلندی", spec.volume, 0.0..1.0, false, {}, onFinish = { fin() }) {
                         sc(layer.copy(audio = spec.copy(volume = it)))
                     }
                     SliderRow("محو شروع", spec.fadeIn, 0.0..3.0, false, {}, onFinish = { fin() }) {
@@ -1579,6 +1618,108 @@ private fun Inspector(
                     SliderRow("محو پایان", spec.fadeOut, 0.0..3.0, false, {}, onFinish = { fin() }) {
                         sc(layer.copy(audio = spec.copy(fadeOut = it)))
                     }
+                } else {
+                    Text("این لایه صدا ندارد", color = Alight.Text2, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+            "color" -> {
+                val spec = layer.shape
+                val tspec = layer.text
+                if (spec != null) {
+                    ColorRow("پرکردن", spec.fill) { c -> onChange(layer.copy(shape = spec.copy(fill = c))) }
+                }
+                if (tspec != null) {
+                    ColorRow("رنگ متن", tspec.color) { c -> onChange(layer.copy(text = tspec.copy(color = c))) }
+                }
+                if (spec == null && tspec == null) {
+                    Text("این لایه رنگ ندارد", color = Alight.Text2, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+            "border" -> {
+                val spec = layer.shape
+                if (spec != null) {
+                    ColorRow("حاشیه", spec.stroke) { c -> onChange(layer.copy(shape = spec.copy(stroke = c))) }
+                    SliderRow("ضخامت حاشیه", spec.strokeWidth, 0.0..20.0, false, {}, onFinish = { fin() }) {
+                        sc(layer.copy(shape = spec.copy(strokeWidth = it)))
+                    }
+                } else {
+                    Text("این لایه حاشیه ندارد", color = Alight.Text2, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+            "blend" -> {
+                // مثل fragment_blending_opacity.xml: لیست حالت‌ها + اسلایدر شفافیت
+                val modes = listOf(
+                    "عادی" to "normal", "ضرب" to "multiply", "صفحه" to "screen",
+                    "هم‌پوشانی" to "overlay", "تیره" to "darken", "روشن" to "lighten",
+                    "تفاضل" to "difference", "حذف" to "exclusion",
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    for ((label, value) in modes) {
+                        val active = layer.blend == value
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (active) Alight.Mint else Alight.Surface4)
+                                .clickable { onChange(layer.copy(blend = value)) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Text(label, color = if (active) Color.Black else Alight.Text)
+                        }
+                    }
+                }
+                SliderRow("شفافیت", t.opacity, 0.0..1.0, hasKeyframe("opacity"), { toggleKeyframe("opacity", t.opacity) }, onFinish = { fin() }) {
+                    sc(layer.copy(transform = t.copy(opacity = it)))
+                }
+            }
+            "move" -> {
+                SliderRow("شفافیت", t.opacity, 0.0..1.0, hasKeyframe("opacity"), { toggleKeyframe("opacity", t.opacity) }, onFinish = { fin() }) {
+                    sc(layer.copy(transform = t.copy(opacity = it)))
+                }
+                SliderRow("مقیاس", t.scaleX, 0.1..3.0, hasKeyframe("scaleX"), { toggleKeyframe("scaleX", t.scaleX) }, onFinish = { fin() }) {
+                    sc(layer.copy(transform = t.copy(scaleX = it, scaleY = it)))
+                }
+                SliderRow("چرخش", t.rotation, -180.0..180.0, hasKeyframe("rotation"), { toggleKeyframe("rotation", t.rotation) }, onFinish = { fin() }) {
+                    sc(layer.copy(transform = t.copy(rotation = it)))
+                }
+                SliderRow("موقعیت X", t.x, 0.0..projW.toDouble(), hasKeyframe("x"), { toggleKeyframe("x", t.x) }, onFinish = { fin() }) {
+                    sc(layer.copy(transform = t.copy(x = it)))
+                }
+                SliderRow("موقعیت Y", t.y, 0.0..projH.toDouble(), hasKeyframe("y"), { toggleKeyframe("y", t.y) }, onFinish = { fin() }) {
+                    sc(layer.copy(transform = t.copy(y = it)))
+                }
+                // ماسک (clip)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    Text("ماسک", color = Alight.Text2, modifier = Modifier.width(64.dp))
+                    for ((label, value) in listOf("هیچ" to "none", "زیرین" to "below", "برعکس" to "belowInv")) {
+                        val active = layer.clip == value
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (active) Alight.Mint else Alight.Surface4)
+                                .clickable { onChange(layer.copy(clip = value)) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Text(label, color = if (active) Color.Black else Alight.Text)
+                        }
+                    }
+                }
+            }
+            "text" -> {
+                val spec = layer.text
+                if (spec != null) {
+                    ColorRow("رنگ متن", spec.color) { c -> onChange(layer.copy(text = spec.copy(color = c))) }
+                    SliderRow("اندازه", spec.size, 12.0..200.0, false, {}, onFinish = { fin() }) {
+                        sc(layer.copy(text = spec.copy(size = it)))
+                    }
+                    Text(
+                        "ویرایش متن",
+                        color = Alight.Mint,
+                        modifier = Modifier.clickable { textDraft = layer.text?.content ?: ""; textEditOpen = true }.padding(vertical = 8.dp),
+                    )
                 }
             }
             "camera" -> {
@@ -1589,59 +1730,94 @@ private fun Inspector(
                     }
                 }
             }
-        }
-        SliderRow("شفافیت", t.opacity, 0.0..1.0, hasKeyframe("opacity"), { toggleKeyframe("opacity", t.opacity) }, onFinish = { fin() }) {
-            sc(layer.copy(transform = t.copy(opacity = it)))
-        }
-        SliderRow("مقیاس", t.scaleX, 0.1..3.0, hasKeyframe("scaleX"), { toggleKeyframe("scaleX", t.scaleX) }, onFinish = { fin() }) {
-            sc(layer.copy(transform = t.copy(scaleX = it, scaleY = it)))
-        }
-        SliderRow("چرخش", t.rotation, -180.0..180.0, hasKeyframe("rotation"), { toggleKeyframe("rotation", t.rotation) }, onFinish = { fin() }) {
-            sc(layer.copy(transform = t.copy(rotation = it)))
-        }
-        SliderRow("موقعیت X", t.x, 0.0..720.0, hasKeyframe("x"), { toggleKeyframe("x", t.x) }, onFinish = { fin() }) {
-            sc(layer.copy(transform = t.copy(x = it)))
-        }
-        SliderRow("موقعیت Y", t.y, 0.0..1280.0, hasKeyframe("y"), { toggleKeyframe("y", t.y) }, onFinish = { fin() }) {
-            sc(layer.copy(transform = t.copy(y = it)))
-        }
-        // ماسک (clip)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-            Text("ماسک", color = Alight.Text2, modifier = Modifier.width(64.dp))
-            for ((label, value) in listOf("هیچ" to "none", "زیرین" to "below", "برعکس" to "belowInv")) {
-                val active = layer.clip == value
-                Box(
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (active) Alight.Mint else Alight.Surface4)
-                        .clickable { onChange(layer.copy(clip = value)) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                    Text(label, color = if (active) Color.Black else Alight.Text)
+            "shape" -> {
+                val spec = layer.shape
+                if (spec != null) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        modifier = Modifier.height(140.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(SHAPE_KINDS) { kind ->
+                            AddTile(SHAPE_NAMES_FA[kind] ?: kind, Alight.Pink) {
+                                onChange(layer.copy(shape = spec.copy(kind = kind)))
+                            }
+                        }
+                    }
                 }
             }
-        }
-        // حالت ترکیب
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-            Text("ترکیب", color = Alight.Text2, modifier = Modifier.width(64.dp))
-            for ((label, value) in listOf("عادی" to "normal", "ضرب" to "multiply", "صفحه" to "screen", "هم‌پوشانی" to "overlay")) {
-                val active = layer.blend == value
-                Box(
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (active) Alight.Mint else Alight.Surface4)
-                        .clickable { onChange(layer.copy(blend = value)) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                    Text(label, color = if (active) Color.Black else Alight.Text)
+            "points" -> {
+                // ویرایش نقطه‌ها (مثل fragment_edit_points2، بدون ترک‌پد صحنه در این قدم)
+                if (layer.type == "draw" && layer.strokes.isNotEmpty()) {
+                    var strokeIdx by remember { mutableStateOf(0) }
+                    var pointIdx by remember { mutableStateOf(0) }
+                    val st = layer.strokes[strokeIdx.coerceIn(0, layer.strokes.size - 1)]
+                    val pts = st.points
+                    val sel = pts.getOrNull(pointIdx.coerceIn(0, maxOf(0, pts.size - 1)))
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        for (i in layer.strokes.indices) {
+                            PanelButton("خط ${i + 1}", i == strokeIdx) { strokeIdx = i; pointIdx = 0 }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        for (i in pts.indices) {
+                            PanelButton("${i + 1}", i == pointIdx) { pointIdx = i }
+                        }
+                    }
+                    if (sel != null) {
+                        SliderRow("نقطه X", sel.x, (-projW / 2.0)..(projW / 2.0), false, {}, onFinish = { fin() }) { v ->
+                            val np = pts.mapIndexed { pi, p -> if (pi == pointIdx) p.copy(x = v) else p }
+                            sc(layer.copy(strokes = layer.strokes.mapIndexed { si, s -> if (si == strokeIdx) s.copy(points = np) else s }))
+                        }
+                        SliderRow("نقطه Y", sel.y, (-projH / 2.0)..(projH / 2.0), false, {}, onFinish = { fin() }) { v ->
+                            val np = pts.mapIndexed { pi, p -> if (pi == pointIdx) p.copy(y = v) else p }
+                            sc(layer.copy(strokes = layer.strokes.mapIndexed { si, s -> if (si == strokeIdx) s.copy(points = np) else s }))
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                        PanelButton("＋ نقطه", pts.size >= 2) {
+                            val i = pointIdx.coerceIn(0, pts.size - 1)
+                            val a = pts[i]
+                            val b = pts.getOrNull(i + 1) ?: StrokePoint(a.x + 10.0, a.y + 10.0)
+                            val mid = StrokePoint((a.x + b.x) / 2.0, (a.y + b.y) / 2.0)
+                            val np = pts.toMutableList().apply { add(i + 1, mid) }
+                            onChange(layer.copy(strokes = layer.strokes.mapIndexed { si, s -> if (si == strokeIdx) s.copy(points = np) else s }))
+                            pointIdx = i + 1
+                        }
+                        PanelButton("− نقطه", pts.size > 2) {
+                            val np = pts.toMutableList().apply { removeAt(pointIdx.coerceIn(0, pts.size - 1)) }
+                            onChange(layer.copy(strokes = layer.strokes.mapIndexed { si, s -> if (si == strokeIdx) s.copy(points = np) else s }))
+                            pointIdx = maxOf(0, pointIdx - 1)
+                        }
+                    }
+                } else {
+                    Text("این لایه نقطه ندارد", color = Alight.Text2, modifier = Modifier.padding(top = 8.dp))
                 }
             }
+            "presets" -> {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    for ((name, refs) in PRESETS) {
+                        PanelButton(name, true) {
+                            onChange(layer.copy(effects = layer.effects + refs))
+                        }
+                    }
+                }
+            }
+            "effects" -> {
+                EffectSection(layer, time, onChange, onPreview, onFinish)
+            }
+            null -> {}
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        // افکت‌ها (N3)
-        EffectSection(layer, time, onChange, onPreview, onFinish)
     }
 
     if (textEditOpen) {
