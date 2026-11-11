@@ -47,8 +47,12 @@ jobs:
       - name: Install cargo-apk
         run: cargo install cargo-apk --version 0.10.0
 
+      # cargo-apk must run from the app crate's directory: from the
+      # workspace root it is handed the virtual manifest and fails with
+      # "virtual manifests must be configured with '[workspace]'"
+      # (run #2). The APK still lands in rust-clone/target/android-artifacts.
       - name: Build APK
-        working-directory: rust-clone
+        working-directory: rust-clone/crates/app
         run: cargo apk build --release
 
       - name: Collect APK
