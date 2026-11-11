@@ -2,18 +2,27 @@
 // Screens mirror the Alight flows from the REA study (home → create project →
 // editor → add popup → element panel), using the double-confirmed tokens/dims.
 //
-// Known gaps (honest, tracked in rust-rebuild-plan.md):
-// - Persian text is drawn with IRANSansX but egui does not shape Arabic
-//   script, so text shows disconnected letterforms until a shaper lands.
-// - Rect rotation is ignored in the stage painter (no rotated rect shape
-//   in egui's painter); circle/ring/text/draw are faithful.
+// Persian display strings go through `shape_persian` (presentation forms +
+// RTL order) before drawing; the model keeps logical text. The text-edit
+// field keeps logical text while editing (shaping it would desync the
+// cursor). Projects persist to `projects.json` in the app's data dir.
+//
+// Remaining gaps (tracked in rust-rebuild-plan.md):
 // - Media/audio pickers and MP4 export are not yet wired in this crate.
 
 use eframe::egui;
 use lyricstudio_engine::evaluate;
 use lyricstudio_engine::model::{demo_project, new_project, uid, Layer, Project, ShapeSpec};
+use lyricstudio_engine::shape::shape_persian;
 
-use crate::{hex_color, theme, to_hex};
+use crate::{hex_color, store, theme, to_hex};
+use std::path::PathBuf;
+
+/// Shape a Persian string for display. Pure Latin/number strings come back
+/// unchanged. Only display strings go through this — never model text.
+fn shp(s: &str) -> String {
+    shape_persian(s)
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Screen {
@@ -23,6 +32,8 @@ enum Screen {
 
 pub struct LyricApp {
     projects: Vec<Project>,
+    data_dir: Option<PathBuf>,
+    dirty: bool,
     screen: Screen,
     current: usize,
     home_tab: usize,
@@ -35,9 +46,15 @@ pub struct LyricApp {
 }
 
 impl LyricApp {
-    pub fn new() -> Self {
+    pub fn new(data_dir: Option<PathBuf>) -> Self {
+        let projects = data_dir
+            .as_ref()
+            .map(|d| store::load_projects(d))
+            .unwrap_or_else(|| vec![demo_project()]);
         Self {
-            projects: vec![demo_project()],
+            projects,
+            data_dir,
+            dirty: false,
             screen: Screen::Home,
             current: 0,
             home_tab: 0,
@@ -52,6 +69,19 @@ impl LyricApp {
 
     fn current_project(&self) -> &Project {
         &self.projects[self.current]
+    }
+
+    /// Persist once per edit (flagged by the mutating handlers), not per frame.
+    fn save_if_dirty(&mut self) {
+        if !self.dirty {
+            return;
+        }
+        self.dirty = false;
+        if let Some(dir) = &self.data_dir {
+            if let Err(e) = store::save_projects(dir, &self.projects) {
+                eprintln!("LyricStudio: could not save projects: {e}");
+            }
+        }
     }
 }
 
@@ -72,6 +102,7 @@ impl eframe::App for LyricApp {
             Screen::Home => self.show_home(ui),
             Screen::Editor => self.show_editor(ui),
         }
+        self.save_if_dirty();
     }
 }
 
@@ -85,7 +116,7 @@ impl LyricApp {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading("LyricStudio");
-                    ui.label("نسخهٔ راستی");
+                    ui.label(shp("نسخهٔ راستی"));
                 });
             });
         egui::Panel::bottom("home_tabs")
@@ -97,7 +128,7 @@ impl LyricApp {
                         .iter()
                         .enumerate()
                     {
-                        if ui.selectable_label(self.home_tab == i, *t).clicked() {
+                        if ui.selectable_label(self.home_tab == i, shp(t)).clicked() {
                             self.home_tab = i;
                         }
                     }
@@ -106,11 +137,11 @@ impl LyricApp {
         egui::CentralPanel::default().show(ui, |ui| {
             if self.home_tab != 0 {
                 ui.centered_and_justified(|ui| {
-                    ui.label("این بخش در نسخهٔ بعد می‌آید");
+                    ui.label(shp("این بخش در نسخهٔ بعد می‌آید"));
                 });
                 return;
             }
-            ui.heading("پروژه‌ها");
+            ui.heading(shp("پروژه‌ها"));
             ui.add_space(8.0);
             let mut open: Option<usize> = None;
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -118,7 +149,11 @@ impl LyricApp {
                     for (i, p) in self.projects.iter().enumerate() {
                         let label = format!(
                             "{}\n{}×{} · {}s · {}fps",
-                            p.name, p.width, p.height, p.duration as i32, p.fps
+                            shp(&p.name),
+                            p.width,
+                            p.height,
+                            p.duration as i32,
+                            p.fps
                         );
                         if ui
                             .add_sized([120.0, 180.0], egui::Button::new(label))
@@ -130,8 +165,9 @@ impl LyricApp {
                 });
             });
             ui.add_space(8.0);
-            if ui.button("＋ پروژهٔ جدید (۹:۱۶)").clicked() {
+            if ui.button(shp("＋ پروژهٔ جدید (۹:۱۶)")).clicked() {
                 self.projects.push(new_project("پروژهٔ جدید"));
+                self.dirty = true;
             }
             if let Some(i) = open {
                 self.current = i;
@@ -156,15 +192,15 @@ impl LyricApp {
             .size_range(42.0..=42.0)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("‹ بازگشت").clicked() {
+                    if ui.button(shp("‹ بازگشت")).clicked() {
                         self.screen = Screen::Home;
                         self.playing = false;
                     }
-                    ui.heading(&name);
+                    ui.heading(shp(&name));
                     ui.with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| {
-                            if ui.button("خروجی").clicked() {
+                            if ui.button(shp("خروجی")).clicked() {
                                 self.export_notice = true;
                             }
                         },
@@ -226,7 +262,7 @@ impl LyricApp {
 
         // Add popup (251dp) — the real REA add flow, 5 tabs.
         let mut open = self.add_open;
-        egui::Window::new("افزودن")
+        egui::Window::new(shp("افزودن"))
             .open(&mut open)
             .show(ui.ctx(), |ui| {
                 self.add_popup_ui(ui);
@@ -235,16 +271,16 @@ impl LyricApp {
 
         // Export placeholder — honest: MP4 export is not in the Rust app yet.
         let mut notice = self.export_notice;
-        egui::Window::new("خروجی")
+        egui::Window::new(shp("خروجی"))
             .open(&mut notice)
             .show(ui.ctx(), |ui| {
-                ui.label("خروجی MP4 (MediaCodec) در نسخهٔ راستی هنوز پیاده نشده.\nفعلاً خروجی در برنامهٔ کوت‌لین انجام می‌شود.");
+                ui.label(shp("خروجی MP4 (MediaCodec) در نسخهٔ راستی هنوز پیاده نشده.\nفعلاً خروجی در برنامهٔ کوت‌لین انجام می‌شود."));
             });
         self.export_notice = notice;
     }
 
     fn timeline_ui(&mut self, ui: &mut egui::Ui, duration: f64) {
-        ui.heading("تایم‌لاین");
+        ui.heading(shp("تایم‌لاین"));
         egui::ScrollArea::vertical().show(ui, |ui| {
             let mut clicked: Option<String> = None;
             // Top layer first (project stores bottom = back).
@@ -275,7 +311,7 @@ impl LyricApp {
                 painter.text(
                     egui::Pos2::new(rect.min.x + 6.0, rect.center().y),
                     egui::Align2::LEFT_CENTER,
-                    &layer.name,
+                    shp(&layer.name),
                     egui::FontId::proportional(13.0),
                     hex_color(theme::G0),
                 );
@@ -291,7 +327,7 @@ impl LyricApp {
 
     fn element_panel_ui(&mut self, ui: &mut egui::Ui) {
         let Some(sel) = self.selected.clone() else {
-            ui.label("لایه‌ای انتخاب نشده");
+            ui.label(shp("لایه‌ای انتخاب نشده"));
             return;
         };
         let proj = &mut self.projects[self.current];
@@ -299,56 +335,86 @@ impl LyricApp {
             return;
         };
         let playhead = self.playhead;
+        let mut changed = false;
         ui.label(format!(
             "{} · {}",
-            proj.layers[idx].name, proj.layers[idx].type_
+            shp(&proj.layers[idx].name),
+            proj.layers[idx].type_
         ));
         ui.horizontal(|ui| {
-            if ui.button("برش از شروع").clicked() {
+            if ui.button(shp("برش از شروع")).clicked() {
                 proj.layers[idx].start = playhead;
+                changed = true;
             }
-            if ui.button("تقسیم").clicked() {
+            if ui.button(shp("تقسیم")).clicked() {
                 let mut copy = proj.layers[idx].clone();
                 copy.id = uid();
                 copy.start = playhead;
                 proj.layers[idx].end = playhead;
                 proj.layers.insert(idx + 1, copy);
+                changed = true;
             }
-            if ui.button("برش از پایان").clicked() {
+            if ui.button(shp("برش از پایان")).clicked() {
                 proj.layers[idx].end = playhead;
+                changed = true;
             }
-            if ui.button("تکثیر").clicked() {
+            if ui.button(shp("تکثیر")).clicked() {
                 let mut copy = proj.layers[idx].clone();
                 copy.id = uid();
                 copy.name = format!("{} (کپی)", copy.name);
                 proj.layers.insert(idx + 1, copy);
+                changed = true;
             }
         });
         if let Some(sh) = &mut proj.layers[idx].shape {
             ui.horizontal(|ui| {
-                ui.label("رنگ");
+                ui.label(shp("رنگ"));
                 let mut c = hex_color(sh.fill.as_deref().unwrap_or(theme::B1));
                 if ui.color_edit_button_srgba(&mut c).changed() {
                     sh.fill = Some(to_hex(c));
+                    changed = true;
                 }
-                ui.add(egui::Slider::new(&mut sh.stroke_width, 0.0..=20.0).text("خط"));
+                if ui
+                    .add(egui::Slider::new(&mut sh.stroke_width, 0.0..=20.0).text(shp("خط")))
+                    .changed()
+                {
+                    changed = true;
+                }
             });
         }
         if let Some(tx) = &mut proj.layers[idx].text {
-            ui.text_edit_singleline(&mut tx.content);
-            ui.add(egui::Slider::new(&mut tx.size, 12.0..=200.0).text("اندازه"));
+            // Logical text while editing (shaping would desync the cursor);
+            // the stage draws it shaped.
+            if ui.text_edit_singleline(&mut tx.content).changed() {
+                changed = true;
+            }
+            if ui
+                .add(egui::Slider::new(&mut tx.size, 12.0..=200.0).text(shp("اندازه")))
+                .changed()
+            {
+                changed = true;
+            }
             ui.horizontal(|ui| {
-                ui.label("رنگ متن");
+                ui.label(shp("رنگ متن"));
                 let mut c = hex_color(&tx.color);
                 if ui.color_edit_button_srgba(&mut c).changed() {
                     tx.color = to_hex(c);
+                    changed = true;
                 }
             });
         }
-        ui.add(
-            egui::Slider::new(&mut proj.layers[idx].transform.opacity, 0.0..=1.0)
-                .text("شفافیت"),
-        );
+        if ui
+            .add(
+                egui::Slider::new(&mut proj.layers[idx].transform.opacity, 0.0..=1.0)
+                    .text(shp("شفافیت")),
+            )
+            .changed()
+        {
+            changed = true;
+        }
+        if changed {
+            self.dirty = true;
+        }
     }
 
     fn add_popup_ui(&mut self, ui: &mut egui::Ui) {
@@ -357,7 +423,7 @@ impl LyricApp {
                 .iter()
                 .enumerate()
             {
-                if ui.selectable_label(self.add_tab == i, *t).clicked() {
+                if ui.selectable_label(self.add_tab == i, shp(t)).clicked() {
                     self.add_tab = i;
                 }
             }
@@ -374,23 +440,23 @@ impl LyricApp {
                 });
             }
             1 | 2 => {
-                ui.label("انتخاب فایل رسانه/صوت در نسخهٔ بعد می‌آید");
+                ui.label(shp("انتخاب فایل رسانه/صوت در نسخهٔ بعد می‌آید"));
             }
             3 => {
                 ui.horizontal(|ui| {
-                    if ui.button("دوربین").clicked() {
+                    if ui.button(shp("دوربین")).clicked() {
                         self.insert_camera();
                     }
                     if ui.button("Null").clicked() {
                         self.insert_null();
                     }
-                    if ui.button("گروه خالی").clicked() {
+                    if ui.button(shp("گروه خالی")).clicked() {
                         self.insert_group();
                     }
                 });
             }
             _ => {
-                if ui.button("قالب نمایشی (۴ لایه)").clicked() {
+                if ui.button(shp("قالب نمایشی (۴ لایه)")).clicked() {
                     self.insert_demo_group();
                 }
             }
@@ -415,6 +481,7 @@ impl LyricApp {
             ..Default::default()
         });
         proj.layers.push(l);
+        self.dirty = true;
     }
 
     fn insert_camera(&mut self) {
@@ -422,17 +489,20 @@ impl LyricApp {
         let mut l = Layer::new("camera", "دوربین", 0.0, proj.duration);
         l.camera = Some(Default::default());
         proj.layers.push(l);
+        self.dirty = true;
     }
 
     fn insert_null(&mut self) {
         let proj = &mut self.projects[self.current];
         proj.layers.push(Layer::new("null", "Null", 0.0, proj.duration));
+        self.dirty = true;
     }
 
     fn insert_group(&mut self) {
         let proj = &mut self.projects[self.current];
         proj.layers
             .push(Layer::new("group", "گروه خالی", 0.0, proj.duration));
+        self.dirty = true;
     }
 
     fn insert_demo_group(&mut self) {
@@ -440,6 +510,7 @@ impl LyricApp {
         let mut g = Layer::new("group", "قالب نمایشی", 0.0, proj.duration);
         g.children = demo_project().layers;
         proj.layers.push(g);
+        self.dirty = true;
     }
 
     // ------------------------------------------------------------ stage ---
@@ -486,30 +557,54 @@ impl LyricApp {
                             painter.circle_filled(center, r, fill);
                         }
                         _ => {
-                            // rect (and other kinds fall back to rect);
-                            // rotation is ignored — egui has no rotated rect.
+                            // Rect (and other kinds fall back to rect),
+                            // drawn as a rotated polygon — rotation is in
+                            // degrees, like the Kotlin renderer's
+                            // rotate(degrees = ...). Stroke follows the
+                            // same outline when set.
                             let hw = sh.w as f32 / 2.0 * s * tr.scale_x as f32;
                             let hh = sh.h as f32 / 2.0 * s * tr.scale_y as f32;
-                            painter.rect_filled(
-                                egui::Rect::from_center_size(
-                                    center,
-                                    egui::Vec2::new(hw * 2.0, hh * 2.0),
-                                ),
-                                0.0,
+                            let rot = (tr.rotation as f32).to_radians();
+                            let (sn, cs) = rot.sin_cos();
+                            let corner = |dx: f32, dy: f32| {
+                                egui::Pos2::new(
+                                    center.x + dx * cs - dy * sn,
+                                    center.y + dx * sn + dy * cs,
+                                )
+                            };
+                            let pts = vec![
+                                corner(-hw, -hh),
+                                corner(hw, -hh),
+                                corner(hw, hh),
+                                corner(-hw, hh),
+                            ];
+                            painter.add(egui::Shape::convex_polygon(
+                                pts.clone(),
                                 fill,
-                            );
+                                egui::Stroke::NONE,
+                            ));
+                            if let (Some(stroke), w) = (&sh.stroke, sh.stroke_width) {
+                                if w > 0.0 {
+                                    painter.add(egui::Shape::closed_line(
+                                        pts,
+                                        egui::Stroke::new(
+                                            (w as f32) * s,
+                                            hex_color(stroke).gamma_multiply(op),
+                                        ),
+                                    ));
+                                }
+                            }
                         }
                     }
                 }
             }
             "text" => {
                 if let Some(tx) = &layer.text {
-                    // Persian shaping gap: glyphs render disconnected until
-                    // a shaper (rustybuzz) is integrated.
+                    // Logical text in the model; shaped for display.
                     painter.text(
                         center,
                         egui::Align2::CENTER_CENTER,
-                        &tx.content,
+                        shp(&tx.content),
                         egui::FontId::new(
                             (tx.size as f32 * s).max(8.0),
                             egui::FontFamily::Proportional,
@@ -519,14 +614,19 @@ impl LyricApp {
                 }
             }
             "draw" => {
+                // Strokes rotate with the layer (degrees, like rects).
+                let rot = (tr.rotation as f32).to_radians();
+                let (sn, cs) = rot.sin_cos();
                 for stroke in &layer.strokes {
                     let pts: Vec<egui::Pos2> = stroke
                         .points
                         .iter()
                         .map(|p| {
+                            let rx = p.x as f32 * cs - p.y as f32 * sn;
+                            let ry = p.x as f32 * sn + p.y as f32 * cs;
                             egui::Pos2::new(
-                                stage.min.x + (tr.x + p.x) as f32 * s,
-                                stage.min.y + (tr.y + p.y) as f32 * s,
+                                stage.min.x + (tr.x as f32 + rx) * s,
+                                stage.min.y + (tr.y as f32 + ry) * s,
                             )
                         })
                         .collect();

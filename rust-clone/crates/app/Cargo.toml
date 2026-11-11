@@ -17,6 +17,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 lyricstudio-engine = { path = "../engine" }
+serde_json = "1" # store.rs: projects.json save/load
 # default-features off: eframe's `accesskit` default conflicts with
 # `android-native-activity` on Android (eframe lib.rs compile_error).
 # wayland/x11 are host-only; the android entry gets android-native-activity

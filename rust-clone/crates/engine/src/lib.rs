@@ -9,5 +9,6 @@ pub mod easing;
 pub mod evaluate;
 pub mod fx;
 pub mod model;
+pub mod shape;
 
 pub use model::*;

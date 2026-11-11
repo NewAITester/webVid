@@ -6,6 +6,7 @@
 // have one. Desktop testing is out of scope for this VM.)
 
 pub mod app;
+pub mod store;
 
 use eframe::egui;
 
@@ -73,9 +74,10 @@ fn load_fonts(ctx: &egui::Context) {
         "IRANSansX-Black".to_owned(),
         egui::FontData::from_static(FONT_BLACK).into(),
     );
-    // NOTE: egui does not shape Arabic script (no HarfBuzz). Persian text
-    // renders with the right glyphs but disconnected forms until a shaper
-    // (e.g. rustybuzz) is wired into text layout. Recorded as a known gap.
+    // NOTE: egui does not shape Arabic script (no HarfBuzz). Persian
+    // display strings go through the engine's `shape` module (presentation
+    // forms + RTL order) before they are drawn; the model keeps logical
+    // text. See `lyricstudio_engine::shape`.
     fonts
         .families
         .entry(egui::FontFamily::Proportional)
@@ -101,12 +103,18 @@ fn apply_theme(ctx: &egui::Context) {
 
 /// Run the app (desktop `main` and, via winit, the Android entry).
 pub fn run() {
-    run_with(eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([720.0, 1280.0])
-            .with_title("LyricStudio"),
-        ..Default::default()
-    });
+    let data_dir = std::env::current_dir()
+        .ok()
+        .map(|d| d.join(".lyricstudio"));
+    run_with(
+        eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([720.0, 1280.0])
+                .with_title("LyricStudio"),
+            ..Default::default()
+        },
+        data_dir,
+    );
 }
 
 /// Android NativeActivity entry point (cargo-apk cdylib). winit requires
@@ -116,19 +124,20 @@ pub fn run() {
 #[no_mangle]
 #[allow(improper_ctypes_definitions)] // android-activity's documented entry signature
 pub extern "C" fn android_main(app: android_activity::AndroidApp) {
+    let data_dir = app.internal_data_path();
     let mut options = eframe::NativeOptions::default();
     options.android_app = Some(app);
-    run_with(options);
+    run_with(options, data_dir);
 }
 
-fn run_with(options: eframe::NativeOptions) {
+fn run_with(options: eframe::NativeOptions, data_dir: Option<std::path::PathBuf>) {
     let res = eframe::run_native(
         "LyricStudio",
         options,
         Box::new(|cc| {
             load_fonts(&cc.egui_ctx);
             apply_theme(&cc.egui_ctx);
-            Ok(Box::new(app::LyricApp::new()))
+            Ok(Box::new(app::LyricApp::new(data_dir)))
         }),
     );
     if let Err(e) = res {
