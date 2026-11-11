@@ -14,7 +14,8 @@
 // - Media/audio pickers and MP4 export are not yet wired in this crate.
 
 use eframe::egui;
-use lyricstudio_engine::model::{demo_project, new_project, uid, Layer, Project, ShapeSpec};
+use lyricstudio_engine::evaluate;
+use lyricstudio_engine::model::{demo_project, new_project, uid, Keyframe, Layer, Project, ShapeSpec};
 use lyricstudio_engine::registry::{default_effect, fx_def, parse_hex_rgb, ParamKind, FX_REGISTRY};
 use lyricstudio_engine::render::{ImageData, Renderer};
 #[cfg(target_os = "android")]
@@ -95,6 +96,98 @@ pub struct LyricApp {
     /// Export window + running job.
     export_open: bool,
     export_job: Option<export::ExportJob>,
+    /// Timeline drag in progress (move/trim a layer's range bar).
+    tl_drag: Option<TimelineDrag>,
+    /// Keyframe property shown in the element panel + timeline lane.
+    /// A transform key ("x" | "y" | "scaleX" | "scaleY" | "rotation" |
+    /// "opacity" | "zoom") or "fx:<effect index>:<param>".
+    kf_prop: String,
+    /// Keyframe diamond drag in progress (layer id, keyframe index in
+    /// the property's sorted list).
+    kf_drag: Option<(String, usize)>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum TlZone {
+    Move,
+    TrimStart,
+    TrimEnd,
+}
+
+struct TimelineDrag {
+    layer_id: String,
+    zone: TlZone,
+    orig_start: f64,
+    orig_end: f64,
+    start_x: f32,
+}
+
+/// Keyframe list for one property of one layer (sorted by t).
+fn kf_list(layer: &Layer, prop: &str) -> Vec<Keyframe> {
+    let mut v = if let Some(rest) = prop.strip_prefix("fx:") {
+        let mut parts = rest.splitn(2, ':');
+        let idx: usize = parts.next().and_then(|s| s.parse().ok()).unwrap_or(usize::MAX);
+        let param = parts.next().unwrap_or("");
+        layer
+            .effects
+            .get(idx)
+            .and_then(|fx| fx.keyframes.get(param))
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        layer.keyframes.get(prop).cloned().unwrap_or_default()
+    };
+    v.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
+    v
+}
+
+/// Mutable keyframe list for one property (creates the entry). A stale
+/// "fx:..." name falls back to the layer's "x" list (never panics).
+fn kf_list_mut<'a>(layer: &'a mut Layer, prop: &str) -> &'a mut Vec<Keyframe> {
+    if let Some(rest) = prop.strip_prefix("fx:") {
+        let mut parts = rest.splitn(2, ':');
+        if let (Some(i), Some(p)) = (
+            parts.next().and_then(|s| s.parse::<usize>().ok()),
+            parts.next(),
+        ) {
+            if let Some(fx) = layer.effects.get_mut(i) {
+                return fx.keyframes.entry(p.to_string()).or_default();
+            }
+        }
+        return layer.keyframes.entry("x".to_string()).or_default();
+    }
+    layer.keyframes.entry(prop.to_string()).or_default()
+}
+
+/// The interpolated value of one property at local time `t` (used when
+/// adding a keyframe at the playhead).
+fn kf_current_value(layer: &Layer, prop: &str, t: f64) -> f64 {
+    if let Some(rest) = prop.strip_prefix("fx:") {
+        let mut parts = rest.splitn(2, ':');
+        let idx: usize = parts.next().and_then(|s| s.parse().ok()).unwrap_or(usize::MAX);
+        let param = parts.next().unwrap_or("");
+        return layer
+            .effects
+            .get(idx)
+            .map(|fx| {
+                evaluate::effect_params_at(fx, t)
+                    .get(param)
+                    .copied()
+                    .unwrap_or(0.0)
+            })
+            .unwrap_or(0.0);
+    }
+    let fallback = match prop {
+        "x" => layer.transform.x,
+        "y" => layer.transform.y,
+        "scaleX" => layer.transform.scale_x,
+        "scaleY" => layer.transform.scale_y,
+        "rotation" => layer.transform.rotation,
+        "opacity" => layer.transform.opacity,
+        "zoom" => layer.camera.as_ref().map(|c| c.zoom).unwrap_or(1.0),
+        _ => 0.0,
+    };
+    evaluate::value_at(layer.keyframes.get(prop).map(|v| v.as_slice()), t, fallback)
 }
 
 impl LyricApp {
@@ -133,6 +226,9 @@ impl LyricApp {
             audio_src: None,
             export_open: false,
             export_job: None,
+            tl_drag: None,
+            kf_prop: "x".to_string(),
+            kf_drag: None,
         }
     }
 
@@ -753,21 +849,75 @@ impl LyricApp {
 
     fn timeline_ui(&mut self, ui: &mut egui::Ui, duration: f64) {
         ui.heading(shp("تایم‌لاین"));
+        let w = ui.available_width();
+        // --- Ruler: drag to scrub the playhead.
+        let (rrect, rresp) =
+            ui.allocate_exact_size(egui::Vec2::new(w, 20.0), egui::Sense::click_and_drag());
+        {
+            let painter = ui.painter_at(rrect);
+            painter.rect_filled(rrect, 0.0, hex_color(theme::A1));
+            let step = if duration <= 30.0 {
+                1.0
+            } else if duration <= 120.0 {
+                5.0
+            } else {
+                10.0
+            };
+            let mut s = 0.0;
+            while s <= duration {
+                let x = rrect.min.x + (s as f32 / duration as f32) * rrect.width();
+                painter.vline(x, rrect.y_range(), (1.0, hex_color(theme::P4)));
+                painter.text(
+                    egui::Pos2::new(x + 3.0, rrect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    format!("{s:.0}"),
+                    egui::FontId::proportional(11.0),
+                    hex_color(theme::P4),
+                );
+                s += step;
+            }
+            let px = rrect.min.x + (self.playhead as f32 / duration as f32) * rrect.width();
+            painter.vline(px, rrect.y_range(), (2.0, hex_color(theme::Y1)));
+        }
+        if rresp.dragged() || rresp.clicked() {
+            if let Some(pos) = ui.input(|i| i.pointer.latest_pos()) {
+                if rrect.contains(pos) {
+                    self.playhead =
+                        (((pos.x - rrect.min.x) / rrect.width()) as f64 * duration)
+                            .clamp(0.0, duration);
+                    self.render_version += 1;
+                }
+            }
+        }
+        // --- Layer rows (top layer first). A snapshot: the drag handlers
+        // mutate the project while iterating.
+        let rows: Vec<(usize, String, String, f64, f64, Vec<Keyframe>)> = self.projects
+            [self.current]
+            .layers
+            .iter()
+            .enumerate()
+            .rev()
+            .map(|(i, l)| {
+                let kfs = if self.selected.as_deref() == Some(l.id.as_str()) {
+                    kf_list(l, &self.kf_prop)
+                } else {
+                    Vec::new()
+                };
+                (i, l.id.clone(), l.name.clone(), l.start, l.end, kfs)
+            })
+            .collect();
         egui::ScrollArea::vertical().show(ui, |ui| {
             let mut clicked: Option<String> = None;
-            // Top layer first (project stores bottom = back).
-            for layer in self.current_project().layers.iter().rev() {
+            for (idx, id, name, start, end, kfs) in &rows {
                 let (rect, resp) = ui.allocate_exact_size(
                     egui::Vec2::new(ui.available_width(), 28.0),
-                    egui::Sense::click(),
+                    egui::Sense::click_and_drag(),
                 );
                 let painter = ui.painter_at(rect);
                 painter.rect_filled(rect, 2.0, hex_color(theme::A2));
-                let x0 = rect.min.x
-                    + (layer.start as f32 / duration as f32) * rect.width();
-                let x1 = rect.min.x
-                    + (layer.end as f32 / duration as f32) * rect.width();
-                let sel = self.selected.as_deref() == Some(layer.id.as_str());
+                let x0 = rect.min.x + (*start as f32 / duration as f32) * rect.width();
+                let x1 = rect.min.x + (*end as f32 / duration as f32) * rect.width();
+                let sel = self.selected.as_deref() == Some(id.as_str());
                 painter.rect_filled(
                     egui::Rect::from_min_max(
                         egui::Pos2::new(x0, rect.min.y + 4.0),
@@ -783,12 +933,131 @@ impl LyricApp {
                 painter.text(
                     egui::Pos2::new(rect.min.x + 6.0, rect.center().y),
                     egui::Align2::LEFT_CENTER,
-                    shp(&layer.name),
+                    shp(name),
                     egui::FontId::proportional(13.0),
                     hex_color(theme::G0),
                 );
+                // Playhead line.
+                let px = rect.min.x + (self.playhead as f32 / duration as f32) * rect.width();
+                painter.vline(px, rect.y_range(), (1.5, hex_color(theme::Y1)));
+                // Keyframe diamonds (selected layer only).
+                for kf in kfs {
+                    let dx =
+                        rect.min.x + ((*start + kf.t) as f32 / duration as f32) * rect.width();
+                    let cy = rect.center().y;
+                    let pts = vec![
+                        egui::Pos2::new(dx, cy - 5.0),
+                        egui::Pos2::new(dx + 5.0, cy),
+                        egui::Pos2::new(dx, cy + 5.0),
+                        egui::Pos2::new(dx - 5.0, cy),
+                    ];
+                    painter.add(egui::Shape::convex_polygon(
+                        pts,
+                        hex_color(theme::B1),
+                        egui::Stroke::NONE,
+                    ));
+                }
+                // --- Interaction.
                 if resp.clicked() {
-                    clicked = Some(layer.id.clone());
+                    clicked = Some(id.clone());
+                }
+                let pointer_x = ui.input(|i| i.pointer.latest_pos()).map(|p| p.x);
+                if resp.drag_started() {
+                    if let Some(x) = pointer_x {
+                        // A diamond first (selected layer, within 6px).
+                        let mut on_diamond: Option<usize> = None;
+                        for (ki, kf) in kfs.iter().enumerate() {
+                            let dx = rect.min.x
+                                + ((*start + kf.t) as f32 / duration as f32) * rect.width();
+                            if (x - dx).abs() <= 6.0 {
+                                on_diamond = Some(ki);
+                                break;
+                            }
+                        }
+                        if let Some(ki) = on_diamond {
+                            self.kf_drag = Some((id.clone(), ki));
+                        } else {
+                            let zone = if (x - x0).abs() <= 8.0 {
+                                TlZone::TrimStart
+                            } else if (x - x1).abs() <= 8.0 {
+                                TlZone::TrimEnd
+                            } else {
+                                TlZone::Move
+                            };
+                            self.tl_drag = Some(TimelineDrag {
+                                layer_id: id.clone(),
+                                zone,
+                                orig_start: *start,
+                                orig_end: *end,
+                                start_x: x,
+                            });
+                            self.selected = Some(id.clone());
+                        }
+                    }
+                }
+                if resp.dragged() {
+                    if let Some((did, ki)) = &self.kf_drag {
+                        if did == id {
+                            if let Some(x) = pointer_x {
+                                let t_local = (((x - rect.min.x) / rect.width()) as f64
+                                    * duration
+                                    - start)
+                                    .clamp(0.0, end - start);
+                                let kf_prop = self.kf_prop.clone();
+                                if let Some(layer) = self.projects[self.current]
+                                    .layers
+                                    .iter_mut()
+                                    .find(|l| l.id == *did)
+                                {
+                                    let list = kf_list_mut(layer, &kf_prop);
+                                    if let Some(kf) = list.get_mut(*ki) {
+                                        kf.t = t_local;
+                                    }
+                                    list.sort_by(|a, b| {
+                                        a.t.partial_cmp(&b.t)
+                                            .unwrap_or(std::cmp::Ordering::Equal)
+                                    });
+                                }
+                                self.render_version += 1;
+                            }
+                        }
+                    } else if let Some(d) = &self.tl_drag {
+                        if d.layer_id == *id {
+                            if let Some(x) = pointer_x {
+                                let dt = ((x - d.start_x) / rect.width()) as f64 * duration;
+                                let (ns, ne) = match d.zone {
+                                    TlZone::Move => {
+                                        let len = d.orig_end - d.orig_start;
+                                        let s = (d.orig_start + dt).clamp(0.0, duration - len);
+                                        (s, s + len)
+                                    }
+                                    TlZone::TrimStart => (
+                                        (d.orig_start + dt).clamp(0.0, d.orig_end - 0.1),
+                                        d.orig_end,
+                                    ),
+                                    TlZone::TrimEnd => (
+                                        d.orig_start,
+                                        (d.orig_end + dt)
+                                            .clamp(d.orig_start + 0.1, duration),
+                                    ),
+                                };
+                                if let Some(layer) =
+                                    self.projects[self.current].layers.get_mut(*idx)
+                                {
+                                    layer.start = ns;
+                                    layer.end = ne;
+                                }
+                                self.render_version += 1;
+                            }
+                        }
+                    }
+                }
+                if resp.drag_stopped() {
+                    if self.tl_drag.is_some() || self.kf_drag.is_some() {
+                        self.tl_drag = None;
+                        self.kf_drag = None;
+                        self.mark_changed();
+                    }
                 }
             }
             if let Some(id) = clicked {
@@ -865,6 +1134,122 @@ impl LyricApp {
                 changed = true;
             }
         });
+        // ---- Keyframes (selected property) ----
+        ui.separator();
+        ui.label(shp("کی‌فریم‌ها"));
+        let mut kf_options: Vec<(String, String)> = vec![
+            ("x".into(), "موقعیت X".into()),
+            ("y".into(), "موقعیت Y".into()),
+            ("scaleX".into(), "مقیاس X".into()),
+            ("scaleY".into(), "مقیاس Y".into()),
+            ("rotation".into(), "چرخش".into()),
+            ("opacity".into(), "شفافیت".into()),
+        ];
+        if proj.layers[idx].type_ == "camera" {
+            kf_options.push(("zoom".into(), "زوم دوربین".into()));
+        }
+        for (ei, fx) in proj.layers[idx].effects.iter().enumerate() {
+            if let Some(def) = fx_def(&fx.id) {
+                for p in def.params.iter().filter(|p| p.kind == ParamKind::Number) {
+                    kf_options.push((
+                        format!("fx:{ei}:{}", p.key),
+                        format!("{} · {}", def.name, p.label),
+                    ));
+                }
+            }
+        }
+        // Reset a stale property (e.g. its effect was removed).
+        if !kf_options.iter().any(|(id, _)| id == &self.kf_prop) {
+            self.kf_prop = "x".to_string();
+        }
+        let kf_prop = self.kf_prop.clone();
+        let kf_label = kf_options
+            .iter()
+            .find(|(id, _)| id == &kf_prop)
+            .map(|(_, l)| l.clone())
+            .unwrap_or_default();
+        egui::ComboBox::from_id_salt("kf_prop")
+            .selected_text(shp(&kf_label))
+            .show_ui(ui, |ui| {
+                for (id, label) in &kf_options {
+                    ui.selectable_value(&mut self.kf_prop, id.clone(), shp(label));
+                }
+            });
+        let t_local = (playhead - proj.layers[idx].start).max(0.0);
+        let cur_value = kf_current_value(&proj.layers[idx], &kf_prop, t_local);
+        if ui
+            .button(shp(&format!(
+                "＋ کی‌فریم در {:.1}ث (الان: {:.1})",
+                t_local, cur_value
+            )))
+            .clicked()
+        {
+            let list = kf_list_mut(&mut proj.layers[idx], &kf_prop);
+            if let Some(kf) = list.iter_mut().find(|k| (k.t - t_local).abs() < 0.05) {
+                kf.value = cur_value;
+            } else {
+                list.push(Keyframe {
+                    t: t_local,
+                    value: cur_value,
+                    ease: "linear".to_string(),
+                });
+                list.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
+            }
+            changed = true;
+        }
+        let layer_dur = (proj.layers[idx].end - proj.layers[idx].start).max(0.1);
+        let list = kf_list_mut(&mut proj.layers[idx], &kf_prop);
+        if list.is_empty() {
+            ui.label(shp("هنوز کی‌فریمی نیست — با دکمهٔ بالا در پلی‌هد اضافه کن."));
+        } else {
+            let dur = layer_dur;
+            let mut del: Option<usize> = None;
+            for (i, kf) in list.iter_mut().enumerate() {
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut kf.t)
+                                .range(0.0..=dur)
+                                .speed(0.05)
+                                .suffix(" ث"),
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                    if ui
+                        .add(egui::DragValue::new(&mut kf.value).speed(1.0))
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                    let mut ease_changed = false;
+                    egui::ComboBox::from_id_salt(format!("kf_ease_{i}"))
+                        .selected_text(shp(&kf.ease))
+                        .show_ui(ui, |ui| {
+                            for e in ["linear", "easeIn", "easeOut", "easeInOut"] {
+                                if ui
+                                    .selectable_value(&mut kf.ease, e.to_string(), shp(e))
+                                    .changed()
+                                {
+                                    ease_changed = true;
+                                }
+                            }
+                        });
+                    if ease_changed {
+                        changed = true;
+                    }
+                    if ui.button("✕").clicked() {
+                        del = Some(i);
+                    }
+                });
+            }
+            if let Some(i) = del {
+                list.remove(i);
+                changed = true;
+            }
+            list.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
+        }
         if let Some(sh) = &mut proj.layers[idx].shape {
             ui.horizontal(|ui| {
                 ui.label(shp("رنگ"));
