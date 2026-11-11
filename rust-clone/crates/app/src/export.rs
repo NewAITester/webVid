@@ -1,10 +1,13 @@
-//! MP4 export (video-only in this version; audio mixing comes later).
+//! MP4 export: video + mixed audio (AAC).
 //!
 //! Every frame is rendered by the software renderer at the project's
 //! size, converted RGBA -> NV12 in Rust, fed to the NDK H.264 encoder
-//! (byte-buffer mode), and muxed with `AMediaMuxer` through ndk-sys
-//! (the `ndk` crate has no muxer wrapper). Runs on a background thread;
-//! progress and the result are shared with the UI through Arcs.
+//! (byte-buffer mode). Audio layers are decoded to PCM16 (see
+//! `audio.rs`), resampled to 48 kHz stereo, mixed per frame (volume +
+//! fades), and fed to an AAC encoder. Both tracks are muxed with
+//! `AMediaMuxer` through ndk-sys (the `ndk` crate has no muxer
+//! wrapper). Runs on a background thread; progress and the result are
+//! shared with the UI through Arcs.
 //!
 //! On non-Android targets `start_export` returns a job that is already
 //! failed with an honest message (`MP4 export runs on the phone only`).
@@ -20,11 +23,19 @@ use std::sync::{
 #[cfg(target_os = "android")]
 use std::sync::atomic::Ordering;
 
+/// What a finished export produced. `audio_note` is set when the video
+/// exported but the audio did not (with the reason), so the UI can say
+/// so instead of silently dropping it.
+pub struct ExportOutcome {
+    pub path: PathBuf,
+    pub audio_note: Option<String>,
+}
+
 pub struct ExportJob {
     /// 0..1
     pub progress: Arc<Mutex<f32>>,
-    /// Set once, when the worker finishes (Ok = output path).
-    pub result: Arc<Mutex<Option<Result<PathBuf, String>>>>,
+    /// Set once, when the worker finishes.
+    pub result: Arc<Mutex<Option<Result<ExportOutcome, String>>>>,
     pub cancel: Arc<AtomicBool>,
 }
 
@@ -110,7 +121,7 @@ fn run_export(
     progress: &Arc<Mutex<f32>>,
     cancel: &Arc<AtomicBool>,
     android: Option<&android_activity::AndroidApp>,
-) -> Result<PathBuf, String> {
+) -> Result<ExportOutcome, String> {
     use crate::video::VideoDecoder;
     use lyricstudio_engine::render::Renderer;
     use ndk::media::media_codec::{
@@ -183,6 +194,86 @@ fn run_export(
         started: std::cell::Cell::new(false),
     };
     let mut track: Option<usize> = None;
+    let mut audio_track: Option<usize> = None;
+    // The muxer starts only once ALL expected tracks are added (an
+    // audio track may arrive after the video track, and a track cannot
+    // be added after the muxer started).
+    let tracks_added = std::cell::Cell::new(0usize);
+
+    // --- Audio (AAC) ---
+    // Decode every audio layer to PCM16, resample to 48 kHz stereo, mix
+    // per video frame. `audio_note` tells the UI when the audio did not
+    // make it into the file (with the reason).
+    let mut audio_note: Option<String> = None;
+    let mut audio_sources: Vec<crate::audio::MixSource> = Vec::new();
+    if let Some(app) = android {
+        for layer in &project.layers {
+            if layer.type_ != "audio" {
+                continue;
+            }
+            let (Some(src), Some(spec)) = (layer.src.as_deref(), layer.audio.as_ref()) else {
+                continue;
+            };
+            let len = (layer.end - layer.start).max(0.0);
+            if len <= 0.0 {
+                continue;
+            }
+            match crate::audio::decode_audio(app, src, len) {
+                Ok(pcm) => {
+                    let pcm = crate::audio::resample(&pcm, 48_000);
+                    let pcm = crate::audio::to_stereo(pcm);
+                    audio_sources.push(crate::audio::MixSource {
+                        pcm,
+                        start: layer.start,
+                        end: layer.end,
+                        volume: spec.volume,
+                        fade_in: spec.fade_in,
+                        fade_out: spec.fade_out,
+                    });
+                }
+                Err(e) => {
+                    audio_note = Some(format!("صدا وارد نشد ({e})"));
+                    eprintln!("export: audio decode failed for {src}: {e}");
+                }
+            }
+        }
+    } else if project.layers.iter().any(|l| l.type_ == "audio") {
+        audio_note = Some("صدا فقط روی گوشی به خروجی اضافه می‌شود".to_string());
+    }
+    let mut aac: Option<MediaCodec> = None;
+    let mut audio_dropped = false;
+    if !audio_sources.is_empty() {
+        let mut afmt = MediaFormat::new();
+        afmt.set_str("mime", "audio/mp4a-latm");
+        afmt.set_i32("sample-rate", 48_000);
+        afmt.set_i32("channel-count", 2);
+        afmt.set_i32("bitrate", 128_000);
+        afmt.set_i32("aac-profile", 2); // AAC LC
+        match MediaCodec::from_encoder_type("audio/mp4a-latm") {
+            Some(enc) => {
+                match enc.configure(&afmt, None, MediaCodecDirection::Encoder) {
+                    Ok(()) => match enc.start() {
+                        Ok(()) => {
+                            aac = Some(enc);
+                        }
+                        Err(e) => {
+                            audio_note = Some(format!("انکدر صدا شروع نشد ({e})"));
+                        }
+                    },
+                    Err(e) => {
+                        audio_note = Some(format!("انکدر صدا پیکربندی نشد ({e})"));
+                    }
+                }
+            }
+            None => {
+                audio_note = Some("انکدر AAC روی این گوشی نیست".to_string());
+            }
+        }
+    }
+    let expected_tracks = std::cell::Cell::new(if aac.is_some() { 2 } else { 1 });
+    // Stop the AAC codec before its Drop deletes it (same rule as video).
+    let _stop_aac = aac.as_ref().map(|c| StopCodec(c));
+    let frame_samples = (48_000.0 / fps) as usize; // 1600 @ 30fps
 
     // Drain output buffers; returns true when the EOS buffer was seen.
     let drain = |codec: &MediaCodec,
@@ -207,32 +298,40 @@ fn run_export(
                             return Err("AMediaMuxer_addTrack failed".to_string());
                         }
                         *track = Some(idx as usize);
-                        let st = unsafe { ndk_sys::AMediaMuxer_start(mux.ptr) };
-                        if st != ndk_sys::media_status_t(0) {
-                            codec.release_output_buffer(ob, false).ok();
-                            return Err(format!("AMediaMuxer_start: {st:?}"));
+                        tracks_added.set(tracks_added.get() + 1);
+                        if tracks_added.get() == expected_tracks.get() && !mux.started.get() {
+                            let st = unsafe { ndk_sys::AMediaMuxer_start(mux.ptr) };
+                            if st != ndk_sys::media_status_t(0) {
+                                codec.release_output_buffer(ob, false).ok();
+                                return Err(format!("AMediaMuxer_start: {st:?}"));
+                            }
+                            mux.started.set(true);
                         }
-                        mux.started.set(true);
                     }
-                    if let Some(t) = track {
-                        let data = ob.buffer();
-                        let ffi_info = ndk_sys::AMediaCodecBufferInfo {
-                            offset: info.offset(),
-                            size: info.size(),
-                            presentationTimeUs: info.presentation_time_us(),
-                            flags: info.flags(),
-                        };
-                        let st = unsafe {
-                            ndk_sys::AMediaMuxer_writeSampleData(
-                                mux.ptr,
-                                *t,
-                                data.as_ptr(),
-                                &ffi_info,
-                            )
-                        };
-                        if st != ndk_sys::media_status_t(0) {
-                            codec.release_output_buffer(ob, false).ok();
-                            return Err(format!("writeSampleData: {st:?}"));
+                    // Before the muxer starts, samples are dropped (the
+                    // only ones this can hit are the first AAC frames,
+                    // ~20ms of audio at the very start).
+                    if mux.started.get() {
+                        if let Some(t) = track {
+                            let data = ob.buffer();
+                            let ffi_info = ndk_sys::AMediaCodecBufferInfo {
+                                offset: info.offset(),
+                                size: info.size(),
+                                presentationTimeUs: info.presentation_time_us(),
+                                flags: info.flags(),
+                            };
+                            let st = unsafe {
+                                ndk_sys::AMediaMuxer_writeSampleData(
+                                    mux.ptr,
+                                    *t,
+                                    data.as_ptr(),
+                                    &ffi_info,
+                                )
+                            };
+                            if st != ndk_sys::media_status_t(0) {
+                                codec.release_output_buffer(ob, false).ok();
+                                return Err(format!("writeSampleData: {st:?}"));
+                            }
                         }
                     }
                     codec
@@ -252,11 +351,14 @@ fn run_export(
                             return Err("AMediaMuxer_addTrack failed".to_string());
                         }
                         *track = Some(idx as usize);
-                        let st = unsafe { ndk_sys::AMediaMuxer_start(mux.ptr) };
-                        if st != ndk_sys::media_status_t(0) {
-                            return Err(format!("AMediaMuxer_start: {st:?}"));
+                        tracks_added.set(tracks_added.get() + 1);
+                        if tracks_added.get() == expected_tracks.get() && !mux.started.get() {
+                            let st = unsafe { ndk_sys::AMediaMuxer_start(mux.ptr) };
+                            if st != ndk_sys::media_status_t(0) {
+                                return Err(format!("AMediaMuxer_start: {st:?}"));
+                            }
+                            mux.started.set(true);
                         }
-                        mux.started.set(true);
                     }
                 }
                 Ok(DequeuedOutputBufferInfoResult::TryAgainLater)
@@ -327,10 +429,42 @@ fn run_export(
             Ok(DequeuedInputBufferResult::TryAgainLater) => {}
             Err(e) => return Err(format!("dequeue_input: {e}")),
         }
+        // Audio for this frame: mix, feed the AAC encoder, drain it
+        // (before the video drain, so its track is added first).
+        if let Some(aac) = aac.as_ref() {
+            if !audio_dropped {
+                let pcm = crate::audio::mix_frame(&audio_sources, t, 48_000, frame_samples, 2);
+                let bytes: Vec<u8> = pcm
+                    .iter()
+                    .flat_map(|s| s.to_le_bytes())
+                    .collect();
+                let pts = (i as u64 * 1_000_000) / fps as u64;
+                if let Ok(DequeuedInputBufferResult::Buffer(mut ib)) =
+                    aac.dequeue_input_buffer(Duration::from_millis(10))
+                {
+                    let dst = ib.buffer_mut();
+                    if dst.len() >= bytes.len() {
+                        for (d, s) in dst.iter_mut().zip(bytes.iter()) {
+                            d.write(*s);
+                        }
+                        aac.queue_input_buffer(ib, 0, bytes.len(), pts, 0)
+                            .map_err(|e| format!("queue_audio: {e}"))?;
+                    }
+                }
+                drain(aac, &mux, &mut audio_track, Duration::from_millis(0))?;
+                // The AAC encoder never produced a format: drop the audio
+                // track instead of blocking the muxer forever.
+                if i >= 5 && audio_track.is_none() {
+                    audio_dropped = true;
+                    expected_tracks.set(1);
+                    audio_note = Some("انکدر AAC خروجی نداد؛ ویدیو بدون صدا ذخیره شد".to_string());
+                }
+            }
+        }
         drain(&codec, &mux, &mut track, Duration::from_millis(0))?;
         *progress.lock().unwrap() = (i + 1) as f32 / total as f32 * 0.95;
     }
-    // End of stream, then drain until the EOS buffer comes back.
+    // End of stream, then drain until the EOS buffers come back.
     match codec.dequeue_input_buffer(Duration::from_millis(100)) {
         Ok(DequeuedInputBufferResult::Buffer(ib)) => {
             let pts = (total as u64 * 1_000_000) / fps as u64;
@@ -340,15 +474,35 @@ fn run_export(
         }
         _ => {}
     }
+    if let Some(aac) = aac.as_ref() {
+        if !audio_dropped {
+            if let Ok(DequeuedInputBufferResult::Buffer(ib)) =
+                aac.dequeue_input_buffer(Duration::from_millis(100))
+            {
+                let pts = (total as u64 * 1_000_000) / fps as u64;
+                aac.queue_input_buffer(ib, 0, 0, pts, 4).ok();
+            }
+        }
+    }
+    let mut video_eos = false;
+    let mut audio_eos = aac.is_none() || audio_dropped;
     let mut guard = 0;
-    while guard < 10_000 {
+    while guard < 200 && !(video_eos && audio_eos) {
         guard += 1;
-        if drain(&codec, &mux, &mut track, Duration::from_millis(100))? {
-            break;
+        if !video_eos {
+            video_eos = drain(&codec, &mux, &mut track, Duration::from_millis(100))?;
+        }
+        if let Some(aac) = aac.as_ref() {
+            if !audio_eos {
+                audio_eos = drain(aac, &mux, &mut audio_track, Duration::from_millis(100))?;
+            }
         }
     }
     *progress.lock().unwrap() = 1.0;
-    Ok(out_path.to_path_buf())
+    Ok(ExportOutcome {
+        path: out_path.to_path_buf(),
+        audio_note,
+    })
 }
 
 // `BufferInfo` is Copy, so `*ob.info()` moves a copy out of the borrow.

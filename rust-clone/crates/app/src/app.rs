@@ -718,7 +718,7 @@ impl LyricApp {
             .show(ui.ctx(), |ui| {
                 let proj = self.current_project().clone();
                 ui.label(shp(&format!(
-                    "{}×{} · {}fps · ویدیو بدون صدا در این نسخه",
+                    "{}×{} · {}fps · ویدیو + صدا (AAC)",
                     proj.width, proj.height, proj.fps
                 )));
                 if self.export_job.is_none() {
@@ -731,8 +731,11 @@ impl LyricApp {
                     ui.add(egui::ProgressBar::new(p).show_percentage());
                     if let Some(r) = job.result.lock().unwrap().as_ref() {
                         match r {
-                            Ok(path) => {
-                                ui.label(shp(&format!("ذخیره شد: {}", path.display())));
+                            Ok(out) => {
+                                ui.label(shp(&format!("ذخیره شد: {}", out.path.display())));
+                                if let Some(note) = &out.audio_note {
+                                    ui.label(shp(note));
+                                }
                             }
                             Err(e) => {
                                 ui.label(shp(&format!("خطا: {e}")));

@@ -6,6 +6,7 @@
 // have one. Desktop testing is out of scope for this VM.)
 
 pub mod app;
+pub mod audio;
 pub mod export;
 pub mod jni_bridge;
 pub mod store;
