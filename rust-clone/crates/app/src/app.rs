@@ -6,13 +6,17 @@
 // RTL order) before drawing; the model keeps logical text. The text-edit
 // field keeps logical text while editing (shaping it would desync the
 // cursor). Projects persist to `projects.json` in the app's data dir.
+// The stage is the software renderer (`render::Renderer`) — shapes, shaped
+// text and draw strokes, with per-layer pixel effects — shown as a texture,
+// re-rendered when the playhead, the size or any edit changes it.
 //
 // Remaining gaps (tracked in rust-rebuild-plan.md):
 // - Media/audio pickers and MP4 export are not yet wired in this crate.
 
 use eframe::egui;
-use lyricstudio_engine::evaluate;
 use lyricstudio_engine::model::{demo_project, new_project, uid, Layer, Project, ShapeSpec};
+use lyricstudio_engine::registry::{default_effect, fx_def, parse_hex_rgb, ParamKind, FX_REGISTRY};
+use lyricstudio_engine::render::Renderer;
 use lyricstudio_engine::shape::shape_persian;
 
 use crate::{hex_color, store, theme, to_hex};
@@ -22,6 +26,17 @@ use std::path::PathBuf;
 /// unchanged. Only display strings go through this — never model text.
 fn shp(s: &str) -> String {
     shape_persian(s)
+}
+
+/// Hex `#RRGGBB` → egui color (alpha 255).
+fn hex_color32(s: &str) -> egui::Color32 {
+    let (r, g, b) = parse_hex_rgb(s);
+    egui::Color32::from_rgb(r as u8, g as u8, b as u8)
+}
+
+/// egui color → `#RRGGBB`.
+fn color32_hex(c: egui::Color32) -> String {
+    format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b())
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -43,6 +58,15 @@ pub struct LyricApp {
     add_open: bool,
     add_tab: usize,
     export_notice: bool,
+    /// Software renderer (stage preview + future export frames).
+    renderer: Renderer,
+    /// Bumped on every edit; part of the stage texture cache key.
+    render_version: u64,
+    stage_tex: Option<egui::TextureHandle>,
+    /// (project, frame, width, height, render_version)
+    stage_key: Option<(usize, i64, usize, usize, u64)>,
+    /// Effect browser window open?
+    fx_open: bool,
 }
 
 impl LyricApp {
@@ -64,7 +88,19 @@ impl LyricApp {
             add_open: false,
             add_tab: 0,
             export_notice: false,
+            renderer: Renderer::new(crate::FONT_REGULAR).expect("IRANSansX parses"),
+            render_version: 0,
+            stage_tex: None,
+            stage_key: None,
+            fx_open: false,
         }
+    }
+
+    /// Mark the model as edited: persists on the next frame and forces a
+    /// stage re-render.
+    fn mark_changed(&mut self) {
+        self.dirty = true;
+        self.render_version += 1;
     }
 
     fn current_project(&self) -> &Project {
@@ -135,6 +171,30 @@ impl LyricApp {
                 });
             });
         egui::CentralPanel::default().show(ui, |ui| {
+            if self.home_tab == 2 {
+                // Effect catalog (the 22 pixel effects the engine can
+                // apply). Applying happens in the editor's element panel —
+                // here is just the list, with an honest hint.
+                ui.heading(shp("افکت‌ها"));
+                ui.label(shp("برای افزودن افکت، در ادیتور یک لایه را انتخاب کن"));
+                ui.add_space(8.0);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for cat in ["color", "stylize"] {
+                        ui.label(shp(if cat == "color" {
+                            "رنگ"
+                        } else {
+                            "استایل"
+                        }));
+                        ui.horizontal_wrapped(|ui| {
+                            for def in FX_REGISTRY.iter().filter(|d| d.cat == cat) {
+                                ui.label(shp(def.name));
+                            }
+                        });
+                        ui.add_space(6.0);
+                    }
+                });
+                return;
+            }
             if self.home_tab != 0 {
                 ui.centered_and_justified(|ui| {
                     ui.label(shp("این بخش در نسخهٔ بعد می‌آید"));
@@ -167,7 +227,7 @@ impl LyricApp {
             ui.add_space(8.0);
             if ui.button(shp("＋ پروژهٔ جدید (۹:۱۶)")).clicked() {
                 self.projects.push(new_project("پروژهٔ جدید"));
-                self.dirty = true;
+                self.mark_changed();
             }
             if let Some(i) = open {
                 self.current = i;
@@ -243,8 +303,11 @@ impl LyricApp {
 
         egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                let (proj, t) = (self.current_project(), self.playhead);
-                self.draw_stage(ui, proj, t);
+                // Cloned so the stage can take &mut self (texture cache)
+                // while it renders; projects are small (a few KB).
+                let proj = self.current_project().clone();
+                let t = self.playhead;
+                self.draw_stage(ui, &proj, t);
             });
         });
 
@@ -336,6 +399,9 @@ impl LyricApp {
         };
         let playhead = self.playhead;
         let mut changed = false;
+        let mut open_fx = false;
+        let mut close_fx = false;
+        let mut fx_open = self.fx_open;
         ui.label(format!(
             "{} · {}",
             shp(&proj.layers[idx].name),
@@ -412,8 +478,103 @@ impl LyricApp {
         {
             changed = true;
         }
+        // ---- Effects (software-rendered, visible on the stage) ----
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(shp("افکت‌ها"));
+            if ui.button(shp("＋ افزودن افکت")).clicked() {
+                open_fx = true;
+            }
+        });
+        let mut remove: Option<usize> = None;
+        for (i, fx) in proj.layers[idx].effects.iter_mut().enumerate() {
+            let def = fx_def(&fx.id);
+            let name = def
+                .map(|d| shp(d.name))
+                .unwrap_or_else(|| fx.id.clone());
+            ui.horizontal(|ui| {
+                if ui.checkbox(&mut fx.enabled, name).changed() {
+                    changed = true;
+                }
+                if ui.button("✕").clicked() {
+                    remove = Some(i);
+                }
+            });
+            if let Some(def) = def {
+                for p in def.params {
+                    match p.kind {
+                        ParamKind::Number => {
+                            let v = fx
+                                .params
+                                .entry(p.key.to_string())
+                                .or_insert(p.default_num);
+                            if ui
+                                .add(
+                                    egui::Slider::new(v, p.min..=p.max).text(shp(p.label)),
+                                )
+                                .changed()
+                            {
+                                changed = true;
+                            }
+                        }
+                        ParamKind::Color => {
+                            let cur = fx
+                                .text_params
+                                .entry(p.key.to_string())
+                                .or_insert_with(|| p.default_str.to_string())
+                                .clone();
+                            let mut c = hex_color32(&cur);
+                            ui.horizontal(|ui| {
+                                ui.label(shp(p.label));
+                                if ui.color_edit_button_srgba(&mut c).changed() {
+                                    fx.text_params
+                                        .insert(p.key.to_string(), color32_hex(c));
+                                    changed = true;
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(i) = remove {
+            proj.layers[idx].effects.remove(i);
+            changed = true;
+        }
+        // Effect browser: adds a defaulted effect to the same layer.
+        if fx_open {
+            let mut add: Option<String> = None;
+            egui::Window::new(shp("افزودن افکت"))
+                .open(&mut fx_open)
+                .show(ui.ctx(), |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for cat in ["color", "stylize"] {
+                            ui.label(shp(if cat == "color" { "رنگ" } else { "استایل" }));
+                            ui.horizontal_wrapped(|ui| {
+                                for def in FX_REGISTRY.iter().filter(|d| d.cat == cat) {
+                                    if ui.button(shp(def.name)).clicked() {
+                                        add = Some(def.id.to_string());
+                                    }
+                                }
+                            });
+                        }
+                    });
+                });
+            if let Some(id) = add {
+                if let Some(fx) = default_effect(&id) {
+                    proj.layers[idx].effects.push(fx);
+                    changed = true;
+                }
+                close_fx = true;
+            }
+        }
         if changed {
-            self.dirty = true;
+            self.mark_changed();
+        }
+        if open_fx {
+            self.fx_open = true;
+        } else {
+            self.fx_open = fx_open && !close_fx;
         }
     }
 
@@ -481,7 +642,7 @@ impl LyricApp {
             ..Default::default()
         });
         proj.layers.push(l);
-        self.dirty = true;
+        self.mark_changed();
     }
 
     fn insert_camera(&mut self) {
@@ -489,20 +650,20 @@ impl LyricApp {
         let mut l = Layer::new("camera", "دوربین", 0.0, proj.duration);
         l.camera = Some(Default::default());
         proj.layers.push(l);
-        self.dirty = true;
+        self.mark_changed();
     }
 
     fn insert_null(&mut self) {
         let proj = &mut self.projects[self.current];
         proj.layers.push(Layer::new("null", "Null", 0.0, proj.duration));
-        self.dirty = true;
+        self.mark_changed();
     }
 
     fn insert_group(&mut self) {
         let proj = &mut self.projects[self.current];
         proj.layers
             .push(Layer::new("group", "گروه خالی", 0.0, proj.duration));
-        self.dirty = true;
+        self.mark_changed();
     }
 
     fn insert_demo_group(&mut self) {
@@ -510,138 +671,51 @@ impl LyricApp {
         let mut g = Layer::new("group", "قالب نمایشی", 0.0, proj.duration);
         g.children = demo_project().layers;
         proj.layers.push(g);
-        self.dirty = true;
+        self.mark_changed();
     }
 
     // ------------------------------------------------------------ stage ---
 
-    fn draw_stage(&self, ui: &mut egui::Ui, proj: &Project, t: f64) {
+    /// The stage is the software-rendered frame as a texture, re-rendered
+    /// only when the playhead (frame), size or an edit changes it.
+    /// Render width is capped at 480px to bound the per-pixel cost; the
+    /// widget shows the texture scaled to fit.
+    fn draw_stage(&mut self, ui: &mut egui::Ui, proj: &Project, t: f64) {
         let avail = ui.available_size();
         let s = (avail.x / proj.width as f32).min(avail.y / proj.height as f32);
         let w = proj.width as f32 * s;
         let h = proj.height as f32 * s;
         let (rect, _) = ui.allocate_exact_size(egui::Vec2::new(w, h), egui::Sense::hover());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, hex_color(&proj.bg));
-        for layer in evaluate::visible_layers(proj, t) {
-            self.draw_layer(&painter, rect, layer, t, s);
+        let rw = (w as usize).min(480).max(2);
+        let rh = ((rw as f32 * proj.height as f32 / proj.width as f32) as usize).max(2);
+        let frame = (t * proj.fps as f64).round() as i64;
+        let key = (self.current, frame, rw, rh, self.render_version);
+        if self.stage_key != Some(key) {
+            let buf = self.renderer.render(proj, t, rw, rh);
+            let img = egui::ColorImage::from_rgba_unmultiplied([rw, rh], &buf);
+            self.stage_tex = Some(ui.ctx().load_texture(
+                "stage",
+                img,
+                egui::TextureOptions::LINEAR,
+            ));
+            self.stage_key = Some(key);
         }
-    }
-
-    fn draw_layer(
-        &self,
-        painter: &egui::Painter,
-        stage: egui::Rect,
-        layer: &Layer,
-        t: f64,
-        s: f32,
-    ) {
-        let tr = evaluate::layer_transform(layer, t);
-        let op = evaluate::layer_opacity(layer, t) as f32;
-        let cx = stage.min.x + tr.x as f32 * s;
-        let cy = stage.min.y + tr.y as f32 * s;
-        let center = egui::Pos2::new(cx, cy);
-        match layer.type_.as_str() {
-            "shape" => {
-                if let Some(sh) = &layer.shape {
-                    let fill =
-                        hex_color(sh.fill.as_deref().unwrap_or(theme::B1)).gamma_multiply(op);
-                    match sh.kind.as_str() {
-                        "ring" => {
-                            let r = sh.w as f32 / 2.0 * s * tr.scale_x as f32;
-                            let w = (sh.h as f32 * 0.08 * s).max(2.0);
-                            painter.circle_stroke(center, r, egui::Stroke::new(w, fill));
-                        }
-                        "circle" => {
-                            let r = sh.w as f32 / 2.0 * s * tr.scale_x as f32;
-                            painter.circle_filled(center, r, fill);
-                        }
-                        _ => {
-                            // Rect (and other kinds fall back to rect),
-                            // drawn as a rotated polygon — rotation is in
-                            // degrees, like the Kotlin renderer's
-                            // rotate(degrees = ...). Stroke follows the
-                            // same outline when set.
-                            let hw = sh.w as f32 / 2.0 * s * tr.scale_x as f32;
-                            let hh = sh.h as f32 / 2.0 * s * tr.scale_y as f32;
-                            let rot = (tr.rotation as f32).to_radians();
-                            let (sn, cs) = rot.sin_cos();
-                            let corner = |dx: f32, dy: f32| {
-                                egui::Pos2::new(
-                                    center.x + dx * cs - dy * sn,
-                                    center.y + dx * sn + dy * cs,
-                                )
-                            };
-                            let pts = vec![
-                                corner(-hw, -hh),
-                                corner(hw, -hh),
-                                corner(hw, hh),
-                                corner(-hw, hh),
-                            ];
-                            painter.add(egui::Shape::convex_polygon(
-                                pts.clone(),
-                                fill,
-                                egui::Stroke::NONE,
-                            ));
-                            if let (Some(stroke), w) = (&sh.stroke, sh.stroke_width) {
-                                if w > 0.0 {
-                                    painter.add(egui::Shape::closed_line(
-                                        pts,
-                                        egui::Stroke::new(
-                                            (w as f32) * s,
-                                            hex_color(stroke).gamma_multiply(op),
-                                        ),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            "text" => {
-                if let Some(tx) = &layer.text {
-                    // Logical text in the model; shaped for display.
-                    painter.text(
-                        center,
-                        egui::Align2::CENTER_CENTER,
-                        shp(&tx.content),
-                        egui::FontId::new(
-                            (tx.size as f32 * s).max(8.0),
-                            egui::FontFamily::Proportional,
-                        ),
-                        hex_color(&tx.color).gamma_multiply(op),
-                    );
-                }
-            }
-            "draw" => {
-                // Strokes rotate with the layer (degrees, like rects).
-                let rot = (tr.rotation as f32).to_radians();
-                let (sn, cs) = rot.sin_cos();
-                for stroke in &layer.strokes {
-                    let pts: Vec<egui::Pos2> = stroke
-                        .points
-                        .iter()
-                        .map(|p| {
-                            let rx = p.x as f32 * cs - p.y as f32 * sn;
-                            let ry = p.x as f32 * sn + p.y as f32 * cs;
-                            egui::Pos2::new(
-                                stage.min.x + (tr.x as f32 + rx) * s,
-                                stage.min.y + (tr.y as f32 + ry) * s,
-                            )
-                        })
-                        .collect();
-                    if pts.len() >= 2 {
-                        painter.add(egui::Shape::line(
-                            pts,
-                            egui::Stroke::new(
-                                stroke.width as f32 * s,
-                                hex_color(&stroke.color).gamma_multiply(op),
-                            ),
-                        ));
-                    }
-                }
-            }
-            _ => {}
+        if let Some(tex) = &self.stage_tex {
+            ui.painter_at(rect).image(
+                tex.id(),
+                rect,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+        if proj.layers.is_empty() {
+            ui.painter_at(rect).text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                shp("پروژه خالی است — با ＋ لایه اضافه کن"),
+                egui::FontId::proportional(14.0),
+                hex_color(theme::G0),
+            );
         }
     }
 }

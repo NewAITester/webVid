@@ -9,6 +9,8 @@ pub mod easing;
 pub mod evaluate;
 pub mod fx;
 pub mod model;
+pub mod registry;
+pub mod render;
 pub mod shape;
 
 pub use model::*;

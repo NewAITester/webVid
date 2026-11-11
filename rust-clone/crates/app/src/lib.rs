@@ -11,7 +11,7 @@ pub mod store;
 use eframe::egui;
 
 /// IRANSansX weights, shared with the Kotlin app (same files).
-const FONT_REGULAR: &[u8] = include_bytes!(
+pub(crate) const FONT_REGULAR: &[u8] = include_bytes!(
     "../../../../android-native/app/src/main/res/font/iransansx_regular.ttf"
 );
 const FONT_MEDIUM: &[u8] = include_bytes!(
