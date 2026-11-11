@@ -198,6 +198,8 @@ fun EditorScreen(
     var showProjectSettings by remember { mutableStateOf(false) }
     var previewFullscreen by remember { mutableStateOf(false) }
     var meterLevel by remember { mutableFloatStateOf(0f) }
+    // K2: حالت پایهٔ کشیدنِ در جریان (برای ثبت یک ورودی تاریخچه در پایان کشیدن).
+    var pendingBase by remember { mutableStateOf<Project?>(null) }
 
     fun update(p: Project) {
         if (p == project) return
@@ -224,8 +226,6 @@ fun EditorScreen(
 
     /** تغییر زنده بدون ثبت تاریخچه (کشیدن اسلایدر/نوار) — حالت پایه در
      *  اولین تغییر ذخیره می‌شود و در پایان کشیدن یک ورودی ثبت می‌کند. */
-    var pendingBase by remember { mutableStateOf<Project?>(null) }
-
     fun preview(p: Project) {
         if (p == project) return
         if (pendingBase == null) pendingBase = project
@@ -1157,7 +1157,6 @@ fun EditorScreen(
     }
 }
 
-@Composable
 /** وضعیت کشیدن نوار لایه (جابه‌جایی/برش ابتدا/برش انتها). */
 private data class BarDrag(
     val layerId: String,
@@ -1226,16 +1225,16 @@ private fun Timeline(
                         .horizontalScroll(scroll)
                         .pointerInput(dpPerSecPx, project.duration) {
                             detectTapGestures(onTap = { off ->
-                                onTimeChange((off.x / dpPerSecPx).coerceIn(0.0, project.duration))
+                                onTimeChange((off.x / dpPerSecPx).toDouble().coerceIn(0.0, project.duration))
                             })
                         }
                         .pointerInput(dpPerSecPx, project.duration) {
                             detectDragGestures(
                                 onDragStart = { off ->
-                                    onTimeChange((off.x / dpPerSecPx).coerceIn(0.0, project.duration))
+                                    onTimeChange((off.x / dpPerSecPx).toDouble().coerceIn(0.0, project.duration))
                                 },
                                 onDrag = { change, _ ->
-                                    onTimeChange((change.position.x / dpPerSecPx).coerceIn(0.0, project.duration))
+                                    onTimeChange((change.position.x / dpPerSecPx).toDouble().coerceIn(0.0, project.duration))
                                 },
                             )
                         },
@@ -1331,14 +1330,14 @@ private fun Timeline(
                                             onSelect(layer.id)
                                             val zone = when {
                                                 off.x < 16.dp.toPx() -> "trimStart"
-                                                off.x > size.width - 16.dp.toPx() -> "trimEnd"
+                                                off.x > size.width.toFloat() - 16.dp.toPx() -> "trimEnd"
                                                 else -> "move"
                                             }
                                             barDrag = BarDrag(layer.id, zone, layer.start, layer.end, 0.0)
                                         },
                                         onDrag = { _, dragAmount ->
                                             val d = barDrag ?: return@detectDragGestures
-                                            barDrag = d.copy(dxSec = d.dxSec + dragAmount.x / dpPerSecPx)
+                                            barDrag = d.copy(dxSec = d.dxSec + (dragAmount.x / dpPerSecPx).toDouble())
                                         },
                                         onDragEnd = {
                                             val d = barDrag ?: return@detectDragGestures
@@ -1373,7 +1372,7 @@ private fun Timeline(
                                                             kfDx = 0.0
                                                         },
                                                         onDrag = { _, dragAmount ->
-                                                            kfDx += dragAmount.x / dpPerSecPx
+                                                            kfDx += (dragAmount.x / dpPerSecPx).toDouble()
                                                         },
                                                         onDragEnd = {
                                                             val nt = snap(
@@ -1527,7 +1526,7 @@ private fun Inspector(
                     if (spec != null) onChange(layer.copy(shape = spec.copy(stroke = c)))
                 }
                 if (spec != null) {
-                    SliderRow("ضخامت حاشیه", spec.strokeWidth, 0.0..20.0, false, {}, onFinish = { fin() } {
+                    SliderRow("ضخامت حاشیه", spec.strokeWidth, 0.0..20.0, false, {}, onFinish = { fin() }) {
                         sc(layer.copy(shape = spec.copy(strokeWidth = it)))
                     }
                 }
@@ -1558,7 +1557,7 @@ private fun Inspector(
                     if (spec != null) onChange(layer.copy(text = spec.copy(color = c)))
                 }
                 if (spec != null) {
-                    SliderRow("اندازه", spec.size, 12.0..200.0, false, {}, onFinish = { fin() } {
+                    SliderRow("اندازه", spec.size, 12.0..200.0, false, {}, onFinish = { fin() }) {
                         sc(layer.copy(text = spec.copy(size = it)))
                     }
                 }
@@ -1571,13 +1570,13 @@ private fun Inspector(
             "audio" -> {
                 val spec = layer.audio
                 if (spec != null) {
-                    SliderRow("صدا", spec.volume, 0.0..1.0, false, {}, onFinish = { fin() } {
+                    SliderRow("صدا", spec.volume, 0.0..1.0, false, {}, onFinish = { fin() }) {
                         sc(layer.copy(audio = spec.copy(volume = it)))
                     }
-                    SliderRow("محو شروع", spec.fadeIn, 0.0..3.0, false, {}, onFinish = { fin() } {
+                    SliderRow("محو شروع", spec.fadeIn, 0.0..3.0, false, {}, onFinish = { fin() }) {
                         sc(layer.copy(audio = spec.copy(fadeIn = it)))
                     }
-                    SliderRow("محو پایان", spec.fadeOut, 0.0..3.0, false, {}, onFinish = { fin() } {
+                    SliderRow("محو پایان", spec.fadeOut, 0.0..3.0, false, {}, onFinish = { fin() }) {
                         sc(layer.copy(audio = spec.copy(fadeOut = it)))
                     }
                 }
@@ -1585,25 +1584,25 @@ private fun Inspector(
             "camera" -> {
                 val spec = layer.camera
                 if (spec != null) {
-                    SliderRow("بزرگنمایی", spec.zoom, 0.5..4.0, false, {}, onFinish = { fin() } {
+                    SliderRow("بزرگنمایی", spec.zoom, 0.5..4.0, false, {}, onFinish = { fin() }) {
                         sc(layer.copy(camera = spec.copy(zoom = it)))
                     }
                 }
             }
         }
-        SliderRow("شفافیت", t.opacity, 0.0..1.0, hasKeyframe("opacity"), { toggleKeyframe("opacity", t.opacity) }, onFinish = { fin() } {
+        SliderRow("شفافیت", t.opacity, 0.0..1.0, hasKeyframe("opacity"), { toggleKeyframe("opacity", t.opacity) }, onFinish = { fin() }) {
             sc(layer.copy(transform = t.copy(opacity = it)))
         }
-        SliderRow("مقیاس", t.scaleX, 0.1..3.0, hasKeyframe("scaleX"), { toggleKeyframe("scaleX", t.scaleX) }, onFinish = { fin() } {
+        SliderRow("مقیاس", t.scaleX, 0.1..3.0, hasKeyframe("scaleX"), { toggleKeyframe("scaleX", t.scaleX) }, onFinish = { fin() }) {
             sc(layer.copy(transform = t.copy(scaleX = it, scaleY = it)))
         }
-        SliderRow("چرخش", t.rotation, -180.0..180.0, hasKeyframe("rotation"), { toggleKeyframe("rotation", t.rotation) }, onFinish = { fin() } {
+        SliderRow("چرخش", t.rotation, -180.0..180.0, hasKeyframe("rotation"), { toggleKeyframe("rotation", t.rotation) }, onFinish = { fin() }) {
             sc(layer.copy(transform = t.copy(rotation = it)))
         }
-        SliderRow("موقعیت X", t.x, 0.0..720.0, hasKeyframe("x"), { toggleKeyframe("x", t.x) }, onFinish = { fin() } {
+        SliderRow("موقعیت X", t.x, 0.0..720.0, hasKeyframe("x"), { toggleKeyframe("x", t.x) }, onFinish = { fin() }) {
             sc(layer.copy(transform = t.copy(x = it)))
         }
-        SliderRow("موقعیت Y", t.y, 0.0..1280.0, hasKeyframe("y"), { toggleKeyframe("y", t.y) }, onFinish = { fin() } {
+        SliderRow("موقعیت Y", t.y, 0.0..1280.0, hasKeyframe("y"), { toggleKeyframe("y", t.y) }, onFinish = { fin() }) {
             sc(layer.copy(transform = t.copy(y = it)))
         }
         // ماسک (clip)
@@ -1714,7 +1713,7 @@ private fun EffectSection(
                         // پارامتر عددی با کی‌فریم (همان effectParamsAt وب)
                         val kfList = fx.keyframes[key].orEmpty()
                         val shown = if (kfList.isNotEmpty()) valueAt(kfList, time, cur) else cur
-                        SliderRow(pd.label, shown, pd.min..pd.max, false, {}, onFinish = { fin() } { v ->
+                        SliderRow(pd.label, shown, pd.min..pd.max, false, {}, onFinish = { fin() }) { v ->
                             val next = layer.effects.toMutableList()
                             next[idx] = fx.copy(params = fx.params + (key to v))
                             sc(layer.copy(effects = next))
