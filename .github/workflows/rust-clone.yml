@@ -50,7 +50,7 @@ jobs:
       # cargo-apk must run from the app crate's directory: from the
       # workspace root it is handed the virtual manifest and fails with
       # "virtual manifests must be configured with '[workspace]'"
-      # (run #2). The APK still lands in rust-clone/target/android-artifacts.
+      # (run #2). The APK lands in rust-clone/target/<profile>/apk/.
       - name: Build APK
         working-directory: rust-clone/crates/app
         run: cargo apk build --release
@@ -58,8 +58,8 @@ jobs:
       - name: Collect APK
         working-directory: rust-clone
         run: |
-          find target/android-artifacts -name '*.apk' -print
-          cp "$(find target/android-artifacts -name '*.apk' | head -n 1)" lyricstudio-rust.apk
+          ls -la target/release/apk/
+          cp target/release/apk/lyricstudio_app.apk lyricstudio-rust.apk
           ls -la lyricstudio-rust.apk
 
       - uses: actions/upload-artifact@v4
