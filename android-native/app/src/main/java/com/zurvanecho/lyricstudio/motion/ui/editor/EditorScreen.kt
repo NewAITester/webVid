@@ -432,7 +432,8 @@ fun EditorScreen(
                                 .aspectRatio(project.width.toFloat() / project.height.toFloat())
                                 .onSizeChanged { drawWidthPx = it.width.toFloat() }
                                 .pointerInput(drawMode, drawWidthPx) {
-                                    val scale = if (drawWidthPx > 0f) drawWidthPx / project.width else 1f
+                                    // مقیاس Double است چون StrokePoint مختصات Double می‌خواهد
+                                    val scale = if (drawWidthPx > 0f) (drawWidthPx / project.width).toDouble() else 1.0
                                     if (drawMode == "vector") {
                                         // وکتور: هر ضربه یک نقطهٔ چندضلعی می‌گذارد
                                         detectTapGestures(onTap = { off ->
