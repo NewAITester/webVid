@@ -35,6 +35,59 @@ class AudioPlayer(private val context: Context) {
     private val players = mutableMapOf<String, Rec>()
     var muted: Boolean = false
 
+    /** سطح لحظه‌ای صدا (۰–۱) از Visualizer روی اولین پخش‌کنندهٔ فعال. */
+    @Volatile
+    private var level: Float = 0f
+    private var visualizer: android.media.audiofx.Visualizer? = null
+    private var vizSession: Int = -1
+
+    /** سطح فعلی (خواندن از رشتهٔ UI؛ مقدار بین دو خواندن محو می‌شود). */
+    fun currentLevel(): Float = level
+
+    /** اتصال Visualizer به جلسهٔ صوتی یک پخش‌کننده؛ در صورت خطا بی‌صدا رد می‌شود. */
+    private fun attachVisualizer(sessionId: Int) {
+        if (sessionId == vizSession || sessionId <= 0) return
+        try {
+            visualizer?.release()
+            val viz = android.media.audiofx.Visualizer(sessionId)
+            val rates = android.media.audiofx.Visualizer.getCaptureSizeRange()
+            viz.captureSize = rates[0]
+            viz.setDataCaptureListener(
+                object : android.media.audiofx.Visualizer.OnDataCaptureListener {
+                    override fun onWaveFormDataCapture(
+                        v: android.media.audiofx.Visualizer?,
+                        bytes: ByteArray?,
+                        rate: Int,
+                    ) {
+                        if (bytes == null) return
+                        var peak = 0
+                        for (b in bytes) {
+                            val a = kotlin.math.abs(b.toInt() - 128)
+                            if (a > peak) peak = a
+                        }
+                        level = (peak / 128f).coerceIn(0f, 1f)
+                    }
+
+                    override fun onFftDataCapture(
+                        v: android.media.audiofx.Visualizer?,
+                        bytes: ByteArray?,
+                        rate: Int,
+                    ) {
+                    }
+                },
+                android.media.audiofx.Visualizer.getMaxCaptureRate() / 2,
+                true,
+                false,
+            )
+            viz.enabled = true
+            visualizer = viz
+            vizSession = sessionId
+        } catch (_: Exception) {
+            visualizer = null
+            vizSession = -1
+        }
+    }
+
     /** همگام‌سازی با پروژه: ساخت/حذف پخش‌کننده‌ها، پخش یا توقف، تنظیم زمان. */
     fun sync(project: Project, t: Double, playing: Boolean) {
         val layers = project.layers.filter { it.type == "audio" && it.src != null }
@@ -77,6 +130,7 @@ class AudioPlayer(private val context: Context) {
             if (!mp.isPlaying) {
                 try { mp.start() } catch (_: Exception) { }
             }
+            attachVisualizer(mp.audioSessionId)
         }
         // حذف پخش‌کننده‌های لایه‌های حذف‌شده
         val it = players.iterator()
@@ -87,6 +141,7 @@ class AudioPlayer(private val context: Context) {
                 it.remove()
             }
         }
+        if (players.isEmpty()) level = 0f
     }
 
     /** توقف همه و آزاد کردن منابع (هنگام خروج از ادیتور). */
@@ -95,5 +150,9 @@ class AudioPlayer(private val context: Context) {
             try { rec.player.release() } catch (_: Exception) { }
         }
         players.clear()
+        try { visualizer?.release() } catch (_: Exception) { }
+        visualizer = null
+        vizSession = -1
+        level = 0f
     }
 }

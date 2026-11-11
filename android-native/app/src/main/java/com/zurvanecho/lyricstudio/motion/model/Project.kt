@@ -16,6 +16,8 @@ data class Project(
     val duration: Double = 10.0,
     val bg: String = "#0C0D13",
     val layers: List<Layer> = emptyList(),
+    /** نشان‌های زمانی (بوک‌مارک) روی خط‌کش تایم‌لاین — ثانیهٔ پروژه. */
+    val bookmarks: List<Double> = emptyList(),
 )
 
 @Serializable
