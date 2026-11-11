@@ -42,6 +42,10 @@ class MainActivity : ComponentActivity() {
                             store.delete(p.id)
                             projects = store.projects
                         },
+                        onDeleteAll = {
+                            store.deleteAll()
+                            projects = store.projects
+                        },
                     )
                 } else {
                     val current = open!!

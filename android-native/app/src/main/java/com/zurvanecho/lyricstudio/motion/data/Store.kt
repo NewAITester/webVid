@@ -56,4 +56,10 @@ class Store(context: Context) {
         File(dir, "$id.json").delete()
         projects = load()
     }
+
+    /** حذف همهٔ پروژه‌ها (از منوی کناری خانه). */
+    fun deleteAll() {
+        dir.listFiles()?.filter { it.name.endsWith(".json") }?.forEach { it.delete() }
+        projects = load()
+    }
 }
