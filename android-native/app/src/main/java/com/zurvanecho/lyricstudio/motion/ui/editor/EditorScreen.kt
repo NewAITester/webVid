@@ -160,7 +160,7 @@ import kotlin.math.roundToInt
 
 /** تبدیل مختصات محلی نقطه (نسبت به مرکز لایه) به مختصات پروژه. */
 private fun pointToProject(tr: Transform, p: StrokePoint): Offset {
-    val rot = kotlin.math.toRadians(tr.rotation)
+    val rot = (tr.rotation * kotlin.math.PI / 180.0)
     val c = kotlin.math.cos(rot)
     val s = kotlin.math.sin(rot)
     val sx = p.x * tr.scaleX
@@ -172,7 +172,7 @@ private fun pointToProject(tr: Transform, p: StrokePoint): Offset {
 private fun projectToPoint(tr: Transform, p: Offset): StrokePoint {
     val px = p.x.toDouble() - tr.x
     val py = p.y.toDouble() - tr.y
-    val rot = kotlin.math.toRadians(tr.rotation)
+    val rot = (tr.rotation * kotlin.math.PI / 180.0)
     val c = kotlin.math.cos(rot)
     val s = kotlin.math.sin(rot)
     return StrokePoint(
