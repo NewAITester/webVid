@@ -9,9 +9,11 @@ description = "LyricStudio — full-Rust Alight Motion clone (egui UI + lyricstu
 name = "lyricstudio_app"
 crate-type = ["cdylib", "rlib"]
 
-[[bin]]
-name = "lyricstudio-app"
-path = "src/main.rs"
+# NOTE: no [[bin]] / src/main.rs on purpose. cargo-apk (via
+# cargo-subcommand's Artifact::file_name) panics with
+# "Bin is not compatible with Cdylib" when the crate has a bin target,
+# after the APK is already built and signed (exit 101). Desktop runs
+# are not possible in this VM anyway; use `cargo apk run` on a device.
 
 [dependencies]
 lyricstudio-engine = { path = "../engine" }

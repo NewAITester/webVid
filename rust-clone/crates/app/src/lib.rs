@@ -1,8 +1,9 @@
 // LyricStudio app entry — egui shell over lyricstudio-engine.
 //
-// Desktop: `cargo run -p lyricstudio-app`.
 // Android: cargo-apk builds this crate as a cdylib; winit (via eframe)
 // provides the NativeActivity entry point on Android targets.
+// (There is deliberately no bin target: cargo-apk panics on crates that
+// have one. Desktop testing is out of scope for this VM.)
 
 pub mod app;
 
