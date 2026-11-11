@@ -16,10 +16,13 @@
 use eframe::egui;
 use lyricstudio_engine::model::{demo_project, new_project, uid, Layer, Project, ShapeSpec};
 use lyricstudio_engine::registry::{default_effect, fx_def, parse_hex_rgb, ParamKind, FX_REGISTRY};
-use lyricstudio_engine::render::Renderer;
+use lyricstudio_engine::render::{ImageData, Renderer};
+#[cfg(target_os = "android")]
+use lyricstudio_engine::render::decode_image_capped;
 use lyricstudio_engine::shape::shape_persian;
 
-use crate::{hex_color, store, theme, to_hex};
+use crate::{export, hex_color, jni_bridge, store, theme, to_hex, AndroidHandle};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Shape a Persian string for display. Pure Latin/number strings come back
@@ -57,7 +60,6 @@ pub struct LyricApp {
     selected: Option<String>,
     add_open: bool,
     add_tab: usize,
-    export_notice: bool,
     /// Software renderer (stage preview + future export frames).
     renderer: Renderer,
     /// Bumped on every edit; part of the stage texture cache key.
@@ -67,10 +69,31 @@ pub struct LyricApp {
     stage_key: Option<(usize, i64, usize, usize, u64)>,
     /// Effect browser window open?
     fx_open: bool,
+    /// Android activity handle (None on desktop / host builds).
+    /// Read only by the Android-only JNI bridge.
+    #[allow(dead_code)]
+    android: Option<AndroidHandle>,
+    /// Decoded images, keyed by layer `src` URI (shared by stage + export).
+    images: HashMap<String, ImageData>,
+    /// Media browser window (MediaStore listing).
+    media_open: bool,
+    media_kind: jni_bridge::MediaKind,
+    media_items: Vec<jni_bridge::MediaItem>,
+    media_error: Option<String>,
+    /// Audio preview player (Android only).
+    #[cfg(target_os = "android")]
+    audio_player: Option<jni_bridge::AudioPlayer>,
+    /// URI of the audio currently loaded in `audio_player`.
+    /// Read only by the Android-only audio preview.
+    #[allow(dead_code)]
+    audio_src: Option<String>,
+    /// Export window + running job.
+    export_open: bool,
+    export_job: Option<export::ExportJob>,
 }
 
 impl LyricApp {
-    pub fn new(data_dir: Option<PathBuf>) -> Self {
+    pub fn new(data_dir: Option<PathBuf>, android: Option<AndroidHandle>) -> Self {
         let projects = data_dir
             .as_ref()
             .map(|d| store::load_projects(d))
@@ -87,12 +110,22 @@ impl LyricApp {
             selected: None,
             add_open: false,
             add_tab: 0,
-            export_notice: false,
             renderer: Renderer::new(crate::FONT_REGULAR).expect("IRANSansX parses"),
             render_version: 0,
             stage_tex: None,
             stage_key: None,
             fx_open: false,
+            android,
+            images: HashMap::new(),
+            media_open: false,
+            media_kind: jni_bridge::MediaKind::Images,
+            media_items: vec![],
+            media_error: None,
+            #[cfg(target_os = "android")]
+            audio_player: None,
+            audio_src: None,
+            export_open: false,
+            export_job: None,
         }
     }
 
@@ -117,6 +150,203 @@ impl LyricApp {
             if let Err(e) = store::save_projects(dir, &self.projects) {
                 eprintln!("LyricStudio: could not save projects: {e}");
             }
+        }
+    }
+
+    /// Decode one image URI into the cache (Android only; host: error).
+    /// Photos are downscaled to 1440px wide so a 12MP photo cannot blow
+    /// up the cache or the renderer.
+    fn load_image(&mut self, uri: &str) -> Result<(), String> {
+        #[cfg(target_os = "android")]
+        {
+            let app = self
+                .android
+                .as_ref()
+                .ok_or_else(|| "no Android activity".to_string())?;
+            let bytes = jni_bridge::read_uri(app, uri)?;
+            let img = decode_image_capped(&bytes, 1440)?;
+            self.images.insert(uri.to_string(), img);
+            Ok(())
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let _ = uri;
+            Err("media picking runs on the phone only".to_string())
+        }
+    }
+
+    /// Decode the current project's image layers that are not cached yet
+    /// (best effort — a missing file just leaves the layer blank).
+    fn ensure_project_images(&mut self) {
+        let srcs: Vec<String> = self
+            .current_project()
+            .layers
+            .iter()
+            .filter(|l| l.type_ == "image")
+            .filter_map(|l| l.src.clone())
+            .filter(|s| !self.images.contains_key(s))
+            .collect();
+        for s in srcs {
+            if let Err(e) = self.load_image(&s) {
+                eprintln!("LyricStudio: could not load image {s}: {e}");
+            }
+        }
+    }
+
+    fn insert_image(&mut self, item: &jni_bridge::MediaItem) {
+        if let Err(e) = self.load_image(&item.uri) {
+            self.media_error = Some(e);
+            return;
+        }
+        let (iw, ih) = self
+            .images
+            .get(&item.uri)
+            .map(|i| (i.width as f64, i.height as f64))
+            .unwrap_or((720.0, 720.0));
+        let fw = iw.min(720.0);
+        let fh = fw * ih / iw;
+        let (pw, ph) = (
+            self.projects[self.current].width as f64,
+            self.projects[self.current].height as f64,
+        );
+        let mut layer = Layer::new("image", &item.name, self.playhead, self.playhead + 10.0);
+        layer.src = Some(item.uri.clone());
+        layer.transform.x = pw / 2.0;
+        layer.transform.y = ph / 2.0;
+        layer.shape = Some(ShapeSpec {
+            kind: "image".to_string(),
+            w: fw,
+            h: fh,
+            ..Default::default()
+        });
+        self.projects[self.current].layers.push(layer);
+        self.media_open = false;
+        self.mark_changed();
+    }
+
+    fn insert_audio(&mut self, item: &jni_bridge::MediaItem) {
+        let dur = if item.duration_ms > 0 {
+            (item.duration_ms as f64) / 1000.0
+        } else {
+            10.0
+        };
+        let mut layer = Layer::new("audio", &item.name, self.playhead, self.playhead + dur);
+        layer.src = Some(item.uri.clone());
+        layer.audio = Some(lyricstudio_engine::model::AudioSpec {
+            src: Some(item.uri.clone()),
+            volume: 1.0,
+            fade_in: 0.0,
+            fade_out: 0.0,
+        });
+        self.projects[self.current].layers.push(layer);
+        self.media_open = false;
+        self.mark_changed();
+    }
+
+    /// Start an MP4 export of the current project in a background thread.
+    /// Output goes to the app's external files dir (`.../files/exports/`)
+    /// on Android so the user can find it in a file manager.
+    fn start_export(&mut self) {        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let name = format!("lyricstudio-{}-{stamp}.mp4", self.current_project().id);
+        #[cfg(target_os = "android")]
+        let dir = self
+            .android
+            .as_ref()
+            .and_then(|a| jni_bridge::external_files_dir(a).ok())
+            .map(|d| PathBuf::from(d).join("exports"));
+        #[cfg(not(target_os = "android"))]
+        let dir = self.data_dir.clone().map(|d| d.join("exports"));
+        let Some(dir) = dir else {
+            return;
+        };
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let job = export::start_export(
+            self.current_project().clone(),
+            self.images.clone(),
+            dir.join(name),
+        );
+        self.export_job = Some(job);
+    }
+
+    /// Audio preview via MediaPlayer (Android only; host: no-op).
+    #[cfg(target_os = "android")]
+    fn play_audio(&mut self, src: &str) {
+        let Some(app) = self.android.as_ref() else {
+            return;
+        };
+        if self.audio_src.as_deref() != Some(src) {
+            if let Some(p) = &self.audio_player {
+                p.release();
+            }
+            match jni_bridge::AudioPlayer::open(app, src) {
+                Ok(p) => {
+                    self.audio_player = Some(p);
+                    self.audio_src = Some(src.to_string());
+                }
+                Err(e) => {
+                    eprintln!("LyricStudio: audio open failed: {e}");
+                    return;
+                }
+            }
+        }
+        if let Some(p) = &self.audio_player {
+            if let Err(e) = p.start() {
+                eprintln!("LyricStudio: audio start failed: {e}");
+            }
+        }
+    }
+
+    /// Audio preview via MediaPlayer (Android only; host: no-op).
+    #[cfg(target_os = "android")]
+    fn pause_audio(&mut self) {
+        if let Some(p) = &self.audio_player {
+            let _ = p.pause();
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn play_audio(&mut self, _src: &str) {}
+
+    #[cfg(not(target_os = "android"))]
+    fn pause_audio(&mut self) {}
+
+    /// Open the MediaStore browser for a kind: request the permission
+    /// first when it is missing (the system dialog's answer is polled on
+    /// the next open — no callback is needed).
+    fn open_media_browser(&mut self, kind: jni_bridge::MediaKind) {
+        self.media_kind = kind;
+        self.media_open = true;
+        self.media_error = None;
+        self.media_items.clear();
+        #[cfg(target_os = "android")]
+        {
+            let Some(app) = self.android.as_ref() else {
+                self.media_error = Some("no Android activity".to_string());
+                return;
+            };
+            let perm = kind.permission(jni_bridge::sdk_int(app).unwrap_or(33));
+            match jni_bridge::has_permission(app, perm) {
+                Ok(false) => {
+                    let _ = jni_bridge::request_permission(app, perm);
+                    self.media_error = Some(
+                        "دسترسی رو توی پنجره‌ای که باز شد بده، بعد دوباره برگرد".to_string(),
+                    );
+                }
+                Ok(true) => match jni_bridge::list_media(app, kind) {
+                    Ok(items) => self.media_items = items,
+                    Err(e) => self.media_error = Some(e),
+                },
+                Err(e) => self.media_error = Some(e),
+            }
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            self.media_error = Some("انتخاب فایل فقط روی گوشی کار می‌کند".to_string());
         }
     }
 }
@@ -235,6 +465,7 @@ impl LyricApp {
                 self.playhead = 0.0;
                 self.playing = false;
                 self.selected = None;
+                self.ensure_project_images();
             }
         });
     }
@@ -261,7 +492,7 @@ impl LyricApp {
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| {
                             if ui.button(shp("خروجی")).clicked() {
-                                self.export_notice = true;
+                                self.export_open = true;
                             }
                         },
                     );
@@ -332,14 +563,88 @@ impl LyricApp {
             });
         self.add_open = open;
 
-        // Export placeholder — honest: MP4 export is not in the Rust app yet.
-        let mut notice = self.export_notice;
-        egui::Window::new(shp("خروجی"))
-            .open(&mut notice)
+        // Media browser — MediaStore list (Android) or an honest note.
+        let mut mopen = self.media_open;
+        egui::Window::new(shp("رسانه"))
+            .open(&mut mopen)
             .show(ui.ctx(), |ui| {
-                ui.label(shp("خروجی MP4 (MediaCodec) در نسخهٔ راستی هنوز پیاده نشده.\nفعلاً خروجی در برنامهٔ کوت‌لین انجام می‌شود."));
+                let kind_label = match self.media_kind {
+                    jni_bridge::MediaKind::Images => "عکس‌ها",
+                    jni_bridge::MediaKind::Videos => "ویدیوها",
+                    jni_bridge::MediaKind::Audio => "آهنگ‌ها",
+                };
+                ui.heading(shp(kind_label));
+                if let Some(e) = &self.media_error.clone() {
+                    ui.label(shp(e));
+                }
+                let mut pick: Option<jni_bridge::MediaItem> = None;
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for item in &self.media_items {
+                        let size = if item.size > 0 {
+                            format!("{:.1} MB", item.size as f64 / 1_048_576.0)
+                        } else {
+                            String::new()
+                        };
+                        let label = if item.duration_ms > 0 {
+                            format!("{} · {}s · {size}", item.name, item.duration_ms / 1000)
+                        } else if size.is_empty() {
+                            item.name.clone()
+                        } else {
+                            format!("{} · {size}", item.name)
+                        };
+                        if ui.button(label).clicked() {
+                            pick = Some(item.clone());
+                        }
+                    }
+                });
+                if let Some(item) = pick {
+                    match self.media_kind {
+                        jni_bridge::MediaKind::Images => self.insert_image(&item),
+                        jni_bridge::MediaKind::Audio => self.insert_audio(&item),
+                        jni_bridge::MediaKind::Videos => {
+                            self.media_error =
+                                Some("وارد کردن ویدیو هنوز ساخته نشده".to_string());
+                        }
+                    }
+                }
             });
-        self.export_notice = notice;
+        self.media_open = mopen;
+
+        // Export window — real MP4 export (video-only in this version).
+        let mut eopen = self.export_open;
+        egui::Window::new(shp("خروجی"))
+            .open(&mut eopen)
+            .show(ui.ctx(), |ui| {
+                let proj = self.current_project().clone();
+                ui.label(shp(&format!(
+                    "{}×{} · {}fps · ویدیو بدون صدا در این نسخه",
+                    proj.width, proj.height, proj.fps
+                )));
+                if self.export_job.is_none() {
+                    if ui.button(shp("شروع خروجی MP4")).clicked() {
+                        self.start_export();
+                    }
+                }
+                if let Some(job) = &self.export_job {
+                    let p = *job.progress.lock().unwrap();
+                    ui.add(egui::ProgressBar::new(p).show_percentage());
+                    if let Some(r) = job.result.lock().unwrap().as_ref() {
+                        match r {
+                            Ok(path) => {
+                                ui.label(shp(&format!("ذخیره شد: {}", path.display())));
+                            }
+                            Err(e) => {
+                                ui.label(shp(&format!("خطا: {e}")));
+                            }
+                        }
+                    }
+                    if ui.button(shp("لغو")).clicked() {
+                        job.cancel
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+            });
+        self.export_open = eopen;
     }
 
     fn timeline_ui(&mut self, ui: &mut egui::Ui, duration: f64) {
@@ -393,6 +698,29 @@ impl LyricApp {
             ui.label(shp("لایه‌ای انتخاب نشده"));
             return;
         };
+        // Audio state for the selected layer, read BEFORE the project
+        // borrow below (the panel cannot call &mut self while it is live).
+        let audio_src: Option<String> = self.projects[self.current]
+            .layers
+            .iter()
+            .find(|l| l.id == sel)
+            .and_then(|l| {
+                if l.type_ == "audio" {
+                    l.src.clone()
+                } else {
+                    None
+                }
+            });
+        #[cfg(target_os = "android")]
+        let audio_playing = audio_src
+            .as_deref()
+            .map(|s| {
+                self.audio_src.as_deref() == Some(s)
+                    && self.audio_player.as_ref().is_some_and(|p| p.is_playing())
+            })
+            .unwrap_or(false);
+        #[cfg(not(target_os = "android"))]
+        let audio_playing = false;
         let proj = &mut self.projects[self.current];
         let Some(idx) = proj.layers.iter().position(|l| l.id == sel) else {
             return;
@@ -402,6 +730,7 @@ impl LyricApp {
         let mut open_fx = false;
         let mut close_fx = false;
         let mut fx_open = self.fx_open;
+        let mut audio_action: Option<bool> = None; // Some(true) = play
         ui.label(format!(
             "{} · {}",
             shp(&proj.layers[idx].name),
@@ -466,6 +795,17 @@ impl LyricApp {
                 if ui.color_edit_button_srgba(&mut c).changed() {
                     tx.color = to_hex(c);
                     changed = true;
+                }
+            });
+        }
+        // Audio preview (Android): play/pause the selected audio layer
+        // through MediaPlayer. The action is deferred to the end of the
+        // panel (the project borrow is live here, so no &mut self call).
+        if audio_src.is_some() {
+            ui.horizontal(|ui| {
+                let label = if audio_playing { "⏸ توقف صدا" } else { "▶ پخش صدا" };
+                if ui.button(shp(label)).clicked() {
+                    audio_action = Some(!audio_playing);
                 }
             });
         }
@@ -576,6 +916,15 @@ impl LyricApp {
         } else {
             self.fx_open = fx_open && !close_fx;
         }
+        if let Some(play) = audio_action {
+            if play {
+                if let Some(src) = &audio_src {
+                    self.play_audio(src);
+                }
+            } else {
+                self.pause_audio();
+            }
+        }
     }
 
     fn add_popup_ui(&mut self, ui: &mut egui::Ui) {
@@ -600,8 +949,19 @@ impl LyricApp {
                     }
                 });
             }
-            1 | 2 => {
-                ui.label(shp("انتخاب فایل رسانه/صوت در نسخهٔ بعد می‌آید"));
+            1 => {
+                if ui.button(shp("مرور عکس‌ها")).clicked() {
+                    self.open_media_browser(jni_bridge::MediaKind::Images);
+                }
+                if ui.button(shp("مرور ویدیوها")).clicked() {
+                    self.open_media_browser(jni_bridge::MediaKind::Videos);
+                }
+                ui.label(shp("ویدیو فعلاً فقط فهرست می‌شود — وارد کردن فریم ویدیو هنوز ساخته نشده."));
+            }
+            2 => {
+                if ui.button(shp("مرور آهنگ‌ها")).clicked() {
+                    self.open_media_browser(jni_bridge::MediaKind::Audio);
+                }
             }
             3 => {
                 ui.horizontal(|ui| {
@@ -691,7 +1051,7 @@ impl LyricApp {
         let frame = (t * proj.fps as f64).round() as i64;
         let key = (self.current, frame, rw, rh, self.render_version);
         if self.stage_key != Some(key) {
-            let buf = self.renderer.render(proj, t, rw, rh);
+            let buf = self.renderer.render(proj, t, rw, rh, &self.images);
             let img = egui::ColorImage::from_rgba_unmultiplied([rw, rh], &buf);
             self.stage_tex = Some(ui.ctx().load_texture(
                 "stage",

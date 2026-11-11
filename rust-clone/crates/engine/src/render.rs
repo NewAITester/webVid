@@ -24,6 +24,43 @@ pub struct Renderer {
     font: fontdue::Font,
 }
 
+/// A decoded image, ready to blit (RGBA8). Decoded by the app from the
+/// bytes it reads (MediaStore/ContentResolver) via `decode_image`.
+#[derive(Clone)]
+pub struct ImageData {
+    pub width: usize,
+    pub height: usize,
+    pub rgba: Vec<u8>,
+}
+
+/// Decode JPEG/PNG/WebP bytes into RGBA8. Pure Rust (`image` crate).
+pub fn decode_image(bytes: &[u8]) -> Result<ImageData, String> {
+    decode_image_capped(bytes, usize::MAX)
+}
+
+/// Like `decode_image`, but downscale (Triangle filter) when the width
+/// exceeds `max_w`, so a 12MP photo cannot blow up the cache or the
+/// renderer. `max_w == usize::MAX` means no cap.
+pub fn decode_image_capped(bytes: &[u8], max_w: usize) -> Result<ImageData, String> {
+    let img = image::load_from_memory(bytes).map_err(|e| format!("decode: {e}"))?;
+    let rgba = img.to_rgba8();
+    let (width, height) = (rgba.width() as usize, rgba.height() as usize);
+    if width > max_w {
+        let h = (max_w * height / width).max(1);
+        let small = image::imageops::resize(&rgba, max_w as u32, h as u32, image::imageops::FilterType::Triangle);
+        return Ok(ImageData {
+            width: small.width() as usize,
+            height: small.height() as usize,
+            rgba: small.into_raw(),
+        });
+    }
+    Ok(ImageData {
+        width,
+        height,
+        rgba: rgba.into_raw(),
+    })
+}
+
 /// Pixel-space scale + camera zoom, for mapping project coords to pixels.
 struct View {
     /// pixels per project unit (x)
@@ -61,8 +98,17 @@ impl Renderer {
 
     /// Render the frame at time `t` (seconds) as RGBA8, `w * h * 4` bytes.
     /// `w`/`h` should match the project's aspect ratio (the caller fits
-    /// the widget to it); otherwise the image stretches to fit.
-    pub fn render(&self, project: &Project, t: f64, w: usize, h: usize) -> Vec<u8> {
+    /// the widget to it); otherwise the image stretches to fit. `images`
+    /// maps layer `src` URIs to decoded image data (empty = no image
+    /// layers render).
+    pub fn render(
+        &self,
+        project: &Project,
+        t: f64,
+        w: usize,
+        h: usize,
+        images: &std::collections::HashMap<String, ImageData>,
+    ) -> Vec<u8> {
         let mut frame = vec![0u8; w * h * 4];
         if w == 0 || h == 0 {
             return frame;
@@ -85,7 +131,7 @@ impl Renderer {
             pcy: project.height as f64 / 2.0,
         };
         let layers = evaluate::visible_layers(project, t);
-        self.render_layers(&layers, project, t, &mut frame, w, h, &view);
+        self.render_layers(&layers, project, t, &mut frame, w, h, &view, images);
         frame
     }
 
@@ -109,10 +155,11 @@ impl Renderer {
         w: usize,
         h: usize,
         view: &View,
+        images: &std::collections::HashMap<String, ImageData>,
     ) {
         for layer in layers {
             let mut lbuf = vec![0u8; w * h * 4];
-            self.render_layer_into(layer, project, t, &mut lbuf, w, h, view);
+            self.render_layer_into(layer, project, t, &mut lbuf, w, h, view, images);
             // Effects, with keyframe-animated numeric params.
             for fx in &layer.effects {
                 if !fx.enabled {
@@ -144,6 +191,7 @@ impl Renderer {
         w: usize,
         h: usize,
         view: &View,
+        images: &std::collections::HashMap<String, ImageData>,
     ) {
         match layer.type_.as_str() {
             "shape" => {
@@ -163,10 +211,19 @@ impl Renderer {
                     .iter()
                     .filter(|c| evaluate::is_active(c, t))
                     .collect();
-                self.render_layers(&kids, project, t, buf, w, h, view);
+                self.render_layers(&kids, project, t, buf, w, h, view, images);
             }
-            // image / video: no decoder yet. camera / null / audio: nothing
-            // to draw into the frame.
+            "image" => {
+                // Decoded image looked up by the layer's src URI; a missing
+                // entry (not loaded yet, or the file is gone) draws nothing.
+                if let Some(src) = layer.src.as_deref() {
+                    if let Some(img) = images.get(src) {
+                        self.raster_image(layer, img, t, buf, w, h, view);
+                    }
+                }
+            }
+            // video: frame decoding is not built yet. camera / null / audio:
+            // nothing to draw into the frame.
             _ => {}
         }
     }
@@ -427,6 +484,126 @@ impl Renderer {
             }
         }
     }
+
+    /// Blit a decoded image into the layer buffer, under the layer's
+    /// transform (center, rotation, scale), sampling bilinearly. The
+    /// display box is the layer's shape w/h when set, else the image's
+    /// own size fitted to the project width.
+    fn raster_image(
+        &self,
+        layer: &Layer,
+        img: &ImageData,
+        t: f64,
+        buf: &mut [u8],
+        w: usize,
+        h: usize,
+        view: &View,
+    ) {
+        let tr = evaluate::layer_transform(layer, t);
+        let cx = view.x(tr.x);
+        let cy = view.y(tr.y);
+        let (bw, bh) = match &layer.shape {
+            Some(sh) if sh.w > 0.0 && sh.h > 0.0 => (sh.w, sh.h),
+            _ => {
+                let fw = (img.width as f64).min(720.0);
+                (fw, fw * img.height as f64 / img.width as f64)
+            }
+        };
+        let hwx = view.dx(bw / 2.0 * tr.scale_x);
+        let hhy = view.dy(bh / 2.0 * tr.scale_y);
+        if hwx <= 0.0 || hhy <= 0.0 {
+            return;
+        }
+        let rot = (tr.rotation as f32).to_radians();
+        let (sn, cs) = (rot.sin() as f64, rot.cos() as f64);
+        let corners = [
+            rot2(-hwx, -hhy, sn, cs),
+            rot2(hwx, -hhy, sn, cs),
+            rot2(hwx, hhy, sn, cs),
+            rot2(-hwx, hhy, sn, cs),
+        ];
+        let x0 = (corners.iter().map(|p| p.0).fold(f64::INFINITY, f64::min) + cx - 1.0)
+            .floor()
+            .max(0.0) as i32;
+        let x1 = (corners.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max) + cx + 1.0)
+            .ceil()
+            .min(w as f64 - 1.0) as i32;
+        let y0 = (corners.iter().map(|p| p.1).fold(f64::INFINITY, f64::min) + cy - 1.0)
+            .floor()
+            .max(0.0) as i32;
+        let y1 = (corners.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max) + cy + 1.0)
+            .ceil()
+            .min(h as f64 - 1.0) as i32;
+        if x1 < x0 || y1 < y0 {
+            return;
+        }
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let (lx, ly) = rot2(x as f64 + 0.5 - cx, y as f64 + 0.5 - cy, -sn, cs);
+                // Box SDF for a 1px soft edge, same as rect shapes.
+                let dx = lx.abs() - hwx;
+                let dy = ly.abs() - hhy;
+                let ax = dx.max(0.0);
+                let ay = dy.max(0.0);
+                let sdf = (ax * ax + ay * ay).sqrt() + dx.max(dy).min(0.0);
+                let cov = clamp01(0.5 - sdf);
+                if cov <= 0.0 {
+                    continue;
+                }
+                let u = (lx + hwx) / (2.0 * hwx) * img.width as f64 - 0.5;
+                let v = (ly + hhy) / (2.0 * hhy) * img.height as f64 - 0.5;
+                let (r, g, b, a) = sample_bilinear(img, u, v);
+                if a <= 0.0 {
+                    continue;
+                }
+                blend(buf, w, x, y, r, g, b, (cov * a / 255.0) as f32);
+            }
+        }
+    }
+}
+
+/// Bilinear sample of an RGBA image at (u, v) in pixel coords (top-left
+/// origin, pixel centres at half-integers). Edges clamp. Returns
+/// (r, g, b, a) with a in 0–255.
+fn sample_bilinear(img: &ImageData, u: f64, v: f64) -> (u8, u8, u8, f64) {
+    let x0 = u.floor().clamp(0.0, (img.width - 1) as f64) as usize;
+    let y0 = v.floor().clamp(0.0, (img.height - 1) as f64) as usize;
+    let x1 = (x0 + 1).min(img.width - 1);
+    let y1 = (y0 + 1).min(img.height - 1);
+    let fx = (u - u.floor()).clamp(0.0, 1.0);
+    let fy = (v - v.floor()).clamp(0.0, 1.0);
+    let at = |x: usize, y: usize| -> (f64, f64, f64, f64) {
+        let i = (y * img.width + x) * 4;
+        (
+            img.rgba[i] as f64,
+            img.rgba[i + 1] as f64,
+            img.rgba[i + 2] as f64,
+            img.rgba[i + 3] as f64,
+        )
+    };
+    let (r00, g00, b00, a00) = at(x0, y0);
+    let (r10, g10, b10, a10) = at(x1, y0);
+    let (r01, g01, b01, a01) = at(x0, y1);
+    let (r11, g11, b11, a11) = at(x1, y1);
+    let lerp = |a: f64, b: f64, t: f64| a + (b - a) * t;
+    let top = (
+        lerp(r00, r10, fx),
+        lerp(g00, g10, fx),
+        lerp(b00, b10, fx),
+        lerp(a00, a10, fx),
+    );
+    let bot = (
+        lerp(r01, r11, fx),
+        lerp(g01, g11, fx),
+        lerp(b01, b11, fx),
+        lerp(a01, a11, fx),
+    );
+    (
+        lerp(top.0, bot.0, fy).round() as u8,
+        lerp(top.1, bot.1, fy).round() as u8,
+        lerp(top.2, bot.2, fy).round() as u8,
+        lerp(top.3, bot.3, fy),
+    )
 }
 
 /// Source-over composite of a whole buffer (`src`, straight alpha) onto
@@ -560,6 +737,7 @@ fn seg_dist(px: f64, py: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::model::{demo_project, Layer};
+    use std::collections::HashMap;
 
     const FONT: &[u8] = include_bytes!(
         "../../../../android-native/app/src/main/res/font/iransansx_regular.ttf"
@@ -579,7 +757,7 @@ mod tests {
     fn demo_renders_with_text_and_ring() {
         let ren = renderer();
         let proj = demo_project();
-        let buf = ren.render(&proj, 5.0, 144, 256);
+        let buf = ren.render(&proj, 5.0, 144, 256, &HashMap::new());
         assert_eq!(buf.len(), 144 * 256 * 4);
         // Background is #141620; the ring + titles must paint over it.
         let painted = count_non_bg(&buf, 0x14, 0x16, 0x20);
@@ -590,8 +768,8 @@ mod tests {
     fn render_is_deterministic() {
         let ren = renderer();
         let proj = demo_project();
-        let a = ren.render(&proj, 3.0, 72, 128);
-        let b = ren.render(&proj, 3.0, 72, 128);
+        let a = ren.render(&proj, 3.0, 72, 128, &HashMap::new());
+        let b = ren.render(&proj, 3.0, 72, 128, &HashMap::new());
         assert_eq!(a, b);
     }
 
@@ -611,7 +789,7 @@ mod tests {
             ..Default::default()
         });
         proj.layers.push(l);
-        let buf = ren.render(&proj, 1.0, 72, 128);
+        let buf = ren.render(&proj, 1.0, 72, 128, &HashMap::new());
         let cx = 36usize;
         let cy = 64usize;
         let i = (cy * 72 + cx) * 4;
@@ -624,11 +802,11 @@ mod tests {
         let mut proj = demo_project();
         let mut plain = proj.clone();
         plain.layers[1].effects.clear();
-        let base = ren.render(&plain, 5.0, 72, 128);
+        let base = ren.render(&plain, 5.0, 72, 128, &HashMap::new());
         let mut fx = crate::registry::default_effect("vibrance").unwrap();
         fx.params.insert("amt".to_string(), 200.0);
         proj.layers[1].effects.push(fx);
-        let changed = ren.render(&proj, 5.0, 72, 128);
+        let changed = ren.render(&proj, 5.0, 72, 128, &HashMap::new());
         let diff = base
             .iter()
             .zip(changed.iter())
@@ -642,8 +820,63 @@ mod tests {
         let ren = renderer();
         let mut proj = demo_project();
         proj.layers.retain(|l| l.type_ == "text" && l.name == "عنوان");
-        let buf = ren.render(&proj, 5.0, 72, 128);
+        let buf = ren.render(&proj, 5.0, 72, 128, &HashMap::new());
         let painted = count_non_bg(&buf, 0x14, 0x16, 0x20);
         assert!(painted > 20, "expected title glyphs, got {painted}");
+    }
+
+    #[test]
+    fn image_layer_paints_pixels() {
+        let ren = renderer();
+        let mut proj = demo_project();
+        proj.layers.clear();
+        let mut l = Layer::new("image", "عکس", 0.0, 10.0);
+        l.transform.x = 360.0;
+        l.transform.y = 640.0;
+        l.src = Some("content://test/1".to_string());
+        l.shape = Some(crate::model::ShapeSpec {
+            kind: "image".to_string(),
+            w: 200.0,
+            h: 200.0,
+            ..Default::default()
+        });
+        proj.layers.push(l);
+        let mut images = HashMap::new();
+        images.insert(
+            "content://test/1".to_string(),
+            ImageData {
+                width: 4,
+                height: 4,
+                rgba: vec![255, 0, 0, 255].repeat(16),
+            },
+        );
+        let buf = ren.render(&proj, 1.0, 72, 128, &images);
+        let i = (64 * 72 + 36) * 4;
+        assert_eq!((buf[i], buf[i + 1], buf[i + 2], buf[i + 3]), (255, 0, 0, 255));
+        // Missing image renders nothing (no crash, project bg shows).
+        // The project bg is #0C0D13 (the #141620 rect is a layer).
+        let buf2 = ren.render(&proj, 1.0, 72, 128, &HashMap::new());
+        assert_eq!((buf2[i], buf2[i + 1], buf2[i + 2]), (0x0C, 0x0D, 0x13));
+    }
+
+    #[test]
+    fn decode_png_roundtrip() {
+        // 2x2 PNG built with the same crate, then decoded.
+        let mut png = Vec::new();
+        {
+            use image::ImageEncoder;
+            let enc = image::codecs::png::PngEncoder::new(&mut png);
+            // red, green, blue, white pixels
+            let px: [u8; 16] = [
+                255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+            ];
+            enc.write_image(&px, 2, 2, image::ExtendedColorType::Rgba8)
+                .unwrap();
+        }
+        let img = decode_image(&png).unwrap();
+        assert_eq!((img.width, img.height), (2, 2));
+        assert_eq!(&img.rgba[0..4], &[255, 0, 0, 255]);
+        assert_eq!(&img.rgba[12..16], &[255, 255, 255, 255]);
+        assert!(decode_image(b"not an image").is_err());
     }
 }

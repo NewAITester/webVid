@@ -6,6 +6,8 @@
 // have one. Desktop testing is out of scope for this VM.)
 
 pub mod app;
+pub mod export;
+pub mod jni_bridge;
 pub mod store;
 
 use eframe::egui;
@@ -101,6 +103,14 @@ fn apply_theme(ctx: &egui::Context) {
     ctx.set_visuals(v);
 }
 
+/// The Android activity handle, threaded into `LyricApp` so the JNI
+/// bridge (MediaStore, permissions, MediaPlayer) can reach the activity.
+/// On non-Android targets this is `()` and always `None`.
+#[cfg(target_os = "android")]
+pub type AndroidHandle = android_activity::AndroidApp;
+#[cfg(not(target_os = "android"))]
+pub type AndroidHandle = ();
+
 /// Run the app (desktop `main` and, via winit, the Android entry).
 pub fn run() {
     let data_dir = std::env::current_dir()
@@ -114,30 +124,38 @@ pub fn run() {
             ..Default::default()
         },
         data_dir,
+        None,
     );
 }
 
 /// Android NativeActivity entry point (cargo-apk cdylib). winit requires
 /// the `AndroidApp` to reach the event loop; eframe takes it via
-/// `NativeOptions::android_app`.
+/// `NativeOptions::android_app`. The handle is also cloned for the JNI
+/// bridge (MediaStore / MediaPlayer), which android-activity alone does
+/// not expose.
 #[cfg(target_os = "android")]
 #[no_mangle]
 #[allow(improper_ctypes_definitions)] // android-activity's documented entry signature
 pub extern "C" fn android_main(app: android_activity::AndroidApp) {
     let data_dir = app.internal_data_path();
+    let handle = app.clone();
     let mut options = eframe::NativeOptions::default();
     options.android_app = Some(app);
-    run_with(options, data_dir);
+    run_with(options, data_dir, Some(handle));
 }
 
-fn run_with(options: eframe::NativeOptions, data_dir: Option<std::path::PathBuf>) {
+fn run_with(
+    options: eframe::NativeOptions,
+    data_dir: Option<std::path::PathBuf>,
+    #[allow(unused)] android: Option<AndroidHandle>,
+) {
     let res = eframe::run_native(
         "LyricStudio",
         options,
         Box::new(|cc| {
             load_fonts(&cc.egui_ctx);
             apply_theme(&cc.egui_ctx);
-            Ok(Box::new(app::LyricApp::new(data_dir)))
+            Ok(Box::new(app::LyricApp::new(data_dir, android)))
         }),
     );
     if let Err(e) = res {
