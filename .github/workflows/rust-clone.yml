@@ -1,0 +1,62 @@
+name: rust-clone (LyricStudio Rust APK)
+
+on:
+  push:
+    branches: [feature/android-native]
+    paths:
+      - 'rust-clone/**'
+      - '.github/workflows/rust-clone.yml'
+  workflow_dispatch:
+
+jobs:
+  build-rust-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-clone
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install NDK + platform
+        run: |
+          sdkmanager "ndk;28.1.13356709" "platforms;android-34" "build-tools;34.0.0"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.1.13356709" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.1.13356709" >> $GITHUB_ENV
+
+      - name: Engine tests
+        working-directory: rust-clone
+        run: cargo test -p lyricstudio-engine
+
+      - name: App check (Android target)
+        working-directory: rust-clone
+        env:
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_AR: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+        run: cargo check -p lyricstudio-app --target aarch64-linux-android
+
+      - name: Install cargo-apk
+        run: cargo install cargo-apk --version 0.10.0
+
+      - name: Build APK
+        working-directory: rust-clone
+        run: cargo apk build --release
+
+      - name: Collect APK
+        working-directory: rust-clone
+        run: |
+          find target/android-artifacts -name '*.apk' -print
+          cp "$(find target/android-artifacts -name '*.apk' | head -n 1)" lyricstudio-rust.apk
+          ls -la lyricstudio-rust.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lyricstudio-rust-apk
+          path: rust-clone/lyricstudio-rust.apk
+          retention-days: 7

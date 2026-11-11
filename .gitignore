@@ -25,4 +25,5 @@ android-native/local.properties
 
 # Rust نیتیو: خروجی بیلد و کتابخانهٔ بومی (CI از سورس می‌سازد)
 android-native/rust/lyricstudio-jni/target/
+rust-clone/target/
 android-native/app/src/main/jniLibs/

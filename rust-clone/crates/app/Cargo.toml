@@ -1,0 +1,43 @@
+[package]
+name = "lyricstudio-app"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "LyricStudio — full-Rust Alight Motion clone (egui UI + lyricstudio-engine)"
+
+[lib]
+name = "lyricstudio_app"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "lyricstudio-app"
+path = "src/main.rs"
+
+[dependencies]
+lyricstudio-engine = { path = "../engine" }
+# default-features off: eframe's `accesskit` default conflicts with
+# `android-native-activity` on Android (eframe lib.rs compile_error).
+# wayland/x11 are host-only; the android entry gets android-native-activity
+# via the target-specific declaration below (resolver v2 keeps it android-only).
+eframe = { version = "0.37", default-features = false, features = [
+  "wgpu",
+  "default_fonts",
+  "clipboard",
+  "links",
+  "wayland",
+  "x11",
+] }
+egui = "0.37"
+
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { version = "0.37", default-features = false, features = [
+  "android-native-activity",
+] }
+android-activity = "0.6"
+
+# cargo-apk packaging (CI builds the APK; see .github/workflows/rust-clone.yml).
+[package.metadata.android]
+package = "com.zurvanecho.lyricstudio.motion"
+build_targets = ["aarch64-linux-android"]
+min_sdk_version = 24
+target_sdk_version = 34

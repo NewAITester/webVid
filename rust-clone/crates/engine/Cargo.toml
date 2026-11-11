@@ -1,0 +1,13 @@
+[package]
+name = "lyricstudio-engine"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "LyricStudio Rust engine: project model, keyframe evaluation, pixel effects (full-Rust Alight clone)"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
