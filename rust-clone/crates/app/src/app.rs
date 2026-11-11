@@ -83,6 +83,10 @@ pub struct LyricApp {
     media_kind: jni_bridge::MediaKind,
     media_items: Vec<jni_bridge::MediaItem>,
     media_error: Option<String>,
+    /// Media thumbnails (56px textures, keyed by item URI; decoded on a
+    /// background thread when the browser opens).
+    thumbs: HashMap<String, egui::TextureHandle>,
+    thumb_rx: Option<std::sync::mpsc::Receiver<(String, ImageData)>>,
     /// Audio preview player (Android only).
     #[cfg(target_os = "android")]
     audio_player: Option<jni_bridge::AudioPlayer>,
@@ -219,6 +223,8 @@ impl LyricApp {
             media_kind: jni_bridge::MediaKind::Images,
             media_items: vec![],
             media_error: None,
+            thumbs: HashMap::new(),
+            thumb_rx: None,
             #[cfg(target_os = "android")]
             audio_player: None,
             #[cfg(target_os = "android")]
@@ -538,7 +544,11 @@ impl LyricApp {
                     );
                 }
                 Ok(true) => match jni_bridge::list_media(app, kind) {
-                    Ok(items) => self.media_items = items,
+                    Ok(items) => {
+                        self.media_items = items;
+                        self.thumbs.clear();
+                        self.start_thumb_worker();
+                    }
                     Err(e) => self.media_error = Some(e),
                 },
                 Err(e) => self.media_error = Some(e),
@@ -549,6 +559,47 @@ impl LyricApp {
             self.media_error = Some("انتخاب فایل فقط روی گوشی کار می‌کند".to_string());
         }
     }
+
+    /// Decode thumbnails for the first 40 items on a background thread
+    /// (images: 96px; videos: first frame, 96px; audio: no thumbnail).
+    /// Results arrive on `thumb_rx`; the media window drains it.
+    #[cfg(target_os = "android")]
+    fn start_thumb_worker(&mut self) {
+        let Some(app) = self.android.clone() else {
+            return;
+        };
+        let items: Vec<jni_bridge::MediaItem> =
+            self.media_items.iter().take(40).cloned().collect();
+        let kind = self.media_kind;
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.thumb_rx = Some(rx);
+        std::thread::spawn(move || {
+            for item in items {
+                let img: Option<ImageData> = match kind {
+                    jni_bridge::MediaKind::Audio => None,
+                    jni_bridge::MediaKind::Images => jni_bridge::read_uri(&app, &item.uri)
+                        .ok()
+                        .and_then(|b| decode_image_capped(&b, 96).ok()),
+                    jni_bridge::MediaKind::Videos => {
+                        video::VideoDecoder::open(&app, &item.uri)
+                            .ok()
+                            .and_then(|mut d| d.frame_at(0.0).ok().flatten())
+                            .map(|f| {
+                                lyricstudio_engine::render::downscale_rgba(f, 96)
+                            })
+                    }
+                };
+                if let Some(img) = img {
+                    if tx.send((item.uri.clone(), img)).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // The worker is only called from the Android branch of
+    // `open_media_browser`; on host there are no items to thumb.
 }
 
 impl eframe::App for LyricApp {
@@ -777,6 +828,24 @@ impl LyricApp {
                 if let Some(e) = &self.media_error.clone() {
                     ui.label(shp(e));
                 }
+                // Drain finished thumbnails into textures (UI thread only).
+                if let Some(rx) = &self.thumb_rx {
+                    let mut done: Vec<(String, ImageData)> = Vec::new();
+                    while let Ok(p) = rx.try_recv() {
+                        done.push(p);
+                    }
+                    for (uri, img) in done {
+                        let tex = ui.ctx().load_texture(
+                            uri.clone(),
+                            egui::ColorImage::from_rgba_unmultiplied(
+                                [img.width, img.height],
+                                &img.rgba,
+                            ),
+                            egui::TextureOptions::LINEAR,
+                        );
+                        self.thumbs.insert(uri, tex);
+                    }
+                }
                 let mut pick: Option<jni_bridge::MediaItem> = None;
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for item in &self.media_items {
@@ -792,9 +861,33 @@ impl LyricApp {
                         } else {
                             format!("{} · {size}", item.name)
                         };
-                        if ui.button(label).clicked() {
-                            pick = Some(item.clone());
-                        }
+                        ui.horizontal(|ui| {
+                            if let Some(tex) = self.thumbs.get(&item.uri) {
+                                ui.image((tex.id(), egui::Vec2::new(56.0, 56.0)));
+                            } else {
+                                let (r, _) = ui.allocate_exact_size(
+                                    egui::Vec2::splat(56.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().rect_filled(r, 4.0, hex_color(theme::A2));
+                                let glyph =
+                                    if self.media_kind == jni_bridge::MediaKind::Audio {
+                                        "♪"
+                                    } else {
+                                        "…"
+                                    };
+                                ui.painter().text(
+                                    r.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    glyph,
+                                    egui::FontId::proportional(20.0),
+                                    hex_color(theme::P1),
+                                );
+                            }
+                            if ui.button(label).clicked() {
+                                pick = Some(item.clone());
+                            }
+                        });
                     }
                 });
                 if let Some(item) = pick {
