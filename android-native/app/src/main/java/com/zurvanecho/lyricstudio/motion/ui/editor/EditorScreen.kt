@@ -1641,7 +1641,7 @@ private fun Inspector(
         }
         Spacer(modifier = Modifier.height(8.dp))
         // افکت‌ها (N3)
-        EffectSection(layer, time, onChange)
+        EffectSection(layer, time, onChange, onPreview, onFinish)
     }
 
     if (textEditOpen) {
@@ -1676,7 +1676,17 @@ private fun EffectSection(
     layer: Layer,
     time: Double,
     onChange: (Layer) -> Unit,
+    onPreview: ((Layer) -> Unit)? = null,
+    onFinish: (() -> Unit)? = null,
 ) {
+    /** تغییر زندهٔ اسلایدر (بدون تاریخچه)؛ پایان کشیدن یک ورودی ثبت می‌کند. */
+    fun sc(changed: Layer) {
+        if (onPreview != null) onPreview(changed) else onChange(changed)
+    }
+
+    fun fin() {
+        onFinish?.invoke()
+    }
     var pickerOpen by remember { mutableStateOf(false) }
 
     Column {
@@ -1864,8 +1874,10 @@ private fun SliderRow(
     range: ClosedFloatingPointRange<Double>,
     hasKf: Boolean,
     onKf: () -> Unit,
-    onChange: (Double) -> Unit,
+    // ترتیب مهم: onChange باید آخرین پارامتر باشد تا لامبدای دنباله‌ای
+    // در فراخوانی‌ها به آن بچسبد، نه به onFinish.
     onFinish: () -> Unit = {},
+    onChange: (Double) -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = Alight.Text2, modifier = Modifier.width(64.dp))
