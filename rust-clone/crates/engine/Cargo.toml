@@ -11,3 +11,5 @@ crate-type = ["rlib"]
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Pure-Rust font rasterizer for the software renderer (text layers).
+fontdue = "0.9"
