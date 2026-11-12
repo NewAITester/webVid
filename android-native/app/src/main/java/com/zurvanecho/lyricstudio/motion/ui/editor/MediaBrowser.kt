@@ -48,8 +48,6 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Dialog
-import androidx.compose.material3.DialogProperties
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -74,6 +72,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.zurvanecho.lyricstudio.motion.render.MediaResolver
 import com.zurvanecho.lyricstudio.motion.ui.theme.Alight
