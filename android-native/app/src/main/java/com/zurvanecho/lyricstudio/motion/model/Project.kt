@@ -18,6 +18,8 @@ data class Project(
     val layers: List<Layer> = emptyList(),
     /** نشان‌های زمانی (بوک‌مارک) روی خط‌کش تایم‌لاین — ثانیهٔ پروژه. */
     val bookmarks: List<Double> = emptyList(),
+    /** آخرین ویرایش (میلی‌ثانیهٔ epoch) — ترتیب فهرست خانه (تازه‌ترین اول). */
+    val modifiedAt: Long = 0,
 )
 
 @Serializable
