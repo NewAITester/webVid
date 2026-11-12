@@ -247,6 +247,9 @@ fun EditorScreen(
     var playing by remember { mutableStateOf(false) }
     var selectedId by remember { mutableStateOf<String?>(null) }
     var showAdd by remember { mutableStateOf(false) }
+    // مرورگر رسانه/صدا (K6): null = بسته، "visual" | "audio"
+    var mediaBrowser by remember { mutableStateOf<String?>(null) }
+    var mediaFilter by remember { mutableStateOf<String?>(null) }
     // U3: حالت نقاشی (دست‌آزاد/وکتور) + ضربهٔ در حال کشیدن (مختصات پروژه)
     var drawMode by remember { mutableStateOf<String?>(null) }
     var drawPoints by remember { mutableStateOf<List<StrokePoint>>(emptyList()) }
@@ -462,6 +465,49 @@ fun EditorScreen(
         update(project.copy(layers = project.layers + layer))
         selectedId = layer.id
         showAdd = false
+    }
+
+    /**
+     * افزودن رسانه‌های انتخاب‌شده از مرورگر (K6): به ترتیبِ انتخاب،
+     * پشت سر هم از زمان پخش — تصویر ۵ ثانیه، ویدیو به‌اندازهٔ خودش.
+     * یک ورودی undo برای همهٔ لایه‌ها.
+     */
+    fun addVisual(items: List<MediaItem>) {
+        var start = time
+        val newLayers = mutableListOf<Layer>()
+        for (item in items) {
+            val type = if (item.type == "video") "video" else "image"
+            val dur =
+                if (item.type == "video" && item.durationMs > 0) item.durationMs / 1000.0 else 5.0
+            val end = minOf(project.duration, start + dur)
+            if (end <= start) break
+            newLayers.add(
+                newLayer(type, item.name, start, end).copy(
+                    src = item.uri,
+                    transform = Transform(x = 360.0, y = 640.0),
+                ),
+            )
+            start = end
+        }
+        if (newLayers.isNotEmpty()) {
+            update(project.copy(layers = project.layers + newLayers))
+            selectedId = newLayers.first().id
+            showAdd = false
+        }
+    }
+
+    /** افزودن صدای انتخاب‌شده از مرورگر صدا (K6). */
+    fun addAudio(item: MediaItem) {
+        val dur = if (item.durationMs > 0) item.durationMs / 1000.0 else 5.0
+        val end = minOf(project.duration, time + dur)
+        if (end > time) {
+            addLayer(
+                newLayer("audio", item.name, time, end).copy(
+                    src = item.uri,
+                    audio = AudioSpec(),
+                ),
+            )
+        }
     }
 
     /** ثبت ضربهٔ نقاشی: به لایهٔ draw انتخاب‌شده اضافه می‌شود یا لایهٔ تازه می‌سازد. */
@@ -1301,9 +1347,15 @@ fun EditorScreen(
                         ),
                     )
                 },
-                onImage = { pickImage.launch("image/*") },
-                onVideo = { pickVideo.launch("video/*") },
-                onAudio = { pickAudio.launch("audio/*") },
+                onImage = {
+                    mediaFilter = "image"
+                    mediaBrowser = "visual"
+                },
+                onVideo = {
+                    mediaFilter = "video"
+                    mediaBrowser = "visual"
+                },
+                onAudio = { mediaBrowser = "audio" },
                 onLrc = { pickLrc.launch("text/*") },
                 onCamera = {
                     addLayer(
@@ -1326,6 +1378,36 @@ fun EditorScreen(
                 onClose = { showAdd = false },
             )
         }
+    }
+
+    // K6: مرورگر رسانه (تصویر/ویدیو) و مرورگر صدا
+    if (mediaBrowser == "visual") {
+        MediaBrowser(
+            initialFilter = mediaFilter,
+            mediaResolver = mediaResolver,
+            onAdd = { items ->
+                addVisual(items)
+                mediaBrowser = null
+            },
+            onSystemPick = { kind ->
+                mediaBrowser = null
+                if (kind == "video") pickVideo.launch("video/*") else pickImage.launch("image/*")
+            },
+            onClose = { mediaBrowser = null },
+        )
+    }
+    if (mediaBrowser == "audio") {
+        AudioBrowser(
+            onAdd = { item ->
+                addAudio(item)
+                mediaBrowser = null
+            },
+            onSystemPick = {
+                mediaBrowser = null
+                pickAudio.launch("audio/*")
+            },
+            onClose = { mediaBrowser = null },
+        )
     }
 }
 
