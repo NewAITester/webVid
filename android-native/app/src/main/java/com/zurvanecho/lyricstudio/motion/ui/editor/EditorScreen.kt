@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
@@ -75,11 +76,14 @@ import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -114,6 +118,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -124,6 +129,7 @@ import com.zurvanecho.lyricstudio.motion.core.SHAPE_NAMES_FA
 import com.zurvanecho.lyricstudio.motion.core.layerTransform
 import com.zurvanecho.lyricstudio.motion.core.valueAt
 import com.zurvanecho.lyricstudio.motion.effects.EffectDef
+import com.zurvanecho.lyricstudio.motion.effects.EffectDescs
 import com.zurvanecho.lyricstudio.motion.effects.Effects
 import com.zurvanecho.lyricstudio.motion.export.Exporter
 import com.zurvanecho.lyricstudio.motion.export.exportPlan
@@ -1150,6 +1156,7 @@ fun EditorScreen(
                     duration = project.duration,
                     projW = project.width,
                     projH = project.height,
+                    project = project,
                     onPanelChange = { inspectorPanel = it },
                     pointStroke = pointStroke,
                     pointPoint = pointPoint,
@@ -1600,6 +1607,7 @@ private fun Inspector(
     duration: Double = 10.0,
     projW: Int = 720,
     projH: Int = 1280,
+    project: Project? = null,
     onPanelChange: ((String?) -> Unit)? = null,
     pointStroke: Int = 0,
     pointPoint: Int = 0,
@@ -1943,7 +1951,7 @@ private fun Inspector(
                 }
             }
             "effects" -> {
-                EffectSection(layer, time, onChange, onPreview, onFinish)
+                EffectSection(layer, time, onChange, onPreview, onFinish, project)
             }
             null -> {}
         }
@@ -1983,6 +1991,7 @@ private fun EffectSection(
     onChange: (Layer) -> Unit,
     onPreview: ((Layer) -> Unit)? = null,
     onFinish: (() -> Unit)? = null,
+    project: Project? = null,
 ) {
     /** تغییر زندهٔ اسلایدر (بدون تاریخچه)؛ پایان کشیدن یک ورودی ثبت می‌کند. */
     fun sc(changed: Layer) {
@@ -1992,7 +2001,7 @@ private fun EffectSection(
     fun fin() {
         onFinish?.invoke()
     }
-    var pickerOpen by remember { mutableStateOf(false) }
+    var browserOpen by remember { mutableStateOf(false) }
 
     Column {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
@@ -2000,7 +2009,7 @@ private fun EffectSection(
             Text(
                 "＋ افزودن",
                 color = Alight.Mint,
-                modifier = Modifier.clickable { pickerOpen = true }.padding(8.dp),
+                modifier = Modifier.clickable { browserOpen = true }.padding(8.dp),
             )
         }
         for ((idx, fx) in layer.effects.withIndex()) {
@@ -2060,80 +2069,282 @@ private fun EffectSection(
         }
     }
 
-    if (pickerOpen) {
-        EffectPicker(
-            onPick = { id ->
-                val def = Effects.byId(id) ?: return@EffectPicker
-                val params = def.params.filter { it.value.type == "n" }.mapValues { it.value.defNum }
-                val tp = def.params.filter { it.value.type == "c" }.mapValues { it.value.defStr }
-                onChange(layer.copy(effects = layer.effects + EffectRef(id = id, params = params, textParams = tp)))
-                pickerOpen = false
+    if (browserOpen) {
+        EffectBrowser(
+            layer = layer,
+            time = time,
+            project = project,
+            onAdd = { refs ->
+                onChange(layer.copy(effects = layer.effects + refs))
+                browserOpen = false
             },
-            onClose = { pickerOpen = false },
+            onClose = { browserOpen = false },
         )
     }
 }
 
-/** انتخاب‌کنندهٔ افکت: فهرست ۲۹۱ افکت دسته‌بندی‌شده. */
+/** نام فارسی دسته‌های افکت (رجیستری دسته‌ها را با شناسهٔ انگلیسی نگه می‌دارد). */
+private val CAT_NAMES_FA: Map<String, String> = mapOf(
+    "color" to "رنگ", "blur" to "محو", "distort" to "اعوجاج", "opacity" to "شفافیت",
+    "stylize" to "سبک", "procedural" to "رویه‌ای", "transform" to "ترنسفورم",
+    "text" to "متن", "3d" to "سه‌بعدی", "repeat" to "تکرار", "matte" to "مات",
+    "motion" to "حرکت",
+)
+
+/** مرورگر افکت — مثل EffectBrowserActivity آلایت: هدر ۴۴dp (بستن/برگشت/
+ *  جستجو + عنوان)، دسته‌ها + جستجو + شبکهٔ افکت‌ها، و جزئیات افکت با
+ *  پیش‌نمایش زنده + توضیح + پارامترها + ردیف پریست (مثل
+ *  effect_detail_frag.xml). */
 @Composable
-private fun EffectPicker(
-    onPick: (String) -> Unit,
+private fun EffectBrowser(
+    layer: Layer,
+    time: Double,
+    project: Project?,
+    onAdd: (List<EffectRef>) -> Unit,
     onClose: () -> Unit,
 ) {
-    val scroll = rememberScrollState()
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xCC0C0D13))
-            .clickable { onClose() },
+    var cat by remember { mutableStateOf<String?>(null) }
+    var query by remember { mutableStateOf("") }
+    var searchOpen by remember { mutableStateOf(false) }
+    var detailId by remember { mutableStateOf<String?>(null) }
+    var candidate by remember { mutableStateOf<EffectRef?>(null) }
+
+    /** باز کردن جزئیات یک افکت با پارامترهای پیش‌فرض (کاندیدِ هنوز اضافه‌نشده). */
+    fun openDetail(id: String) {
+        val def = Effects.byId(id) ?: return
+        val params = def.params.filter { it.value.type == "n" }.mapValues { it.value.defNum }
+        val tp = def.params.filter { it.value.type == "c" }.mapValues { it.value.defStr }
+        candidate = EffectRef(id = id, params = params, textParams = tp)
+        detailId = id
+    }
+
+    val def = detailId?.let { Effects.byId(it) }
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scroll)
-                .padding(16.dp),
+                .background(Alight.SurfaceDeep),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("افزودن افکت", color = Alight.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, null, tint = Alight.Text) }
-            }
-            for (cat in Effects.CATS) {
-                Text(cat, color = Alight.Mint, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-                val items = Effects.byCat(cat)
-                // شبکهٔ ۳ ستونه با FlowRow
-                var row = mutableListOf<EffectDef>()
-                for (fx in items) {
-                    row.add(fx)
-                    if (row.size == 3) {
-                        EffectChipRow(row, onPick)
-                        row = mutableListOf()
+            // هدر — ۴۴dp (مثل header در effect_browser_activity.xml)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .background(Alight.Surface)
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (def != null) {
+                    IconButton(onClick = { detailId = null }) {
+                        Icon(Icons.Filled.ArrowBack, null, tint = Alight.Text)
+                    }
+                } else {
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Filled.Close, null, tint = Alight.Text)
                     }
                 }
-                if (row.isNotEmpty()) EffectChipRow(row, onPick)
+                Text(
+                    def?.name ?: "مرورگر افکت",
+                    color = Alight.Text,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = {
+                    searchOpen = !searchOpen
+                    if (!searchOpen) query = ""
+                }) {
+                    Icon(Icons.Filled.Search, null, tint = Alight.Text2)
+                }
             }
-            Spacer(modifier = Modifier.height(24.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Alight.Surface4))
+            if (def == null) {
+                // --- مرور: جستجو + دسته‌ها + شبکهٔ افکت‌ها ---
+                if (searchOpen) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("جستجوی افکت…", color = Alight.TextDim) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Alight.Mint,
+                            unfocusedBorderColor = Alight.Surface4,
+                            focusedTextColor = Alight.Text,
+                            unfocusedTextColor = Alight.Text,
+                            cursorColor = Alight.Mint,
+                        ),
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CatChip("همه", cat == null) { cat = null }
+                    for (c in Effects.CATS) {
+                        CatChip(CAT_NAMES_FA[c] ?: c, cat == c) { cat = c }
+                    }
+                }
+                val items = Effects.ALL.filter {
+                    (cat == null || it.cat == cat) &&
+                        (query.isBlank() || it.name.contains(query) || it.id.contains(query, ignoreCase = true))
+                }
+                if (items.isEmpty()) {
+                    Text(
+                        "افکتی پیدا نشد",
+                        color = Alight.TextDim,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        contentPadding = PaddingValues(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(items, key = { it.id }) { fx ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Alight.Surface4)
+                                    .clickable { openDetail(fx.id) }
+                                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(fx.name, color = Alight.Text, fontSize = 13.sp, textAlign = TextAlign.Center)
+                            }
+                        }
+                    }
+                }
+            } else {
+                // --- جزئیات افکت (مثل effect_detail_frag.xml) ---
+                val cand = candidate
+                val scroll = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scroll)
+                        .padding(16.dp),
+                ) {
+                    // پیش‌نمایش زنده: پروژه با افکت کاندید روی لایه
+                    if (project != null && cand != null) {
+                        val temp = project.copy(
+                            layers = project.layers.map {
+                                if (it.id == layer.id) it.copy(effects = it.effects + cand) else it
+                            },
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(project.width.toFloat() / project.height.toFloat())
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Alight.Surface1),
+                        ) {
+                            ProjectPreview(project = temp, time = time, modifier = Modifier.fillMaxSize())
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    Text(def.name, color = Alight.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(def.id, color = Alight.TextDim, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        EffectDescs.byId(def.id) ?: "توضیحی برای این افکت در دسترس نیست.",
+                        color = Alight.Text2,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    // پارامترهای افکت (همان اسلایدر/رنگ پنل افکت‌ها)
+                    if (cand != null) {
+                        for ((key, pd) in def.params) {
+                            if (pd.type == "n") {
+                                val cur = cand.params[key] ?: pd.defNum
+                                SliderRow(pd.label, cur, pd.min..pd.max, false, {}, onFinish = {}) { v ->
+                                    candidate = cand.copy(params = cand.params + (key to v))
+                                }
+                            } else if (pd.type == "c") {
+                                val cur = cand.textParams[key] ?: pd.defStr
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                                    Text(pd.label, color = Alight.Text2, modifier = Modifier.width(64.dp))
+                                    for (sw in listOf("#FFFFFF", "#000000", "#F16586", "#E01445", "#00FFA8", "#69FC97", "#F9DE66", "#4A9EFF", "#9B7BFF")) {
+                                        val active = cur.equals(sw, ignoreCase = true)
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(end = 6.dp)
+                                                .size(if (active) 26.dp else 22.dp)
+                                                .clip(CircleShape)
+                                                .background(hexColor(sw))
+                                                .border(if (active) 2.dp else 1.dp, if (active) Alight.Mint else Alight.Surface4, CircleShape)
+                                                .clickable {
+                                                    candidate = cand.copy(textParams = cand.textParams + (key to sw))
+                                                },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // پریست‌ها (مثل ردیف پریست جزئیات افکت)
+                    Text("پریست‌ها", color = Alight.Text, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+                    Row(
+                        modifier = Modifier
+                            .horizontalScroll(rememberScrollState())
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        for ((name, refs) in PRESETS) {
+                            PanelButton(name, true) {
+                                onAdd(refs)
+                                onClose()
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = {
+                                if (cand != null) {
+                                    onAdd(listOf(cand))
+                                    onClose()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Alight.Mint, contentColor = Color.Black),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("افزودن افکت", fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = { detailId = null },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("لغو", color = Alight.Text)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+            }
         }
     }
 }
 
+/** چیپ دستهٔ مرورگر افکت (فعال = نعنایی). */
 @Composable
-private fun EffectChipRow(row: List<EffectDef>, onPick: (String) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-        for (fx in row) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(end = 6.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Alight.Surface4)
-                    .clickable { onPick(fx.id) }
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-            ) {
-                Text(fx.name, color = Alight.Text, fontSize = 13.sp)
-            }
-        }
-        // پر کردن ستون‌های خالی
-        repeat(3 - row.size) { Spacer(modifier = Modifier.weight(1f).padding(end = 6.dp)) }
+private fun CatChip(label: String, active: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (active) Alight.Mint else Alight.Surface4)
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = if (active) Color.Black else Alight.Text)
     }
 }
 
