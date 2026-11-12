@@ -1,5 +1,6 @@
 package com.zurvanecho.lyricstudio.motion.ui.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -593,7 +594,7 @@ private fun EmptyState(onCreate: () -> Unit, onSample: () -> Unit) {
     }
 }
 
-@androidx.compose.foundation.ExperimentalFoundationApi
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProjectCard(p: Project, onOpen: (Project) -> Unit, onLongPress: () -> Unit) {
     Column(
