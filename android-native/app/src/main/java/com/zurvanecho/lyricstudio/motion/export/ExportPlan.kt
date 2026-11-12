@@ -34,6 +34,8 @@ data class AudioClip(
     /** شروع/پایان لایه در زمان پروژه (برای محو ورود/خروج). */
     val layerStart: Double = 0.0,
     val layerEnd: Double = 0.0,
+    /** ضریب سرعت لایه (retime) — موقعیت در رسانه = زمان محلی × سرعت. */
+    val speed: Double = 1.0,
 )
 
 fun exportPlan(
@@ -75,6 +77,7 @@ fun audioSchedule(project: Project, from: Double, to: Double): List<AudioClip> {
                 fadeOut = l.audio?.fadeOut ?: 0.0,
                 layerStart = l.start,
                 layerEnd = l.end,
+                speed = l.speed,
             ),
         )
     }

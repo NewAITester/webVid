@@ -227,17 +227,24 @@ class Exporter(private val context: Context) {
         val out = FloatArray(totalFrames * channels)
         for (clip in clips) {
             val pcm = decodeToPcm(clip.src, sampleRate, channels) ?: continue
+            val pcmFrames = pcm.size / channels
             val startFrame = (clip.start * sampleRate).roundToInt()
-            val offsetFrames = (clip.offset * sampleRate).roundToInt()
-            val clipFrames = min(pcm.size / channels, (clip.duration * sampleRate).roundToInt())
-            // بلندی + محو ورود/خروج خطی — همان فرمول audioVolumeAt نسخهٔ وب
-            val layerDur = max(0.01, clip.layerEnd - clip.layerStart)
+            // تعداد فریم خروجی = طول کلیپ در زمان‌بندی خروجی (سرعت فقط
+            // موقعیت خواندن در رسانه را جلو می‌برد، نه طول خروجی را).
+            val clipFrames = (clip.duration * sampleRate).roundToInt()
+            // بلندی + محو ورود/خروج خطی — همان فرمول audioVolumeAt
+            // پیش‌نمایش (زمان محلیِ ریتایم‌شده: local = offset × speed).
+            val layerDur = max(0.01, (clip.layerEnd - clip.layerStart) * clip.speed)
             for (f in 0 until clipFrames) {
                 val dstIdx = startFrame + f
                 if (dstIdx >= totalFrames) break
-                val srcIdx = offsetFrames + f
-                if (srcIdx * channels >= pcm.size) break
-                val local = clip.offset + f.toDouble() / sampleRate
+                // موقعیت در رسانه با اعمال سرعت + درون‌یابی خطی بین دو نمونه
+                val srcPos = (clip.offset + f.toDouble() / sampleRate) * clip.speed * sampleRate
+                val i0 = srcPos.toInt()
+                if (i0 >= pcmFrames) break
+                val i1 = min(i0 + 1, pcmFrames - 1)
+                val frac = (srcPos - i0).toFloat()
+                val local = (clip.offset + f.toDouble() / sampleRate) * clip.speed
                 var k = 1.0f
                 if (clip.fadeIn > 0 && local < clip.fadeIn) k = min(k, (local / clip.fadeIn).toFloat())
                 if (clip.fadeOut > 0 && local > layerDur - clip.fadeOut) {
@@ -245,8 +252,9 @@ class Exporter(private val context: Context) {
                 }
                 val vol = (clip.volume * k).toFloat().coerceIn(0f, 1f)
                 for (ch in 0 until channels) {
-                    val s = pcm[srcIdx * channels + ch] / 32768f
-                    out[dstIdx * channels + ch] += s * vol
+                    val s0 = pcm[i0 * channels + ch] / 32768f
+                    val s1 = pcm[i1 * channels + ch] / 32768f
+                    out[dstIdx * channels + ch] += (s0 + (s1 - s0) * frac) * vol
                 }
             }
         }

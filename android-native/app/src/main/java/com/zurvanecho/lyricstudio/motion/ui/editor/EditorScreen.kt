@@ -132,6 +132,7 @@ import com.zurvanecho.lyricstudio.motion.core.valueAt
 import com.zurvanecho.lyricstudio.motion.effects.EffectDef
 import com.zurvanecho.lyricstudio.motion.effects.EffectDescs
 import com.zurvanecho.lyricstudio.motion.effects.Effects
+import com.zurvanecho.lyricstudio.motion.export.ExportPlan
 import com.zurvanecho.lyricstudio.motion.export.Exporter
 import com.zurvanecho.lyricstudio.motion.export.exportPlan
 import com.zurvanecho.lyricstudio.motion.importers.lrcToLayers
@@ -156,6 +157,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import kotlin.math.roundToInt
 
 /**
@@ -189,7 +191,8 @@ private fun projectToPoint(tr: Transform, p: Offset): StrokePoint {
 }
 
 /** زمان پروژه به شکل m:ss.ff (مثل editTimeView آلایت؛ ff شمارهٔ فریم است). */
-private fun formatTime(t: Double, fps: Int): String {
+/** زمان پروژه به شکل m:ss.frame — در ExportDialog هم استفاده می‌شود. */
+internal fun formatTime(t: Double, fps: Int): String {
     val m = (t / 60).toInt()
     val s = (t % 60).toInt()
     val f = ((t * fps) % fps).toInt()
@@ -625,40 +628,46 @@ fun EditorScreen(
     var exporting by remember { mutableStateOf(false) }
     var exportProgress by remember { mutableDoubleStateOf(0.0) }
     var exportMsg by remember { mutableStateOf<String?>(null) }
+    var exportedFile: File? by remember { mutableStateOf(null) }
+    var showExport by remember { mutableStateOf(false) }
     val exportScope = rememberCoroutineScope()
-    fun startExport() {
+    fun startExport(plan: ExportPlan) {
         if (exporting) return
         exporting = true
         exportProgress = 0.0
         exportMsg = null
+        exportedFile = null
         exportScope.launch {
             try {
-                val plan = exportPlan(project)
                 val outFile = Exporter.defaultOutFile(context, "${project.name}.mp4")
                 val result = exporter.exportVideo(project, plan, measurer, mediaResolver, outFile) { p ->
                     exportProgress = p
                 }
                 exportMsg = "خروجی آماده شد — ${result.frames} فریم، ${result.sizeMB} مگابایت"
-                // اشتراک‌گذاری فایل
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    context,
-                    "com.zurvanecho.lyricstudio.motion.fileprovider",
-                    result.file,
-                )
-                val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                    type = "video/mp4"
-                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(
-                    android.content.Intent.createChooser(share, "اشتراک‌گذاری ویدیو"),
-                )
+                exportedFile = result.file
             } catch (e: Exception) {
                 exportMsg = "خروجی ناموفق بود: ${e.message ?: "خطا"}"
             } finally {
                 exporting = false
             }
         }
+    }
+
+    /** اشتراک‌گذاری فایل خروجی (FileProvider + ACTION_SEND). */
+    fun shareExported(file: File) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "com.zurvanecho.lyricstudio.motion.fileprovider",
+            file,
+        )
+        val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "video/mp4"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(
+            android.content.Intent.createChooser(share, "اشتراک‌گذاری ویدیو"),
+        )
     }
 
     // انتخاب فایل صوتی → لایهٔ audio
@@ -749,7 +758,11 @@ fun EditorScreen(
                 IconButton(onClick = { showProjectSettings = true }) {
                     Icon(Icons.Filled.Settings, contentDescription = "تنظیمات پروژه", tint = Alight.Text)
                 }
-                IconButton(onClick = { startExport() }) {
+                IconButton(onClick = {
+                    exportMsg = null
+                    exportedFile = null
+                    showExport = true
+                }) {
                     Icon(Icons.Filled.Share, contentDescription = "خروجی", tint = Alight.Text)
                 }
             }
@@ -1322,6 +1335,24 @@ fun EditorScreen(
                 }
             }
         }
+    }
+
+    // K7: پیش‌نمایش خروجی (مثل ExportPreviewActivity آلایت)
+    if (showExport) {
+        ExportDialog(
+            project = project,
+            time = time,
+            playing = playing,
+            onPlayPause = { playing = !playing },
+            onSeek = { time = it },
+            exporting = exporting,
+            exportProgress = exportProgress,
+            exportMsg = exportMsg,
+            exportedFile = exportedFile,
+            onExport = { plan -> startExport(plan) },
+            onShare = { file -> shareExported(file) },
+            onClose = { showExport = false },
+        )
     }
 
     if (showAdd) {
